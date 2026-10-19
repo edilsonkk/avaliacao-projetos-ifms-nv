@@ -1,0 +1,31 @@
+# Dependências
+node_modules/
+
+# Build de produção
+dist/
+dist-ssr/
+build/
+coverage/
+
+# Arquivos de ambiente e segredos (NÃO versionar credenciais)
+.env
+.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Sessões e artefatos internos do AI Studio / Antigravity
+.antigravity/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
