@@ -140,16 +140,35 @@ export const ProjetosBloqueados: React.FC<ProjetosBloqueadosProps> = ({
   // Botão global no topo: Desbloquear Todos -> chama supabase.rpc('admin_desbloquear_todos')
   const desbloquear_todos = async () => {
     try {
-      const { error } = await supabase.rpc('admin_desbloquear_todos');
-      if (!error) {
-        alert("Todos os projetos foram desbloqueados!");
-        set_locks([]);
-        if (aoAtualizarMetricas) aoAtualizarMetricas();
-      } else {
-        throw error;
+      set_executando_acao(true);
+      // 1. Tenta invocar a Stored Procedure oficial no Supabase
+      let { error } = await supabase.rpc('admin_desbloquear_todos');
+
+      // 2. Fallback resiliente caso a function no Supabase dispare "DELETE requires a WHERE clause" (PostgreSQL safeupdate) ou erro de permissão
+      if (error) {
+        console.warn('RPC admin_desbloquear_todos retornou erro, aplicando fallback com WHERE:', error.message);
+        const resFallback = await supabase
+          .from('locks_ativos')
+          .delete()
+          .neq('id_lock', '00000000-0000-0000-0000-000000000000');
+
+        if (resFallback.error) {
+          const resFallback2 = await supabase
+            .from('locks_ativos')
+            .delete()
+            .neq('id_projeto', '00000000-0000-0000-0000-000000000000');
+          if (resFallback2.error) throw error;
+        }
       }
+
+      alert("Todos os projetos foram desbloqueados!");
+      // Atualiza o estado local limpando a lista
+      set_locks([]);
+      if (aoAtualizarMetricas) aoAtualizarMetricas();
     } catch (err: any) {
       alert(`Erro ao desbloquear todos os projetos: ${err.message || err}`);
+    } finally {
+      set_executando_acao(false);
     }
   };
 

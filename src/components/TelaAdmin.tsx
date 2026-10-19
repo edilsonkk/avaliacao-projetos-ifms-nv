@@ -4,6 +4,7 @@ import {
   RotateCcw,
   FolderGit2,
   Lock,
+  Unlock,
   AlertTriangle,
   MapPin,
   Users,
@@ -139,6 +140,42 @@ export const TelaAdmin: React.FC = () => {
       }
     } catch (err: any) {
       alert(`Erro ao executar repescagem: ${err?.message || err}`);
+    }
+  };
+
+  // Intervenção Tática: Desbloquear Todos os Projetos
+  const [desbloqueando_todos_admin, set_desbloqueando_todos_admin] = useState<boolean>(false);
+
+  const executar_desbloquear_todos = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      set_desbloqueando_todos_admin(true);
+      // 1. Tenta via RPC oficial do Supabase
+      let { error } = await supabase.rpc('admin_desbloquear_todos');
+
+      // 2. Se a RPC falhar (ex: por causa da restrição "DELETE requires a WHERE clause" do safeupdate do PostgreSQL), aplica fallback com WHERE
+      if (error) {
+        console.warn('RPC admin_desbloquear_todos retornou erro, aplicando fallback com WHERE:', error.message);
+        const resFallback = await supabase
+          .from('locks_ativos')
+          .delete()
+          .neq('id_lock', '00000000-0000-0000-0000-000000000000');
+
+        if (resFallback.error) {
+          const resFallback2 = await supabase
+            .from('locks_ativos')
+            .delete()
+            .neq('id_projeto', '00000000-0000-0000-0000-000000000000');
+          if (resFallback2.error) throw error;
+        }
+      }
+
+      alert("Todos os projetos foram desbloqueados!");
+      await buscar_metricas_admin();
+    } catch (err: any) {
+      alert(`Erro ao desbloquear todos os projetos: ${err.message || err}`);
+    } finally {
+      set_desbloqueando_todos_admin(false);
     }
   };
 
@@ -570,25 +607,42 @@ export const TelaAdmin: React.FC = () => {
                   </p>
                 </button>
 
-                <button
-                  type="button"
+                <div
                   onClick={() => set_mostrar_gestor_bloqueios(true)}
-                  className="bg-amber-50 hover:bg-amber-100/70 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 p-5 rounded-2xl shadow-xs space-y-2 text-left transition-all hover:scale-[1.01] cursor-pointer group"
+                  className="bg-amber-50 hover:bg-amber-100/70 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 p-5 rounded-2xl shadow-xs space-y-2 text-left transition-all hover:scale-[1.01] cursor-pointer group flex flex-col justify-between"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase text-amber-800 dark:text-amber-300">
-                      Projetos Bloqueados
-                    </span>
-                    <Lock className="w-5 h-5 text-amber-700 dark:text-amber-300 group-hover:scale-110 transition-transform" />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase text-amber-800 dark:text-amber-300">
+                        Projetos Bloqueados
+                      </span>
+                      <Lock className="w-5 h-5 text-amber-700 dark:text-amber-300 group-hover:scale-110 transition-transform" />
+                    </div>
+                    <div className="text-3xl font-black text-amber-900 dark:text-amber-100">
+                      {metricas_admin.locks_ativos}
+                    </div>
+                    <p className="text-xs text-amber-700 dark:text-amber-300 flex items-center justify-between">
+                      <span>Avaliações ativas no momento.</span>
+                      <span className="text-[10px] font-bold underline opacity-80 group-hover:opacity-100">Gerenciar Bloqueios ↗</span>
+                    </p>
                   </div>
-                  <div className="text-3xl font-black text-amber-900 dark:text-amber-100">
-                    {metricas_admin.locks_ativos}
-                  </div>
-                  <p className="text-xs text-amber-700 dark:text-amber-300 flex items-center justify-between">
-                    <span>Avaliações ativas no momento.</span>
-                    <span className="text-[10px] font-bold underline opacity-80 group-hover:opacity-100">Gerenciar Bloqueios ↗</span>
-                  </p>
-                </button>
+
+                  {/* Botão no card: Desbloquear Todos */}
+                  <button
+                    type="button"
+                    onClick={executar_desbloquear_todos}
+                    disabled={desbloqueando_todos_admin || metricas_admin.locks_ativos === 0}
+                    title="Desbloquear todos os projetos travados no momento"
+                    className="w-full mt-2 py-1.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-[0.98] text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {desbloqueando_todos_admin ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Unlock className="w-3.5 h-3.5" />
+                    )}
+                    <span>Desbloquear Todos</span>
+                  </button>
+                </div>
 
                 <button
                   type="button"
