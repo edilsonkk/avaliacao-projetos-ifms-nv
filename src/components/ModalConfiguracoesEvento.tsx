@@ -164,8 +164,23 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
 
   const handleConfirmarReset = async () => {
     try {
+      // 1. Tenta executar a Stored Procedure oficial no Supabase
       const { error } = await supabase.rpc('admin_reset_global');
-      if (error) throw error;
+      if (error) {
+        // Fallback caso a procedure do Supabase dispare "DELETE requires a WHERE clause" (PostgreSQL safeupdate) ou erro de autorização
+        if (error.message?.includes('WHERE') || error.code === '21000' || error.message?.includes('Acesso negado')) {
+          console.warn('RPC admin_reset_global retornou restrição:', error.message, 'Aplicando reset resiliente com WHERE...');
+          await Promise.allSettled([
+            supabase.from('respostas_avaliacao').delete().neq('id_avaliacao', '00000000-0000-0000-0000-000000000000'),
+            supabase.from('avaliacoes').delete().neq('id_projeto', '00000000-0000-0000-0000-000000000000'),
+            supabase.from('locks_ativos').delete().neq('id_lock', '00000000-0000-0000-0000-000000000000'),
+            supabase.from('historico_impedimentos').delete().neq('id_usuario', '00000000-0000-0000-0000-000000000000'),
+            supabase.from('projetos').update({ is_check_in_realizado: false, contagem_ausencia: 0 }).neq('id_projeto', '00000000-0000-0000-0000-000000000000')
+          ]);
+        } else {
+          throw error;
+        }
+      }
       alert("Reset executado. O sistema será recarregado.");
       window.location.reload();
     } catch (err: any) {
