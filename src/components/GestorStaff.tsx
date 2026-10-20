@@ -39,7 +39,10 @@ const staff_contingencia_fallback: UsuarioStaff[] = [
   { id_usuario: '00000000-0000-0000-0000-000000000203', nome: 'Apoio Gabriel Costa', email: 'gabriel.costa@ifms.edu.br', papel: 'STAFF' },
 ];
 
-export const GestorStaff: React.FC<{ ao_fechar?: () => void }> = ({ ao_fechar }) => {
+export const GestorStaff: React.FC<{ ao_fechar?: () => void; id_evento_ativo?: string }> = ({
+  ao_fechar,
+  id_evento_ativo,
+}) => {
   const [equipe_staff, set_equipe_staff] = useState<UsuarioStaff[]>([]);
   const [carregando, set_carregando] = useState<boolean>(true);
   const [termo_busca, set_termo_busca] = useState<string>('');
@@ -146,26 +149,49 @@ export const GestorStaff: React.FC<{ ao_fechar?: () => void }> = ({ ao_fechar })
     }
 
     try {
-      const { error } = await supabase
+      let userIdFinal: string | undefined;
+      const { data: userCriado, error } = await supabase
         .from('usuarios')
         .insert([{
           nome: nome_limpo,
           email: email_limpo,
           papel: 'STAFF',
-        }]);
+        }])
+        .select('id_usuario')
+        .maybeSingle();
+
+      if (userCriado?.id_usuario) {
+        userIdFinal = userCriado.id_usuario;
+      }
 
       if (error) {
         if (error.code === '23505') {
           // E-mail existente: atualiza papel para STAFF
-          const { error: errUpdate } = await supabase
+          const { data: userAtualizado, error: errUpdate } = await supabase
             .from('usuarios')
             .update({ nome: nome_limpo, papel: 'STAFF' })
-            .eq('email', email_limpo);
+            .eq('email', email_limpo)
+            .select('id_usuario')
+            .maybeSingle();
 
           if (errUpdate) throw errUpdate;
+          if (userAtualizado?.id_usuario) {
+            userIdFinal = userAtualizado.id_usuario;
+          }
         } else {
           throw error;
         }
+      }
+
+      const eventoId = id_evento_ativo || localStorage.getItem('evento_ativo_id');
+      if (eventoId && userIdFinal) {
+        await supabase
+          .from('avaliadores_evento')
+          .upsert({
+            id_usuario: userIdFinal,
+            id_evento: eventoId,
+            is_credenciado: false,
+          }, { onConflict: 'id_usuario, id_evento' });
       }
 
       exibir_notificacao('Membro do Staff pré-aprovado no Supabase com sucesso!');
@@ -254,18 +280,30 @@ export const GestorStaff: React.FC<{ ao_fechar?: () => void }> = ({ ao_fechar })
 
             if (conexao_banco) {
               try {
-                const { error: errUpsert } = await supabase
+                const { data: usuarioUpsert, error: errUpsert } = await supabase
                   .from('usuarios')
                   .upsert({
                     nome: nomeFinal,
                     email: email,
                     papel: 'STAFF',
-                  }, { onConflict: 'email' });
+                  }, { onConflict: 'email' })
+                  .select('id_usuario')
+                  .maybeSingle();
 
                 if (errUpsert) {
                   errosCount++;
                   adicionarLog('error', `Linha ${numLinha}: Falha no banco - ${errUpsert.message}`);
                 } else {
+                  const eventoId = id_evento_ativo || localStorage.getItem('evento_ativo_id');
+                  if (eventoId && usuarioUpsert?.id_usuario) {
+                    await supabase
+                      .from('avaliadores_evento')
+                      .upsert({
+                        id_usuario: usuarioUpsert.id_usuario,
+                        id_evento: eventoId,
+                        is_credenciado: false,
+                      }, { onConflict: 'id_usuario, id_evento' });
+                  }
                   sucessosCount++;
                   adicionarLog('success', `Linha ${numLinha}: Staff ${email} (${nomeFinal}) pré-aprovado com sucesso.`);
                 }

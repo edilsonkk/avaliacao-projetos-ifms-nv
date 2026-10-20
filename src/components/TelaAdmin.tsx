@@ -46,6 +46,7 @@ import { GestorProjetos } from './GestorProjetos';
 import { ProjetosBloqueados } from './ProjetosBloqueados';
 import { ProjetosQuarentena } from './ProjetosQuarentena';
 import { AtribuicaoForcada } from './AtribuicaoForcada';
+import { TelaoAoVivo } from './TelaoAoVivo';
 
 interface MetricasAdminState {
   total_projetos: number;
@@ -111,6 +112,7 @@ export const TelaAdmin: React.FC = () => {
   const [mostrar_modal_ranking, set_mostrar_modal_ranking] = useState<boolean>(false);
   const [mostrar_gestor_questionarios, set_mostrar_gestor_questionarios] = useState<boolean>(false);
   const [mostrar_gestor_instituicoes, set_mostrar_gestor_instituicoes] = useState<boolean>(false);
+  const [mostrar_modal_telao, set_mostrar_modal_telao] = useState<boolean>(false);
 
   // Campos de entrada dos modais
   const [confirmacao_texto_reset, set_confirmacao_texto_reset] = useState<string>('');
@@ -280,36 +282,96 @@ export const TelaAdmin: React.FC = () => {
     }
 
     try {
-      // A) Total de projetos: count exato na tabela 'projetos'
+      // 1. Sincronização prévia do Evento Ativo para obter id_evento real
+      let idEventoAtivo = metricas_admin.evento_ativo_id;
+      try {
+        const { data: dados_evento } = await supabase
+          .from('eventos')
+          .select('*')
+          .eq('is_ativo', true)
+          .maybeSingle();
+
+        if (dados_evento && dados_evento.nome_evento) {
+          idEventoAtivo = dados_evento.id_evento || dados_evento.id || idEventoAtivo;
+          setNomeEvento(dados_evento.nome_evento);
+          set_metricas_admin((ant) => ({
+            ...ant,
+            evento_ativo_id: idEventoAtivo,
+            evento_ativo_nome: dados_evento.nome_evento,
+            evento_ativo_edicao: dados_evento.edicao || ant.evento_ativo_edicao,
+          }));
+        }
+      } catch (errEvt) {
+        console.warn('Não foi possível sincronizar dados do evento:', errEvt);
+      }
+
+      // A) Total de projetos vinculados ao evento ativo
       let total_proj_count = 0;
-      const { count: count_projetos, error: erro_projetos } = await supabase
+      let queryProjetos = supabase
         .from('projetos')
         .select('*', { count: 'exact', head: true });
 
-      if (erro_projetos) {
-        const { count: count_singular } = await supabase
-          .from('projeto')
-          .select('*', { count: 'exact', head: true });
-        total_proj_count = count_singular || 124;
-      } else {
-        total_proj_count = count_projetos || 0;
+      if (idEventoAtivo) {
+        queryProjetos = queryProjetos.eq('id_evento', idEventoAtivo);
       }
 
-      // B) Avaliadores credenciados
-      let aval_cred_count = 0;
-      const { count: count_avaliadores, error: erro_avaliadores } = await supabase
-        .from('avaliadores_evento')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_credenciado', true);
+      const { count: count_projetos, error: erro_projetos } = await queryProjetos;
 
-      if (erro_avaliadores) {
-        const { count: count_aval_singular } = await supabase
-          .from('avaliador_evento')
-          .select('*', { count: 'exact', head: true })
-          .eq('is_credenciado', true);
-        aval_cred_count = count_aval_singular || 36;
+      if (erro_projetos) {
+        let querySingular = supabase
+          .from('projeto')
+          .select('*', { count: 'exact', head: true });
+        if (idEventoAtivo) {
+          querySingular = querySingular.eq('id_evento', idEventoAtivo);
+        }
+        const { count: count_singular } = await querySingular;
+        total_proj_count = count_singular ?? 0;
       } else {
-        aval_cred_count = count_avaliadores || 0;
+        total_proj_count = count_projetos ?? 0;
+      }
+
+      // B) Avaliadores credenciados: cruzamento com avaliadores_evento filtrando por evento ativo E is_credenciado = true
+      let aval_cred_count = 0;
+      try {
+        let queryAvaliadores = supabase
+          .from('avaliadores_evento')
+          .select('id_usuario, usuarios!inner(id_usuario)', { count: 'exact', head: true })
+          .eq('is_credenciado', true);
+
+        if (idEventoAtivo) {
+          queryAvaliadores = queryAvaliadores.eq('id_evento', idEventoAtivo);
+        }
+
+        let { count: count_avaliadores, error: erro_avaliadores } = await queryAvaliadores;
+
+        if (erro_avaliadores) {
+          let querySemJoin = supabase
+            .from('avaliadores_evento')
+            .select('*', { count: 'exact', head: true })
+            .eq('is_credenciado', true);
+          if (idEventoAtivo) {
+            querySemJoin = querySemJoin.eq('id_evento', idEventoAtivo);
+          }
+          const resSemJoin = await querySemJoin;
+          count_avaliadores = resSemJoin.count;
+          erro_avaliadores = resSemJoin.error;
+        }
+
+        if (erro_avaliadores) {
+          let queryAvalSingular = supabase
+            .from('avaliador_evento')
+            .select('*', { count: 'exact', head: true })
+            .eq('is_credenciado', true);
+          if (idEventoAtivo) {
+            queryAvalSingular = queryAvalSingular.eq('id_evento', idEventoAtivo);
+          }
+          const { count: count_aval_singular } = await queryAvalSingular;
+          aval_cred_count = count_aval_singular ?? 0;
+        } else {
+          aval_cred_count = count_avaliadores ?? 0;
+        }
+      } catch (errAval) {
+        console.warn('Erro ao consultar avaliadores credenciados do evento ativo:', errAval);
       }
 
       // C) Projetos bloqueados: contagem em 'locks_ativos'
@@ -346,57 +408,91 @@ export const TelaAdmin: React.FC = () => {
         Math.round((total_aval_feitas / (cota_esperada || 1)) * 100)
       );
 
-      // F) Staff e Administradores com filtragem em memória para evitar rejeição case-sensitive do Enum papel_usuario
+      // F) Staff: apenas usuários com papel 'STAFF' vinculados ao evento ativo
       let staff_count = 0;
       let admin_count = 0;
       try {
+        if (idEventoAtivo) {
+          // 1. Cruzamento relacional com avaliadores_evento para usuários com papel 'STAFF'
+          const { data: staffAe, error: errStaffAe } = await supabase
+            .from('avaliadores_evento')
+            .select('id_usuario, usuarios!inner(id_usuario, papel)')
+            .eq('id_evento', idEventoAtivo);
+
+          if (!errStaffAe && staffAe) {
+            staff_count = staffAe.filter((row: any) => {
+              const p = row.usuarios?.papel?.toUpperCase();
+              return p === 'STAFF' || p === 'MONITOR';
+            }).length;
+          } else {
+            // 2. Fallback caso o evento esteja registrado diretamente em usuarios
+            const { data: usuariosEvento } = await supabase
+              .from('usuarios')
+              .select('id_usuario, papel')
+              .eq('id_evento', idEventoAtivo);
+
+            if (usuariosEvento && usuariosEvento.length > 0) {
+              staff_count = usuariosEvento.filter(
+                (u: any) => u.papel?.toUpperCase() === 'STAFF' || u.papel?.toUpperCase() === 'MONITOR'
+              ).length;
+            }
+          }
+        }
+
+        // Administradores globais
         const { data: todos_usuarios } = await supabase
           .from('usuarios')
-          .select('id_usuario, nome, email, papel');
+          .select('id_usuario, papel');
 
         if (todos_usuarios && todos_usuarios.length > 0) {
-          staff_count = todos_usuarios.filter(
-            (u) => u.papel?.toUpperCase() === 'STAFF' || u.papel?.toUpperCase() === 'MONITOR'
-          ).length;
           admin_count = todos_usuarios.filter(
-            (u) => u.papel?.toUpperCase() === 'ADMIN' || u.papel?.toUpperCase() === 'SUPERADMIN'
+            (u: any) => u.papel?.toUpperCase() === 'ADMIN' || u.papel?.toUpperCase() === 'SUPERADMIN'
           ).length;
         }
       } catch (errUser) {
-        console.warn('Não foi possível sincronizar contagem de usuários:', errUser);
+        console.warn('Erro ao consultar equipe Staff/Administradores:', errUser);
       }
 
-      // G) Sincronização do Evento Ativo
+      // G) Questionários: apenas registros na tabela questionarios atrelados ao evento ativo
+      let quest_count = 0;
       try {
-        const { data: dados_evento } = await supabase
-          .from('eventos')
-          .select('*')
-          .eq('is_ativo', true)
-          .maybeSingle();
+        let queryQuest = supabase
+          .from('questionarios')
+          .select('*', { count: 'exact', head: true });
 
-        if (dados_evento && dados_evento.nome_evento) {
-          setNomeEvento(dados_evento.nome_evento);
-          set_metricas_admin((ant) => ({
-            ...ant,
-            evento_ativo_id: dados_evento.id_evento || dados_evento.id || ant.evento_ativo_id,
-            evento_ativo_nome: dados_evento.nome_evento,
-            evento_ativo_edicao: dados_evento.edicao || ant.evento_ativo_edicao,
-          }));
+        if (idEventoAtivo) {
+          queryQuest = queryQuest.eq('id_evento', idEventoAtivo);
         }
-      } catch (errEvt) {
-        console.warn('Não foi possível sincronizar dados do evento:', errEvt);
+
+        const { count: count_quest, error: errQuest } = await queryQuest;
+
+        if (errQuest) {
+          let queryQuestSingular = supabase
+            .from('questionario')
+            .select('*', { count: 'exact', head: true });
+          if (idEventoAtivo) {
+            queryQuestSingular = queryQuestSingular.eq('id_evento', idEventoAtivo);
+          }
+          const { count: count_q_sing } = await queryQuestSingular;
+          quest_count = count_q_sing ?? 0;
+        } else {
+          quest_count = count_quest ?? 0;
+        }
+      } catch (errQ) {
+        console.warn('Erro ao contar questionários do evento ativo:', errQ);
       }
 
       set_metricas_admin((anterior) => ({
         ...anterior,
-        total_projetos: total_proj_count || anterior.total_projetos,
-        avaliadores_credenciados: aval_cred_count || anterior.avaliadores_credenciados,
+        total_projetos: total_proj_count,
+        avaliadores_credenciados: aval_cred_count,
         locks_ativos: total_locks_count,
         projetos_quarentena: quarentena_count,
-        avaliacoes_realizadas: total_aval_feitas || anterior.avaliacoes_realizadas,
-        porcentagem_conclusao: pct_conclusao || anterior.porcentagem_conclusao,
-        total_staff: staff_count || anterior.total_staff,
+        avaliacoes_realizadas: total_aval_feitas,
+        porcentagem_conclusao: pct_conclusao,
+        total_staff: staff_count,
         total_administradores: admin_count || anterior.total_administradores,
+        total_questionarios: quest_count,
       }));
     } catch (erro_excecao: any) {
       console.error('Erro ao consultar métricas do painel admin no Supabase:', erro_excecao);
@@ -569,16 +665,32 @@ export const TelaAdmin: React.FC = () => {
           </div>
         </div>
 
-        {/* Ícone de Engrenagem (Configurações) à direita */}
-        <button
-          type="button"
-          onClick={() => set_mostrar_modal_configuracoes(true)}
-          title="Configurações Gerais"
-          className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-600 transition-all flex items-center justify-center shadow-xs"
-          aria-label="Configurações Gerais"
-        >
-          <Settings className="w-5 h-5 text-slate-700 dark:text-slate-200" />
-        </button>
+        {/* Ações do Header: Projeção no Auditório e Configurações */}
+        <div className="flex items-center gap-2">
+          {/* Botão de Projeção no Auditório posicionado imediatamente à esquerda da Engrenagem */}
+          <button
+            type="button"
+            onClick={() => set_mostrar_modal_telao(true)}
+            title="Projeção no Auditório (Telão ao Vivo)"
+            className="px-3.5 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700/80 transition-all flex items-center gap-2 shadow-xs cursor-pointer font-bold text-xs sm:text-sm"
+            aria-label="Projeção no Auditório"
+          >
+            <Tv className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+            <span className="hidden sm:inline">Projeção no Auditório</span>
+            <span className="sm:hidden">Projeção</span>
+          </button>
+
+          {/* Ícone de Engrenagem (Configurações) à direita */}
+          <button
+            type="button"
+            onClick={() => set_mostrar_modal_configuracoes(true)}
+            title="Configurações Gerais"
+            className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-600 transition-all flex items-center justify-center shadow-xs cursor-pointer"
+            aria-label="Configurações Gerais"
+          >
+            <Settings className="w-5 h-5 text-slate-700 dark:text-slate-200" />
+          </button>
+        </div>
       </div>
 
       {/* BARRA DE PROGRESSO EM TEMPO REAL */}
@@ -836,46 +948,19 @@ export const TelaAdmin: React.FC = () => {
                 <span className="w-2 h-2 rounded-full bg-amber-500"></span> Bloco 3: Monitoramento em Tempo Real & Relatórios
               </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <button
                   type="button"
                   onClick={() => set_mostrar_modal_ranking(true)}
-                  className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/20 border border-amber-200 dark:border-amber-800 p-6 rounded-3xl shadow-xs text-left space-y-3 hover:scale-[1.01] transition-all cursor-pointer"
+                  className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/20 border border-amber-200 dark:border-amber-800 p-6 rounded-3xl shadow-xs text-left space-y-3 hover:scale-[1.01] transition-all cursor-pointer group"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold uppercase text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                      <Trophy className="w-4 h-4 text-amber-600" /> Ranking de Premiação
-                    </span>
-                    <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 px-2 py-0.5 rounded-full font-bold">
-                      Algoritmo Oficial
-                    </span>
+                    <Trophy className="w-6 h-6 text-amber-600 group-hover:scale-110 transition-transform" />
                   </div>
-
                   <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                    Classificação & Pódio
+                    Classificação
                   </h3>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    Visualização agrupada por Modalidade e Área Temática com aplicação da Regra Estrita de Desempate.
-                  </p>
                 </button>
-
-                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/20 border border-emerald-200 dark:border-emerald-800 p-6 rounded-3xl shadow-xs space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold uppercase text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                      <Tv className="w-4 h-4 text-emerald-600" /> Telão ao Vivo
-                    </span>
-                    <span className="text-[10px] bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-100 px-2 py-0.5 rounded-full font-bold animate-pulse">
-                      Ao Vivo
-                    </span>
-                  </div>
-
-                  <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                    Projeção no Auditório
-                  </h3>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    Projeção em tempo real com estatísticas de avaliação para telas gigantes e TVs do pavilhão.
-                  </p>
-                </div>
 
                 <button
                   type="button"
@@ -883,123 +968,27 @@ export const TelaAdmin: React.FC = () => {
                     set_mostrar_modal_relatorio_acordeao(true);
                     buscar_view_relatorio_admin();
                   }}
-                  className="bg-gradient-to-br from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900 border border-slate-300 dark:border-slate-700 p-6 rounded-3xl shadow-xs text-left space-y-3 hover:scale-[1.01] transition-all cursor-pointer"
+                  className="bg-gradient-to-br from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900 border border-slate-300 dark:border-slate-700 p-6 rounded-3xl shadow-xs text-left space-y-3 hover:scale-[1.01] transition-all cursor-pointer group"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold uppercase text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                      <Printer className="w-4 h-4 text-slate-600 dark:text-slate-300" /> Impressão & Fichas
-                    </span>
-                    <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded-full font-bold">
-                      Acordeão
-                    </span>
+                    <Printer className="w-6 h-6 text-slate-600 dark:text-slate-300 group-hover:scale-110 transition-transform" />
                   </div>
-
                   <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                    Relatórios em Acordeão
+                    Relatórios
                   </h3>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    Auditoria de pareceres, notas detalhadas por critério e impressão individual de fichas.
-                  </p>
                 </button>
 
-                {/* CARD "Mapa de Estandes" (Movido para o Bloco 3) */}
                 <button
                   type="button"
                   onClick={() => set_mostrar_modal_mapa(true)}
-                  className="bg-gradient-to-br from-teal-50 to-emerald-50 dark:from-teal-950/40 dark:to-emerald-950/20 border border-teal-200 dark:border-teal-800 p-6 rounded-3xl shadow-xs text-left space-y-3 hover:scale-[1.01] transition-all cursor-pointer"
+                  className="bg-gradient-to-br from-teal-50 to-emerald-50 dark:from-teal-950/40 dark:to-emerald-950/20 border border-teal-200 dark:border-teal-800 p-6 rounded-3xl shadow-xs text-left space-y-3 hover:scale-[1.01] transition-all cursor-pointer group"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold uppercase text-teal-800 dark:text-teal-300 flex items-center gap-1.5">
-                      <MapPin className="w-4 h-4 text-teal-600" /> Mapa de Estandes
-                    </span>
-                    <span className="text-[10px] bg-teal-200 dark:bg-teal-900 text-teal-900 dark:text-teal-100 px-2 py-0.5 rounded-full font-bold">
-                      Pavilhão
-                    </span>
+                    <MapPin className="w-6 h-6 text-teal-600 group-hover:scale-110 transition-transform" />
                   </div>
-
                   <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                    Visualização do Pavilhão
+                    Mapa de Estandes
                   </h3>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    Mapa interativo de estandes, corredores e situacional de avaliação dos projetos.
-                  </p>
-                </button>
-              </div>
-            </section>
-
-            {/* BLOCO 4: INTERVENÇÕES GLOBAIS */}
-            <section className="space-y-3">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-red-500"></span> Bloco 4: Intervenções Globais
-              </h2>
-
-              <div className="grid grid-cols-1 gap-4">
-                <button
-                  type="button"
-                  onClick={executar_reset_global_direto}
-                  className="bg-orange-50 hover:bg-orange-100/80 dark:bg-orange-950/40 border border-orange-300 dark:border-orange-800 p-5 rounded-2xl shadow-xs text-left space-y-2 transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase text-orange-800 dark:text-orange-300 flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4 text-orange-600" /> Exclusão Total
-                    </span>
-                    <span className="text-[10px] bg-orange-200 dark:bg-orange-900 text-orange-900 dark:text-orange-100 px-2 py-0.5 rounded-full font-bold">
-                      RPC Critical
-                    </span>
-                  </div>
-                  <h3 className="text-base font-black text-orange-900 dark:text-orange-100">
-                    Reset Global do Evento
-                  </h3>
-                  <p className="text-xs text-orange-700 dark:text-orange-300">
-                    Reseta e exclui permanentemente todas as avaliações, notas e registros do evento ativo via Stored Procedure.
-                  </p>
-                </button>
-              </div>
-            </section>
-
-            {/* BLOCO 5: HISTÓRICO & NOVOS EVENTOS */}
-            <section className="space-y-3">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-rose-500"></span> Bloco 5: Memória do IFMS & Gestão de Eventos
-              </h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <button
-                  type="button"
-                  onClick={() => set_mostrar_modal_historico(true)}
-                  className="bg-rose-50 hover:bg-rose-100/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 p-6 rounded-3xl shadow-xs text-left space-y-2 transition-all"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase text-rose-800 dark:text-rose-300">
-                      Histórico Acadêmico
-                    </span>
-                    <History className="w-5 h-5 text-rose-600" />
-                  </div>
-                  <h3 className="text-base font-black text-rose-900 dark:text-rose-100">
-                    Eventos e Feiras Anteriores
-                  </h3>
-                  <p className="text-xs text-rose-700 dark:text-rose-300">
-                    Consultar edições passadas (FETEC MS 2025, 2024, 2023) e comparar dados históricos.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => set_mostrar_modal_novo_evento(true)}
-                  className="bg-cyan-50 hover:bg-cyan-100/80 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800 p-6 rounded-3xl shadow-xs text-left space-y-2 transition-all"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase text-cyan-800 dark:text-cyan-300">
-                      Nova Instância
-                    </span>
-                    <PlusCircle className="w-5 h-5 text-cyan-600" />
-                  </div>
-                  <h3 className="text-base font-black text-cyan-900 dark:text-cyan-100">
-                    Criar Nova Feira / Evento
-                  </h3>
-                  <p className="text-xs text-cyan-700 dark:text-cyan-300">
-                    Wizard para inicializar nova feira científica com parâmetros limpos e novas turmas.
-                  </p>
                 </button>
               </div>
             </section>
@@ -1152,6 +1141,14 @@ export const TelaAdmin: React.FC = () => {
             set_mostrar_modal_configuracoes(false);
             set_mostrar_modal_reset_etapa1(true);
           }}
+          ao_abrir_historico={() => {
+            set_mostrar_modal_configuracoes(false);
+            set_mostrar_modal_historico(true);
+          }}
+          ao_abrir_novo_evento={() => {
+            set_mostrar_modal_configuracoes(false);
+            set_mostrar_modal_novo_evento(true);
+          }}
         />
       )}
 
@@ -1284,11 +1281,34 @@ export const TelaAdmin: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
           <div className="w-full max-w-6xl my-auto max-h-[92vh] overflow-y-auto">
             <GestorStaff
+              id_evento_ativo={metricas_admin.evento_ativo_id}
               ao_fechar={() => {
                 set_mostrar_gestor_staff(false);
                 buscar_metricas_admin();
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PROJEÇÃO NO AUDITÓRIO (TELÃO AO VIVO) */}
+      {mostrar_modal_telao && (
+        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col p-4 sm:p-6 overflow-y-auto">
+          <div className="flex items-center justify-between pb-3 max-w-7xl mx-auto w-full border-b border-slate-800 mb-4">
+            <div className="flex items-center gap-2 text-white font-extrabold text-lg">
+              <Tv className="w-6 h-6 text-emerald-400" />
+              Projeção no Auditório - Telão ao Vivo
+            </div>
+            <button
+              type="button"
+              onClick={() => set_mostrar_modal_telao(false)}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold flex items-center gap-2 border border-slate-700 transition-colors cursor-pointer text-sm"
+            >
+              <X className="w-4 h-4" /> Fechar Projeção
+            </button>
+          </div>
+          <div className="max-w-7xl mx-auto w-full flex-1">
+            <TelaoAoVivo />
           </div>
         </div>
       )}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, X, Save, Loader2, CheckCircle2, AlertTriangle, RotateCcw } from 'lucide-react';
+import { Settings, X, Save, Loader2, CheckCircle2, AlertTriangle, RotateCcw, History, PlusCircle } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
 
 interface PropriedadesModalConfiguracoes {
@@ -8,6 +8,8 @@ interface PropriedadesModalConfiguracoes {
   ao_fechar: () => void;
   ao_salvar_sucesso?: (novoNome?: string) => void;
   ao_disparar_reset_global?: () => void;
+  ao_abrir_historico?: () => void;
+  ao_abrir_novo_evento?: () => void;
 }
 
 export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> = ({
@@ -16,6 +18,8 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
   ao_fechar,
   ao_salvar_sucesso,
   ao_disparar_reset_global,
+  ao_abrir_historico,
+  ao_abrir_novo_evento,
 }) => {
   // Campos de estado do formulário de configurações do evento
   const [nome_evento, set_nome_evento] = useState<string>(nome_evento_atual || 'FETEC MS 2026');
@@ -327,6 +331,52 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
               />
             </div>
 
+            {/* Gestão de Eventos: Eventos Anteriores e Criar novo evento */}
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-700 space-y-2">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">
+                Gestão de Eventos
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    ao_fechar();
+                    if (ao_abrir_historico) ao_abrir_historico();
+                  }}
+                  className="p-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-700 text-left transition-all flex items-center justify-between cursor-pointer group"
+                >
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                      Eventos Anteriores
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      Histórico e edições passadas
+                    </span>
+                  </div>
+                  <History className="w-5 h-5 text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors shrink-0" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    ao_fechar();
+                    if (ao_abrir_novo_evento) ao_abrir_novo_evento();
+                  }}
+                  className="p-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-700 text-left transition-all flex items-center justify-between cursor-pointer group"
+                >
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                      Criar novo evento
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      Inicializar nova instância
+                    </span>
+                  </div>
+                  <PlusCircle className="w-5 h-5 text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors shrink-0" />
+                </button>
+              </div>
+            </div>
+
             {/* Zona de Perigo / Ações Críticas */}
             <div className="pt-4 border-t border-red-200 dark:border-red-900/40">
               <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -336,16 +386,16 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
                     Zona de Perigo
                   </span>
                   <span className="text-[11px] text-red-700 dark:text-red-400">
-                    Limpa locks_ativos e redefine parâmetros de teste do evento.
+                    Limpa todas as avaliações, notas e locks do evento ativo.
                   </span>
                 </div>
                 <button
                   type="button"
-                  onClick={handleConfirmarReset}
-                  className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs shrink-0"
+                  onClick={ao_disparar_reset_global || handleConfirmarReset}
+                  className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs shrink-0 cursor-pointer"
                 >
                   <RotateCcw className="w-4 h-4" />
-                  Reset Global (Perigo)
+                  Reset Global
                 </button>
               </div>
             </div>
