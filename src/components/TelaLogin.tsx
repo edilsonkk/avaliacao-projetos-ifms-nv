@@ -262,17 +262,12 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
         </div>
 
         {/* Informações do Portal Atual */}
-        <div className="text-center space-y-1">
+        <div className="text-center">
           <h1 className="text-lg font-black text-slate-900 dark:text-white">
             {abaAtiva === 'avaliador' && 'Portal do Avaliador'}
             {abaAtiva === 'staff' && 'Portal da Equipe Staff'}
             {abaAtiva === 'admin' && 'Portal do Administrador'}
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            {abaAtiva === 'avaliador' && 'Acesso Zero-Fricção apenas com e-mail cadastrado.'}
-            {abaAtiva === 'staff' && 'Acesso Zero-Fricção apenas com e-mail cadastrado.'}
-            {abaAtiva === 'admin' && 'Acesso restrito ao painel geral de controle do evento.'}
-          </p>
         </div>
 
         {/* Alerta de Erro */}

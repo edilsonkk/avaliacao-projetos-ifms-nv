@@ -49,7 +49,7 @@ export const Cabecalho: React.FC<PropriedadesCabecalho> = ({
   useEffect(() => {
     const isDark =
       tema === 'escuro' ||
-      (tema === 'sistema' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      (tema === 'sistema' && typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
     if (isDark) {
       document.documentElement.classList.add('dark');
@@ -62,7 +62,7 @@ export const Cabecalho: React.FC<PropriedadesCabecalho> = ({
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-white/95 dark:bg-slate-900/95 backdrop-blur border-slate-200 dark:border-slate-800 transition-colors duration-200 shadow-xs">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className={`mx-auto px-4 sm:px-6 lg:px-8 transition-all duration-200 ${tela_atual === 'staff' ? 'max-w-[1800px]' : 'max-w-7xl'}`}>
         <div className="flex items-center justify-between h-16">
           {/* Logo e Título do Sistema */}
           <div className="flex items-center gap-3">
@@ -128,18 +128,21 @@ export const Cabecalho: React.FC<PropriedadesCabecalho> = ({
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={() => ao_mudar_tela('telao')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg transition-all shrink-0 ${
-                  tela_atual === 'telao'
-                    ? 'bg-emerald-600 text-white dark:bg-emerald-500 font-bold shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <Tv className="w-4 h-4" />
-                <span className="hidden md:inline">Telão</span>
-              </button>
+              {/* Botão Telão: visível apenas quando não estiver no Staff e perfil não for Staff */}
+              {tela_atual !== 'staff' && papel !== 'staff' && (
+                <button
+                  type="button"
+                  onClick={() => ao_mudar_tela('telao')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg transition-all shrink-0 ${
+                    tela_atual === 'telao'
+                      ? 'bg-emerald-600 text-white dark:bg-emerald-500 font-bold shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Tv className="w-4 h-4" />
+                  <span className="hidden md:inline">Telão</span>
+                </button>
+              )}
 
               {/* Botão Sair Obrigatório: Limpa estado e localStorage */}
               {ao_sair && (

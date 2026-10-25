@@ -10,12 +10,19 @@ import { TelaStaff } from './components/TelaStaff';
 import { TelaAdmin } from './components/TelaAdmin';
 import { TelaLogin, AbaLogin } from './components/TelaLogin';
 import { TelaoAoVivo } from './components/TelaoAoVivo';
+import { TelaAutocadastroAvaliador } from './components/TelaAutocadastroAvaliador';
 import { supabase } from './lib/supabase';
 
 export default function App() {
-  // Inicialização com rota raiz ('/') e '/login' apontando EXCLUSIVAMENTE para TelaLogin
-  const getInitialTela = (): TipoTelaNavegacao | 'login' => {
+  // Inicialização com suporte a autocadastro via QR Code e rota raiz apontando para TelaLogin
+  const getInitialTela = (): TipoTelaNavegacao | 'login' | 'autocadastro' => {
     const path = window.location.pathname;
+    const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+
+    if (searchParams?.get('cadastro') === 'avaliador' || path.includes('/autocadastro')) {
+      return 'autocadastro';
+    }
+
     const userPerfil = (localStorage.getItem('sessao_papel') || localStorage.getItem('usuario_perfil') || '').toLowerCase();
 
     if (path === '/' || path === '/login') {
@@ -32,7 +39,7 @@ export default function App() {
     return 'login';
   };
 
-  const [tela_atual, set_tela_atual] = useState<TipoTelaNavegacao | 'login'>(getInitialTela);
+  const [tela_atual, set_tela_atual] = useState<TipoTelaNavegacao | 'login' | 'autocadastro'>(getInitialTela);
   const [aba_login, set_aba_login] = useState<AbaLogin>('avaliador');
   const [, set_usuario_logado] = useState<string | null>(() => localStorage.getItem('sessao_id_usuario') || localStorage.getItem('usuario_id') || localStorage.getItem('avaliador_email'));
 
@@ -94,6 +101,13 @@ export default function App() {
         return <TelaAdmin />;
       case 'telao':
         return <TelaoAoVivo />;
+      case 'autocadastro':
+        return (
+          <TelaAutocadastroAvaliador
+            aoConcluir={() => set_tela_atual('login')}
+            aoVoltar={() => set_tela_atual('login')}
+          />
+        );
       case 'login':
       default:
         return (

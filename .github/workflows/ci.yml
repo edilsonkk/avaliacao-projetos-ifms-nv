@@ -22,5 +22,8 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: Executar Auditoria do Vitest
-        run: npm run test
+      - name: Auditoria de Tipagem TypeScript (Linter Gate)
+        run: npm run lint
+
+      - name: Executar Auditoria do Vitest (QA Gate)
+        run: npx vitest run

@@ -17,7 +17,12 @@ import {
   UserPlus,
   User,
   Mail,
-  Trash2
+  Trash2,
+  Pencil,
+  Check,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
 import { GestorAvaliadores } from './GestorAvaliadores';
@@ -37,6 +42,7 @@ interface ModalDetalhamentoProps {
   titulo: string;
   id_evento_ativo?: string;
   ao_fechar: () => void;
+  aoAtualizarMetricas?: () => void;
 }
 
 export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
@@ -44,13 +50,14 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
   titulo,
   id_evento_ativo = 'evt-2026-ifms',
   ao_fechar,
+  aoAtualizarMetricas,
 }) => {
   // Se for avaliadores ou staff, renderiza os gestores completos diretamente
   if (tipo === 'avaliadores') {
     return (
       <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-        <div className="w-full max-w-6xl my-auto max-h-[92vh] overflow-y-auto">
-          <GestorAvaliadores id_evento_ativo={id_evento_ativo} ao_fechar={ao_fechar} />
+        <div className="w-[98vw] max-w-[98vw] h-[95vh] max-h-[95vh] my-auto flex flex-col">
+          <GestorAvaliadores id_evento_ativo={id_evento_ativo} ao_fechar={ao_fechar} aoAtualizarMetricas={aoAtualizarMetricas} />
         </div>
       </div>
     );
@@ -59,8 +66,8 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
   if (tipo === 'staff') {
     return (
       <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-        <div className="w-full max-w-6xl my-auto max-h-[92vh] overflow-y-auto">
-          <GestorStaff ao_fechar={ao_fechar} />
+        <div className="w-[98vw] max-w-[98vw] h-[95vh] max-h-[95vh] my-auto flex flex-col">
+          <GestorStaff ao_fechar={ao_fechar} id_evento_ativo={id_evento_ativo} aoAtualizarMetricas={aoAtualizarMetricas} />
         </div>
       </div>
     );
@@ -71,10 +78,21 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
   const [mensagem_erro, set_mensagem_erro] = useState<string | null>(null);
   const [termo_busca, set_termo_busca] = useState<string>('');
 
+  // Estados de ordenação de colunas
+  const [colunaOrdenacao, setColunaOrdenacao] = useState<string>('');
+  const [ordemAscendente, setOrdemAscendente] = useState<boolean>(true);
+
   // Estados para formulário inline de Administradores
   const [novo_admin_nome, set_novo_admin_nome] = useState<string>('');
   const [novo_admin_email, set_novo_admin_email] = useState<string>('');
   const [salvando_admin, set_salvando_admin] = useState<boolean>(false);
+
+  // Estados para edição inline de Administrador
+  const [admin_em_edicao, set_admin_em_edicao] = useState<any | null>(null);
+  const [edit_admin_nome, set_edit_admin_nome] = useState<string>('');
+  const [edit_admin_email, set_edit_admin_email] = useState<string>('');
+  const [edit_admin_papel, set_edit_admin_papel] = useState<string>('ADMIN');
+  const [salvando_edicao_admin, set_salvando_edicao_admin] = useState<boolean>(false);
 
   const conexao_banco = verificar_conexao_configurada();
 
@@ -83,8 +101,7 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
     set_mensagem_erro(null);
 
     if (!conexao_banco) {
-      // Mock / fallback amigável quando banco não configurado
-      gerar_dados_contingencia();
+      set_registros([]);
       set_carregando(false);
       return;
     }
@@ -110,7 +127,7 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
         // Query com JOIN em projetos para ler codigo_projeto
         const { data, error } = await supabase
           .from('locks_ativos')
-          .select('id_projeto, id_usuario, projetos(codigo_projeto)');
+          .select('id_projeto, id_usuario, expira_em, projetos(codigo_projeto)');
 
         if (error) throw error;
         set_registros(data || []);
@@ -118,7 +135,7 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
         // Query com JOIN em projetos para ler codigo_projeto
         const { data, error } = await supabase
           .from('avaliacoes')
-          .select('id_avaliacao, nota_final, is_quarentena, id_projeto, id_usuario, projetos(codigo_projeto)')
+          .select('id_avaliacao, nota_final, is_quarentena, id_projeto, id_usuario, parecer_final, projetos(codigo_projeto)')
           .eq('is_quarentena', true);
 
         if (error) throw error;
@@ -137,7 +154,7 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
       } else if (tipo === 'avaliacoes') {
         const { data, error } = await supabase
           .from('avaliacoes')
-          .select('id_avaliacao, id_projeto, id_usuario, nota_final, status_avaliacao, parecer_final, projetos(codigo_projeto)')
+          .select('id_avaliacao, id_projeto, id_usuario, nota_final, status, status_avaliacao, parecer_final, projetos(codigo_projeto)')
           .limit(100);
 
         if (error) throw error;
@@ -146,38 +163,9 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
     } catch (e: any) {
       console.error(`Erro ao carregar dados reais do modal (${tipo}):`, e);
       set_mensagem_erro(`Erro do Supabase: ${e.message || 'Falha ao consultar tabela'}`);
-      gerar_dados_contingencia();
+      set_registros([]);
     } finally {
       set_carregando(false);
-    }
-  };
-
-  const gerar_dados_contingencia = () => {
-    if (tipo === 'projetos') {
-      set_registros([
-        { id_projeto: 'p1', codigo_projeto: 'FETEC-001', estande: 'EST-A01', corredor: 'Corredor A', titulo: 'Dispositivo IoT para Monitoramento Agrícola', instituicoes: { nome_exibicao: 'IFMS Câmpus Campo Grande' }, modalidades: { nome_modalidade: 'Pesquisa Aplicada' }, is_check_in_realizado: true },
-        { id_projeto: 'p2', codigo_projeto: 'FETEC-002', estande: 'EST-A02', corredor: 'Corredor A', titulo: 'Sistema Web de Gestão de Resíduos Orgânicos', instituicoes: { nome_exibicao: 'IFMS Câmpus Dourados' }, modalidades: { nome_modalidade: 'Extensão Tecnológica' }, is_check_in_realizado: false },
-        { id_projeto: 'p3', codigo_projeto: 'FETEC-003', estande: 'EST-B05', corredor: 'Corredor B', titulo: 'Análise Fisico-Química de Extratos Botânicos', instituicoes: { nome_exibicao: 'IFMS Câmpus Corumbá' }, modalidades: { nome_modalidade: 'Iniciação Científica' }, is_check_in_realizado: true },
-      ]);
-    } else if (tipo === 'locks') {
-      set_registros([
-        { id_projeto: 'proj-01-iot', codigo_projeto: 'FETEC-001', id_usuario: 'usr-101' },
-        { id_projeto: 'proj-02-bio', codigo_projeto: 'FETEC-002', id_usuario: 'usr-102' },
-      ]);
-    } else if (tipo === 'quarentena') {
-      set_registros([
-        { id_avaliacao: 'aval-q1', id_projeto: 'proj-01-iot', codigo_projeto: 'FETEC-001', id_usuario: 'usr-101', nota_final: 72.5, is_quarentena: true },
-        { id_avaliacao: 'aval-q2', id_projeto: 'proj-05-rob', codigo_projeto: 'FETEC-005', id_usuario: 'usr-105', nota_final: 65.0, is_quarentena: true },
-      ]);
-    } else if (tipo === 'administradores') {
-      set_registros([
-        { id_usuario: 'a1', nome: 'Coordenação Geral da FETEC', email: 'coord.fetec@ifms.edu.br', papel: 'SUPERADMIN' },
-        { id_usuario: 'a2', nome: 'Administrador de Sistema IFMS', email: 'admin.sistemas@ifms.edu.br', papel: 'ADMIN' },
-      ]);
-    } else if (tipo === 'avaliacoes') {
-      set_registros([
-        { id_avaliacao: 'av1', id_projeto: 'proj-01', id_usuario: 'usr-101', nota_final: 94.5, status_avaliacao: 'concluida' },
-      ]);
     }
   };
 
@@ -221,6 +209,7 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
       if (conexao_banco) {
         await carregar_dados_reais();
       }
+      if (aoAtualizarMetricas) aoAtualizarMetricas();
     } catch (err: any) {
       console.error('Erro ao adicionar administrador:', err);
       alert(`Erro ao adicionar administrador: ${err.message || err}`);
@@ -252,9 +241,61 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
 
       // Atualiza lista localmente
       set_registros((prev) => prev.filter((u) => u.id_usuario !== admin.id_usuario));
+      if (aoAtualizarMetricas) aoAtualizarMetricas();
     } catch (err: any) {
       console.error('Erro ao excluir administrador:', err);
       alert(`Erro ao excluir administrador: ${err.message || err}`);
+    }
+  };
+
+  const iniciar_edicao_admin = (admin: any) => {
+    set_admin_em_edicao(admin);
+    set_edit_admin_nome(admin.nome || '');
+    set_edit_admin_email(admin.email || '');
+    set_edit_admin_papel(admin.papel?.toUpperCase() || 'ADMIN');
+  };
+
+  const cancelar_edicao_admin = () => {
+    set_admin_em_edicao(null);
+  };
+
+  const handle_salvar_edicao_admin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!admin_em_edicao) return;
+
+    const nome = edit_admin_nome.trim();
+    const email = edit_admin_email.toLowerCase().trim();
+    const papel = edit_admin_papel.toUpperCase();
+
+    if (!nome || !email) {
+      alert('Preencha o Nome e o E-mail do Administrador.');
+      return;
+    }
+
+    set_salvando_edicao_admin(true);
+    try {
+      if (conexao_banco && admin_em_edicao.id_usuario) {
+        const { error } = await supabase
+          .from('usuarios')
+          .update({ nome, email, papel })
+          .eq('id_usuario', admin_em_edicao.id_usuario);
+        if (error) throw error;
+      }
+
+      set_registros((prev) =>
+        prev.map((u) =>
+          u.id_usuario === admin_em_edicao.id_usuario
+            ? { ...u, nome, email, papel }
+            : u
+        )
+      );
+      set_admin_em_edicao(null);
+      if (aoAtualizarMetricas) aoAtualizarMetricas();
+    } catch (err: any) {
+      console.error('Erro ao editar administrador:', err);
+      alert(`Erro ao editar administrador: ${err.message || err}`);
+    } finally {
+      set_salvando_edicao_admin(false);
     }
   };
 
@@ -264,6 +305,58 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
     const termo = termo_busca.toLowerCase().trim();
     const textoCompleto = JSON.stringify(item).toLowerCase();
     return textoCompleto.includes(termo);
+  });
+
+  const alternarOrdenacao = (coluna: string) => {
+    if (colunaOrdenacao === coluna) {
+      setOrdemAscendente(!ordemAscendente);
+    } else {
+      setColunaOrdenacao(coluna);
+      setOrdemAscendente(true);
+    }
+  };
+
+  const renderIconeOrdenacao = (coluna: string) => {
+    if (colunaOrdenacao !== coluna) {
+      return <ArrowUpDown className="w-3.5 h-3.5 opacity-40 hover:opacity-100 transition-opacity ml-1 inline-block shrink-0" />;
+    }
+    return ordemAscendente
+      ? <ArrowUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 ml-1 inline-block shrink-0" />
+      : <ArrowDown className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 ml-1 inline-block shrink-0" />;
+  };
+
+  const extrairValorCampo = (item: any, campo: string) => {
+    if (campo === 'codigo_projeto') {
+      const proj = Array.isArray(item.projetos) ? item.projetos[0] : item.projetos;
+      return item.codigo_projeto || proj?.codigo_projeto || '';
+    }
+    if (campo === 'instituicao') {
+      const inst = Array.isArray(item.instituicoes) ? item.instituicoes[0] : item.instituicoes;
+      return inst?.nome_exibicao || item.nome_instituicao || '';
+    }
+    if (campo === 'modalidade') {
+      const mod = Array.isArray(item.modalidades) ? item.modalidades[0] : item.modalidades;
+      return mod?.nome_modalidade || item.modalidade || '';
+    }
+    return item[campo];
+  };
+
+  const registros_ordenados = [...registros_filtrados].sort((a, b) => {
+    if (!colunaOrdenacao) return 0;
+    let valA = extrairValorCampo(a, colunaOrdenacao);
+    let valB = extrairValorCampo(b, colunaOrdenacao);
+    if (valA === undefined || valA === null) valA = '';
+    if (valB === undefined || valB === null) valB = '';
+    if (typeof valA === 'boolean') {
+      const numA = valA ? 1 : 0;
+      const numB = valB ? 1 : 0;
+      return ordemAscendente ? numA - numB : numB - numA;
+    }
+    if (typeof valA === 'number' && typeof valB === 'number') {
+      return ordemAscendente ? valA - valB : valB - valA;
+    }
+    const comp = String(valA).localeCompare(String(valB), 'pt-BR', { numeric: true, sensitivity: 'base' });
+    return ordemAscendente ? comp : -comp;
   });
 
   const extrair_icone = () => {
@@ -282,8 +375,8 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-5xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[88vh] animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl w-[98vw] max-w-[98vw] h-[95vh] max-h-[95vh] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
         {/* Cabeçalho do Modal */}
         <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-900/50">
           <div className="flex items-center gap-3">
@@ -293,13 +386,10 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
             <div>
               <h2 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
                 {titulo}
-                <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                  {registros_filtrados.length} {registros_filtrados.length === 1 ? 'registro' : 'registros'}
+                <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                  {registros_ordenados.length} {tipo === 'administradores' ? (registros_ordenados.length === 1 ? 'administrador' : 'administradores') : (registros_ordenados.length === 1 ? 'registro' : 'registros')}
                 </span>
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Consulta real no Supabase na tabela correspondente.
-              </p>
             </div>
           </div>
 
@@ -411,51 +501,95 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
                 <thead className="bg-slate-100 dark:bg-slate-800 uppercase font-black text-[10px] text-slate-600 dark:text-slate-400 tracking-wider">
                   {tipo === 'projetos' && (
                     <tr>
-                      <th className="px-4 py-3">CÓDIGO</th>
-                      <th className="px-4 py-3">Corredor</th>
-                      <th className="px-4 py-3">Estande</th>
-                      <th className="px-4 py-3">Título do Projeto</th>
-                      <th className="px-4 py-3">Instituição</th>
-                      <th className="px-4 py-3">Modalidade</th>
-                      <th className="px-4 py-3 text-center">Check-in</th>
+                      <th onClick={() => alternarOrdenacao('codigo_projeto')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>CÓDIGO</span>{renderIconeOrdenacao('codigo_projeto')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('corredor')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>Corredor</span>{renderIconeOrdenacao('corredor')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('estande')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>Estande</span>{renderIconeOrdenacao('estande')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('titulo')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>Título do Projeto</span>{renderIconeOrdenacao('titulo')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('instituicao')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>Instituição</span>{renderIconeOrdenacao('instituicao')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('modalidade')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>Modalidade</span>{renderIconeOrdenacao('modalidade')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('is_check_in_realizado')} className="px-4 py-3 text-center cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center justify-center gap-1"><span>Check-in</span>{renderIconeOrdenacao('is_check_in_realizado')}</div>
+                      </th>
                     </tr>
                   )}
 
                   {tipo === 'locks' && (
                     <tr>
-                      <th className="px-4 py-3">CÓDIGO</th>
-                      <th className="px-4 py-3">ID do Usuário (Avaliador)</th>
+                      <th onClick={() => alternarOrdenacao('codigo_projeto')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>CÓDIGO</span>{renderIconeOrdenacao('codigo_projeto')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('id_usuario')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>ID do Usuário (Avaliador)</span>{renderIconeOrdenacao('id_usuario')}</div>
+                      </th>
                       <th className="px-4 py-3 text-center">Status</th>
                     </tr>
                   )}
 
                   {tipo === 'quarentena' && (
                     <tr>
-                      <th className="px-4 py-3">ID Avaliação</th>
-                      <th className="px-4 py-3">CÓDIGO</th>
-                      <th className="px-4 py-3">ID Usuário (Avaliador)</th>
-                      <th className="px-4 py-3">Nota Final</th>
+                      <th onClick={() => alternarOrdenacao('id_avaliacao')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>ID Avaliação</span>{renderIconeOrdenacao('id_avaliacao')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('codigo_projeto')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>CÓDIGO</span>{renderIconeOrdenacao('codigo_projeto')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('id_usuario')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>ID Usuário</span>{renderIconeOrdenacao('id_usuario')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('nota_final')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>Nota Final</span>{renderIconeOrdenacao('nota_final')}</div>
+                      </th>
                       <th className="px-4 py-3 text-center">Status</th>
                     </tr>
                   )}
 
                   {tipo === 'administradores' && (
                     <tr>
-                      <th className="px-4 py-3">Nome</th>
-                      <th className="px-4 py-3">E-mail</th>
-                      <th className="px-4 py-3">Papel</th>
-                      <th className="px-4 py-3 font-mono text-xs">ID Usuário</th>
+                      <th onClick={() => alternarOrdenacao('nome')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>Nome</span>{renderIconeOrdenacao('nome')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('email')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>E-mail</span>{renderIconeOrdenacao('email')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('papel')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>Papel</span>{renderIconeOrdenacao('papel')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('id_usuario')} className="px-4 py-3 font-mono text-xs cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>ID Usuário</span>{renderIconeOrdenacao('id_usuario')}</div>
+                      </th>
                       <th className="px-4 py-3 text-right">Ações</th>
                     </tr>
                   )}
 
                   {tipo === 'avaliacoes' && (
                     <tr>
-                      <th className="px-4 py-3">ID Avaliação</th>
-                      <th className="px-4 py-3">CÓDIGO</th>
-                      <th className="px-4 py-3">ID Usuário</th>
-                      <th className="px-4 py-3">Nota Final</th>
-                      <th className="px-4 py-3">Status</th>
+                      <th onClick={() => alternarOrdenacao('id_avaliacao')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>ID Avaliação</span>{renderIconeOrdenacao('id_avaliacao')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('codigo_projeto')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>CÓDIGO</span>{renderIconeOrdenacao('codigo_projeto')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('id_usuario')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>ID Usuário</span>{renderIconeOrdenacao('id_usuario')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('nota_final')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>Nota Final</span>{renderIconeOrdenacao('nota_final')}</div>
+                      </th>
+                      <th onClick={() => alternarOrdenacao('status_avaliacao')} className="px-4 py-3 cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <div className="flex items-center gap-1"><span>Status</span>{renderIconeOrdenacao('status_avaliacao')}</div>
+                      </th>
                     </tr>
                   )}
                 </thead>
@@ -463,7 +597,7 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
                 {/* Corpo da Tabela */}
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
                   {tipo === 'projetos' &&
-                    registros_filtrados.map((p, idx) => {
+                    registros_ordenados.map((p, idx) => {
                       const dados_inst = Array.isArray(p.instituicoes) ? p.instituicoes[0] : p.instituicoes;
                       const dados_mod = Array.isArray(p.modalidades) ? p.modalidades[0] : p.modalidades;
                       const inst_nome = dados_inst?.nome_exibicao || p.nome_instituicao || 'Sem Instituição';
@@ -503,7 +637,7 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
                     })}
 
                   {tipo === 'locks' &&
-                    registros_filtrados.map((lock, idx) => {
+                    registros_ordenados.map((lock, idx) => {
                       const proj = Array.isArray(lock.projetos) ? lock.projetos[0] : lock.projetos;
                       const codProj = proj?.codigo_projeto || lock.codigo_projeto || 'N/I';
                       return (
@@ -524,7 +658,7 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
                     })}
 
                   {tipo === 'quarentena' &&
-                    registros_filtrados.map((q, idx) => {
+                    registros_ordenados.map((q, idx) => {
                       const projQ = Array.isArray(q.projetos) ? q.projetos[0] : q.projetos;
                       const codQ = projQ?.codigo_projeto || q.codigo_projeto || 'N/I';
                       return (
@@ -551,32 +685,109 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
                     })}
 
                   {tipo === 'administradores' &&
-                    registros_filtrados.map((u, idx) => (
-                      <tr key={u.id_usuario || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                        <td className="px-4 py-3 font-bold text-slate-900 dark:text-white">{u.nome}</td>
-                        <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-300">{u.email}</td>
-                        <td className="px-4 py-3">
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-800">
-                            {u.papel || 'ADMIN'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-xs text-slate-400">{u.id_usuario}</td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handle_excluir_admin(u)}
-                            title="Excluir Administrador"
-                            className="px-2.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 font-bold text-xs transition-all inline-flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>Excluir</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    registros_ordenados.map((u, idx) => {
+                      const estaEditando = admin_em_edicao?.id_usuario === u.id_usuario;
+
+                      if (estaEditando) {
+                        return (
+                          <tr key={u.id_usuario || idx} className="bg-purple-50/80 dark:bg-purple-950/40 border-y border-purple-200 dark:border-purple-800">
+                            <td className="px-4 py-2">
+                              <input
+                                type="text"
+                                value={edit_admin_nome}
+                                onChange={(e) => set_edit_admin_nome(e.target.value)}
+                                placeholder="Nome"
+                                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
+                                required
+                              />
+                            </td>
+                            <td className="px-4 py-2">
+                              <input
+                                type="email"
+                                value={edit_admin_email}
+                                onChange={(e) => set_edit_admin_email(e.target.value)}
+                                placeholder="E-mail"
+                                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-xs font-mono text-slate-900 dark:text-white"
+                                required
+                              />
+                            </td>
+                            <td className="px-4 py-2">
+                              <select
+                                value={edit_admin_papel}
+                                onChange={(e) => set_edit_admin_papel(e.target.value)}
+                                className="px-2 py-1.5 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
+                              >
+                                <option value="ADMIN">ADMIN</option>
+                                <option value="SUPERADMIN">SUPERADMIN</option>
+                              </select>
+                            </td>
+                            <td className="px-4 py-2 font-mono text-xs text-slate-400">
+                              {u.id_usuario}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              <div className="inline-flex items-center gap-1.5 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={handle_salvar_edicao_admin}
+                                  disabled={salvando_edicao_admin}
+                                  title="Salvar Alterações"
+                                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-all inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  {salvando_edicao_admin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                  <span>Salvar</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelar_edicao_admin}
+                                  title="Cancelar"
+                                  className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all cursor-pointer"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return (
+                        <tr key={u.id_usuario || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                          <td className="px-4 py-3 font-bold text-slate-900 dark:text-white">{u.nome}</td>
+                          <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-300">{u.email}</td>
+                          <td className="px-4 py-3">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-800">
+                              {u.papel || 'ADMIN'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs text-slate-400">{u.id_usuario}</td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="inline-flex items-center gap-1.5 justify-end">
+                              <button
+                                type="button"
+                                onClick={() => iniciar_edicao_admin(u)}
+                                title="Editar Administrador"
+                                className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-purple-100 dark:bg-slate-800 dark:hover:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-slate-200 dark:border-slate-700 font-bold text-xs transition-all inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                                <span>Editar</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handle_excluir_admin(u)}
+                                title="Excluir Administrador"
+                                className="px-2.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 font-bold text-xs transition-all inline-flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Excluir</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
 
                   {tipo === 'avaliacoes' &&
-                    registros_filtrados.map((av, idx) => {
+                    registros_ordenados.map((av, idx) => {
                       const projAv = Array.isArray(av.projetos) ? av.projetos[0] : av.projetos;
                       const codAv = projAv?.codigo_projeto || av.codigo_projeto || 'N/I';
                       return (

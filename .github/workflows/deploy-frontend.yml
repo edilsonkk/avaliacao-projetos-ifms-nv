@@ -1,0 +1,72 @@
+name: Continuous Deployment (CD) - Front-end Vite
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente de destino para implantação'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: deploy-frontend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-test:
+    name: Build & Validação de Qualidade
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'production' }}
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Ambiente Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar Dependências Estritas
+        run: npm ci
+
+      - name: Auditoria de Tipagem TypeScript (Linter)
+        run: npm run lint
+
+      - name: Executar Testes Automatizados (Vitest QA)
+        run: npm test
+
+      - name: Compilar Bundle de Produção (Vite)
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://siyenrhpejugoghlstqw.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpeWVucmhwZWp1Z29naGxzdHF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxOTU1ODEsImV4cCI6MjEwNzc3MTU4MX0.pf2SCiJfO4kGt9cKnWslf7dIAPwN74Szg9XZm-qV5NM' }}
+          APP_URL: ${{ vars.APP_URL || 'https://avaliacoes-ifms.edu.br' }}
+        run: npm run build
+
+      - name: Upload de Artefato de Produção
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+  deploy-pages:
+    name: Deploy no Host de Produção (GitHub Pages / Edge Host)
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publicar Aplicação no Host Definitivo
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -98,6 +98,12 @@ describe('Auditoria de Regressão: Atribuição Forçada', () => {
         });
       }
 
+      if (tabela === 'fila_atribuicoes_direcionadas') {
+        const chain = criarQueryChain({ data: [], error: null });
+        chain.insert = mockInsert;
+        return chain;
+      }
+
       return criarQueryChain({ data: [], error: null });
     });
   });
@@ -149,5 +155,72 @@ describe('Auditoria de Regressão: Atribuição Forçada', () => {
     const payloadEnviado = mockInsert.mock.calls[0][0][0];
     expect(payloadEnviado.expira_em).toBeDefined();
     expect(new Date(payloadEnviado.expira_em).getTime()).toBeGreaterThan(tempoAtual);
+  });
+
+  it('DEVE alternar entre as abas Banca Simultânea e Enfileirar para Avaliador', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    render(
+      <AtribuicaoForcada
+        isOpen={true}
+        aoFechar={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alocar Banca para Projeto')).toBeInTheDocument();
+      expect(screen.getByText('Enfileirar para Avaliador')).toBeInTheDocument();
+    });
+
+    const tabEnfileirar = screen.getByText('Enfileirar para Avaliador');
+    fireEvent.click(tabEnfileirar);
+
+    await waitFor(() => {
+      expect(screen.getByText('1. Escolha o Avaliador')).toBeInTheDocument();
+      expect(screen.getByText('2. Selecionar Projetos para a Fila')).toBeInTheDocument();
+    });
+  });
+
+  it('MODO ENFILEIRAR: se avaliador estiver livre, 1º projeto cria trava em locks_ativos e subsequente vai para fila', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    render(
+      <AtribuicaoForcada
+        isOpen={true}
+        aoFechar={vi.fn()}
+      />
+    );
+
+    // 1. Muda para aba Enfileirar
+    const tabEnfileirar = screen.getByText('Enfileirar para Avaliador');
+    fireEvent.click(tabEnfileirar);
+
+    await waitFor(() => {
+      expect(screen.getByText('Dra. Ana Credenciada')).toBeInTheDocument();
+    });
+
+    // 2. Seleciona avaliador livre
+    const cardAvaliador = screen.getByText('Dra. Ana Credenciada');
+    fireEvent.click(cardAvaliador);
+
+    // 3. Seleciona projeto elegível
+    await waitFor(() => {
+      expect(screen.getByText('PROJ-ELEGIVEL')).toBeInTheDocument();
+    });
+    const cardProjeto = screen.getByText('PROJ-ELEGIVEL');
+    fireEvent.click(cardProjeto);
+
+    // 4. Executa atribuição
+    const btnAtribuir = screen.getByRole('button', { name: /Forçar Atribuição Elegível/i });
+    fireEvent.click(btnAtribuir);
+
+    await waitFor(() => {
+      expect(mockFrom).toHaveBeenCalledWith('locks_ativos');
+      expect(mockInsert).toHaveBeenCalledWith([
+        expect.objectContaining({
+          id_usuario: 'usr-cred-1',
+          id_projeto: 'proj-elegivel-1',
+          expira_em: expect.any(String),
+        }),
+      ]);
+    });
   });
 });

@@ -16,10 +16,154 @@ import {
   LogOut,
   Mail,
   Lock,
+  Clock,
+  Calendar,
 } from 'lucide-react';
 import type { Projeto } from '../types/database';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
 import { TelaLogin } from './TelaLogin';
+
+export type StatusJanelaAvaliacao =
+  | 'liberado'
+  | 'antes_do_inicio'
+  | 'apos_o_fim'
+  | 'horario_nao_configurado'
+  | 'sistema_bloqueado';
+
+export interface InfoJanelaEvento {
+  id_evento?: string;
+  nome_evento?: string;
+  data_evento?: string | null;
+  horario_inicio?: string | null;
+  horario_fim?: string | null;
+  sistema_liberado?: boolean | null;
+}
+
+export interface ResultadoValidacaoJanela {
+  status: StatusJanelaAvaliacao;
+  mensagem: string;
+  dataEventoFormatada?: string;
+  horarioInicioFormatado?: string;
+  horarioFimFormatado?: string;
+  dataInicioReal?: Date;
+  dataFimReal?: Date;
+}
+
+export const formatarDataBr = (dataYmd?: string | null): string => {
+  if (!dataYmd) return '';
+  const apenasData = dataYmd.split('T')[0];
+  const partes = apenasData.split('-');
+  if (partes.length === 3) {
+    const [ano, mes, dia] = partes;
+    return `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${ano}`;
+  }
+  return dataYmd;
+};
+
+export const formatarHorarioBr = (horario?: string | null): string => {
+  if (!horario) return '';
+  const partes = horario.split(':');
+  if (partes.length >= 2) {
+    return `${partes[0].padStart(2, '0')}:${partes[1].padStart(2, '0')}`;
+  }
+  return horario;
+};
+
+export const validarJanelaAvaliacao = (
+  info?: InfoJanelaEvento | null,
+  dataHoraReferencia: Date = new Date()
+): ResultadoValidacaoJanela => {
+  if (!info || !info.data_evento || !info.horario_inicio || !info.horario_fim) {
+    return {
+      status: 'horario_nao_configurado',
+      mensagem: 'Os horários de início e término das avaliações ainda estão sendo configurados pela coordenação.',
+      dataEventoFormatada: formatarDataBr(info?.data_evento),
+      horarioInicioFormatado: formatarHorarioBr(info?.horario_inicio),
+      horarioFimFormatado: formatarHorarioBr(info?.horario_fim),
+    };
+  }
+
+  if (info.sistema_liberado === false) {
+    return {
+      status: 'sistema_bloqueado',
+      mensagem: 'O sistema de avaliação está temporariamente pausado pela coordenação do evento.',
+      dataEventoFormatada: formatarDataBr(info.data_evento),
+      horarioInicioFormatado: formatarHorarioBr(info.horario_inicio),
+      horarioFimFormatado: formatarHorarioBr(info.horario_fim),
+    };
+  }
+
+  const apenasData = info.data_evento.split('T')[0];
+  const partesData = apenasData.split('-');
+  const partesHoraIni = info.horario_inicio.split(':');
+  const partesHoraFim = info.horario_fim.split(':');
+
+  if (partesData.length !== 3 || partesHoraIni.length < 2 || partesHoraFim.length < 2) {
+    return {
+      status: 'horario_nao_configurado',
+      mensagem: 'Formato de data ou horário do evento inválido no sistema.',
+    };
+  }
+
+  const ano = parseInt(partesData[0], 10);
+  const mes = parseInt(partesData[1], 10) - 1;
+  const dia = parseInt(partesData[2], 10);
+
+  const horaIni = parseInt(partesHoraIni[0], 10);
+  const minIni = parseInt(partesHoraIni[1], 10);
+
+  const horaFim = parseInt(partesHoraFim[0], 10);
+  const minFim = parseInt(partesHoraFim[1], 10);
+
+  if (isNaN(ano) || isNaN(mes) || isNaN(dia) || isNaN(horaIni) || isNaN(minIni) || isNaN(horaFim) || isNaN(minFim)) {
+    return {
+      status: 'horario_nao_configurado',
+      mensagem: 'Formato de data ou horário do evento inválido no sistema.',
+    };
+  }
+
+  const dataInicioReal = new Date(ano, mes, dia, horaIni, minIni, 0, 0);
+  const dataFimReal = new Date(ano, mes, dia, horaFim, minFim, 0, 0);
+  const agoraMs = dataHoraReferencia.getTime();
+
+  const dataFormatada = `${String(dia).padStart(2, '0')}/${String(mes + 1).padStart(2, '0')}/${ano}`;
+  const horaIniFormatada = `${String(horaIni).padStart(2, '0')}:${String(minIni).padStart(2, '0')}`;
+  const horaFimFormatada = `${String(horaFim).padStart(2, '0')}:${String(minFim).padStart(2, '0')}`;
+
+  if (agoraMs < dataInicioReal.getTime()) {
+    return {
+      status: 'antes_do_inicio',
+      mensagem: `As avaliações ainda não começaram. Início previsto: ${dataFormatada} às ${horaIniFormatada}.`,
+      dataEventoFormatada: dataFormatada,
+      horarioInicioFormatado: horaIniFormatada,
+      horarioFimFormatado: horaFimFormatada,
+      dataInicioReal,
+      dataFimReal,
+    };
+  }
+
+  if (agoraMs > dataFimReal.getTime()) {
+    return {
+      status: 'apos_o_fim',
+      mensagem: `As avaliações deste evento foram encerradas em ${dataFormatada} às ${horaFimFormatada}.`,
+      dataEventoFormatada: dataFormatada,
+      horarioInicioFormatado: horaIniFormatada,
+      horarioFimFormatado: horaFimFormatada,
+      dataInicioReal,
+      dataFimReal,
+    };
+  }
+
+  return {
+    status: 'liberado',
+    mensagem: 'Janela de avaliação liberada.',
+    dataEventoFormatada: dataFormatada,
+    horarioInicioFormatado: horaIniFormatada,
+    horarioFimFormatado: horaFimFormatada,
+    dataInicioReal,
+    dataFimReal,
+  };
+};
 
 interface CriterioLikert {
   id_criterio: string;
@@ -70,37 +214,8 @@ const criterios_avaliacao_likert: CriterioLikert[] = [
   },
 ];
 
-// Dados mock de fallback para quando a Stored Procedure do Supabase estiver vazia ou em teste offline
-const projetos_mock_fallback: Projeto[] = [
-  {
-    id: 'proj-001',
-    id_projeto: 'proj-001',
-    titulo_projeto: 'Dispositivo IoT para Monitoramento Agrícola com Energia Solar',
-    titulo: 'Dispositivo IoT para Monitoramento Agrícola com Energia Solar',
-    area_conhecimento: 'Engenharias e Ciências Agrárias',
-    nome_instituicao: 'IFMS - Câmpus Campo Grande',
-    estudantes_nomes: ['Gabriel Lima', 'Beatriz Santos'],
-    expositores: 'Gabriel Lima, Beatriz Santos',
-    corredor: 'A',
-    estande_numero: 'EST-A12',
-    estande: 'EST-A12',
-    is_check_in_realizado: true,
-  },
-  {
-    id: 'proj-002',
-    id_projeto: 'proj-002',
-    titulo_projeto: 'Análise Fisico-Química de Extratos Botânicos do Pantanal',
-    titulo: 'Análise Fisico-Química de Extratos Botânicos do Pantanal',
-    area_conhecimento: 'Ciências Biológicas e da Saúde',
-    nome_instituicao: 'IFMS - Câmpus Corumbá',
-    estudantes_nomes: ['Enzo Gabriel', 'Camila Rocha'],
-    expositores: 'Enzo Gabriel, Camila Rocha',
-    corredor: 'B',
-    estande_numero: 'EST-B05',
-    estande: 'EST-B05',
-    is_check_in_realizado: true,
-  },
-];
+// Contingência vazia para projetos do avaliador
+const projetos_mock_fallback: Projeto[] = [];
 
 // Utilitário de validação UUID v4 para integridade com PostgreSQL
 const isUUID = (str?: string): boolean =>
@@ -131,6 +246,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
   // Estados do formulário de avaliação - null por padrão para exigir confirmação de presença
   const [status_presenca, set_status_presenca] = useState<'presente' | 'ausente' | null>(null);
+  const [horario_inicio_avaliacao, set_horario_inicio_avaliacao] = useState<string | null>(null);
   const [lista_criterios, set_lista_criterios] = useState<CriterioLikert[]>([]);
   const [notas_criterios, set_notas_criterios] = useState<Record<string, number>>({});
   const [parecer_avaliador, set_parecer_avaliador] = useState<string>('');
@@ -149,6 +265,10 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
   const [mostrar_modal_conflito, set_mostrar_modal_conflito] = useState<boolean>(false);
   const [is_dispositivo_offline, set_is_dispositivo_offline] = useState<boolean>(!navigator.onLine);
   const [verificando_lock, set_verificando_lock] = useState<boolean>(() => !!(prop_id_usuario_logado || localStorage.getItem('sessao_id_usuario') || localStorage.getItem('avaliador_id_usuario')));
+
+  // 1.1 ESTADOS DE JANELA DE HORÁRIOS DO EVENTO (Configurações Admin)
+  const [status_janela, set_status_janela] = useState<StatusJanelaAvaliacao | null>(null);
+  const [info_evento_ativo, set_info_evento_ativo] = useState<InfoJanelaEvento | null>(null);
 
   const conexao_banco_configurada = verificar_conexao_configurada();
 
@@ -364,6 +484,65 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
     return id_evt;
   };
 
+  // Busca os dados da janela de horário do evento ativo na tabela 'eventos'
+  const carregar_dados_janela_evento = async (idEvtParam?: string): Promise<InfoJanelaEvento | null> => {
+    let id_evt = idEvtParam || prop_id_evento_ativo || id_evento;
+    if (isUUID(id_evt)) {
+      const { data } = await supabase
+        .from('eventos')
+        .select('id_evento, nome_evento, data_evento, horario_inicio, horario_fim, sistema_liberado')
+        .eq('id_evento', id_evt)
+        .maybeSingle();
+      if (data) return data;
+    }
+
+    const { data: evtAtivo } = await supabase
+      .from('eventos')
+      .select('id_evento, nome_evento, data_evento, horario_inicio, horario_fim, sistema_liberado')
+      .eq('is_ativo', true)
+      .maybeSingle();
+
+    if (evtAtivo) return evtAtivo;
+
+    const { data: anyEvt } = await supabase
+      .from('eventos')
+      .select('id_evento, nome_evento, data_evento, horario_inicio, horario_fim, sistema_liberado')
+      .limit(1)
+      .maybeSingle();
+
+    return anyEvt || null;
+  };
+
+  // Verificação manual e reativa do horário disparada pelo avaliador
+  const verificar_horario_evento = async () => {
+    set_carregando_sorteio(true);
+    try {
+      const id_evt = await obter_id_evento_ativo();
+      const infoEvento = await carregar_dados_janela_evento(id_evt);
+      set_info_evento_ativo(infoEvento);
+      const validacao = validarJanelaAvaliacao(infoEvento);
+      set_status_janela(validacao.status);
+
+      if (validacao.status === 'liberado') {
+        exibir_notificacao('Horário liberado! Iniciando sorteio de projetos...');
+        await acionarSorteio(id_evt);
+      } else if (validacao.status === 'antes_do_inicio') {
+        exibir_notificacao(`Avaliações iniciam às ${validacao.horarioInicioFormatado || 'breve'}. Seu login está OK!`);
+      } else if (validacao.status === 'apos_o_fim') {
+        exibir_notificacao('Período de avaliações encerrado para este evento.');
+      } else if (validacao.status === 'sistema_bloqueado') {
+        exibir_notificacao('O sistema continua temporariamente pausado pela coordenação.');
+      } else {
+        exibir_notificacao('Horários em configuração pela coordenação. Login OK!');
+      }
+    } catch (e: any) {
+      console.error('Erro ao verificar horário do evento:', e);
+      set_mensagem_erro('Falha ao verificar os horários do evento. Tente novamente.');
+    } finally {
+      set_carregando_sorteio(false);
+    }
+  };
+
   // Helpers para padronização de hidratação de projeto e mensagens
   const setProjetoAtual = (proj: any) => {
     if (!proj) {
@@ -431,10 +610,8 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
     if (!conexao_banco_configurada) {
       setTimeout(() => {
-        set_projeto_atual((anterior) => {
-          if (!anterior) return projetos_mock_fallback[0];
-          return anterior.id === 'proj-001' ? projetos_mock_fallback[1] : projetos_mock_fallback[0];
-        });
+        set_projeto_atual(null);
+        set_mensagem_erro('Banco de dados não configurado ou desconectado.');
         set_carregando_sorteio(false);
       }, 500);
       return;
@@ -446,39 +623,208 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
         id_evento_ativo = await obter_id_evento_ativo();
       }
 
-      // Exclusão explícita de trava anterior usando a chave primária real obtida do cache
-      await supabase.from('locks_ativos').delete().eq('id_usuario', avaliadorId);
+      // Validação estrita da janela temporal de avaliação do evento
+      const infoEvento = await carregar_dados_janela_evento(id_evento_ativo);
+      const validacao = validarJanelaAvaliacao(infoEvento);
+      set_info_evento_ativo(infoEvento);
+      set_status_janela(validacao.status);
 
-      // Chamada RPC com o ID vindo obrigatoriamente do cache local
-      let { data: ret, error: errSorteio } = await supabase.rpc('sortear_proximo_projeto', { 
-        p_id_usuario: avaliadorId, 
-        p_id_evento: id_evento_ativo 
-      });
-
-      // Suporte a alias de RPC (sortear_projeto / sortear_proximo_projeto)
-      if (errSorteio && (errSorteio.message.includes('function') || errSorteio.code === 'PGRST202')) {
-        const { data: retAlt, error: errAlt } = await supabase.rpc('sortear_projeto', {
-          p_id_usuario: avaliadorId,
-          p_id_evento: id_evento_ativo
-        });
-        if (!errAlt) {
-          ret = retAlt;
-          errSorteio = null;
-        }
-      }
-
-      if (errSorteio) {
-        console.error("Erro na RPC:", errSorteio);
-        alert("Erro no motor de sorteio: " + errSorteio.message);
-        set_mensagem_erro(`Erro RPC: ${errSorteio.message}`);
+      if (validacao.status !== 'liberado') {
+        set_projeto_atual(null);
+        set_carregando_sorteio(false);
         return;
       }
 
-      // Extração defensiva do UUID (trata tanto escalar quanto objeto)
-      const idSorteado = typeof ret === 'object' && ret !== null ? Object.values(ret)[0] : ret;
+      // Exclusão explícita de trava anterior usando a chave primária real obtida do cache
+      await supabase.from('locks_ativos').delete().eq('id_usuario', avaliadorId);
+
+      // 1. Verifica se há projeto direcionado pendente na fila do avaliador
+      let idProjetoAtribuido: string | null = null;
+      try {
+        const { data: itemFila } = await supabase
+          .from('fila_atribuicoes_direcionadas')
+          .select('id_atribuicao, id_projeto')
+          .eq('id_usuario', avaliadorId)
+          .eq('status', 'pendente')
+          .order('ordem', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (itemFila?.id_projeto) {
+          // Checagem de bloqueio de modalidade e se o avaliador já avaliou este projeto
+          let modalidadeBloqueada = false;
+          let jaAvaliado = false;
+          try {
+            const [resProjMod, resBloqMod, resAvExistente] = await Promise.all([
+              supabase
+                .from('projetos')
+                .select('id_modalidade')
+                .eq('id_projeto', itemFila.id_projeto)
+                .maybeSingle(),
+              supabase
+                .from('avaliador_modalidades_bloqueadas')
+                .select('id_modalidade')
+                .eq('id_usuario', avaliadorId),
+              supabase
+                .from('avaliacoes')
+                .select('id_avaliacao')
+                .eq('id_projeto', itemFila.id_projeto)
+                .eq('id_usuario', avaliadorId)
+                .maybeSingle(),
+            ]);
+
+            const idModProj = resProjMod.data?.id_modalidade;
+            const modsBloqueadas = new Set((resBloqMod.data || []).map((b: any) => b.id_modalidade));
+            if (idModProj && modsBloqueadas.has(idModProj)) {
+              modalidadeBloqueada = true;
+            }
+            if (resAvExistente.data?.id_avaliacao) {
+              jaAvaliado = true;
+            }
+          } catch (_eBloq) {
+            // Em caso de erro na consulta de bloqueios, não interrompe
+          }
+
+          if (modalidadeBloqueada || jaAvaliado) {
+            // Projeto da fila pertence a modalidade bloqueada ou já foi avaliado: descarta e segue para sorteio
+            await supabase
+              .from('fila_atribuicoes_direcionadas')
+              .update({ status: jaAvaliado ? 'ja_avaliado' : 'bloqueada_por_modalidade' })
+              .eq('id_atribuicao', itemFila.id_atribuicao);
+          } else {
+            // Checagem de cota: verifica se o projeto já completou a cota de avaliações ativas
+            let cotaAlcancada = false;
+            try {
+              const [resProj, resCountAv] = await Promise.all([
+                supabase
+                  .from('projetos')
+                  .select('cota_avaliacoes_customizada, id_evento')
+                  .eq('id_projeto', itemFila.id_projeto)
+                  .maybeSingle(),
+                supabase
+                  .from('avaliacoes')
+                  .select('id_avaliacao', { count: 'exact', head: true })
+                  .eq('id_projeto', itemFila.id_projeto)
+                  .neq('status', 'CANCELADA'),
+              ]);
+
+              const cotaProjeto = resProj.data?.cota_avaliacoes_customizada;
+              let cotaLimite = cotaProjeto || 3;
+              if (!cotaProjeto && id_evento_ativo) {
+                const { data: evData } = await supabase
+                  .from('eventos')
+                  .select('cota_avaliacoes_padrao')
+                  .eq('id_evento', id_evento_ativo)
+                  .maybeSingle();
+                if (evData?.cota_avaliacoes_padrao) {
+                  cotaLimite = evData.cota_avaliacoes_padrao;
+                }
+              }
+
+              const totalFeitas = resCountAv.count || 0;
+              if (totalFeitas >= cotaLimite) {
+                cotaAlcancada = true;
+              }
+            } catch (_eCota) {
+              // Em caso de falha de consulta, não bloqueia
+            }
+
+            if (cotaAlcancada) {
+              // Projeto da fila já atingiu cota: descarta e segue para o sorteio normal
+              await supabase
+                .from('fila_atribuicoes_direcionadas')
+                .update({ status: 'concluida_por_outros' })
+                .eq('id_atribuicao', itemFila.id_atribuicao);
+            } else {
+              const expiracao2Horas = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+              const { error: lockFilaErr } = await supabase.from('locks_ativos').insert([{
+                id_usuario: avaliadorId,
+                id_projeto: itemFila.id_projeto,
+                expira_em: expiracao2Horas,
+              }]);
+
+              if (!lockFilaErr) {
+                idProjetoAtribuido = itemFila.id_projeto;
+                await supabase
+                  .from('fila_atribuicoes_direcionadas')
+                  .update({ status: 'em_andamento' })
+                  .eq('id_atribuicao', itemFila.id_atribuicao);
+              }
+            }
+          }
+        }
+      } catch (_errFila) {
+        // Fallback resiliente caso a tabela da fila ainda não exista no Supabase
+      }
+
+      let idSorteado: any = idProjetoAtribuido;
 
       if (!idSorteado) {
-        setMensagemFila("Todos os projetos disponíveis já foram avaliados ou bloqueados.");
+        // Chamada RPC com o ID vindo obrigatoriamente do cache local
+        let { data: ret, error: errSorteio } = await supabase.rpc('sortear_proximo_projeto', {
+          p_id_usuario: avaliadorId,
+          p_id_evento: id_evento_ativo
+        });
+
+        // Suporte a alias de RPC (sortear_projeto / sortear_proximo_projeto)
+        if (errSorteio && (errSorteio.message.includes('function') || errSorteio.code === 'PGRST202')) {
+          const { data: retAlt, error: errAlt } = await supabase.rpc('sortear_projeto', {
+            p_id_usuario: avaliadorId,
+            p_id_evento: id_evento_ativo
+          });
+          if (!errAlt) {
+            ret = retAlt;
+            errSorteio = null;
+          }
+        }
+
+        if (errSorteio) {
+          console.error("Erro na RPC:", errSorteio);
+          alert("Erro no motor de sorteio: " + errSorteio.message);
+          set_mensagem_erro(`Erro RPC: ${errSorteio.message}`);
+          return;
+        }
+
+        // Extração defensiva do UUID (trata tanto escalar quanto objeto)
+        idSorteado = typeof ret === 'object' && ret !== null ? Object.values(ret)[0] : ret;
+      }
+
+      if (!idSorteado) {
+        // Verifica se todos os projetos ativos já atingiram a cota padrão do evento
+        let feiraFinalizada = false;
+        try {
+          if (id_evento_ativo) {
+            const [resProjEvt, resEvt] = await Promise.all([
+              supabase
+                .from('projetos')
+                .select('id_projeto, avaliacoes(id_avaliacao)')
+                .eq('id_evento', id_evento_ativo)
+                .eq('fora_da_competicao', false),
+              supabase
+                .from('eventos')
+                .select('cota_avaliacoes_padrao')
+                .eq('id_evento', id_evento_ativo)
+                .single(),
+            ]);
+
+            const cotaPadrao = resEvt.data?.cota_avaliacoes_padrao || 3;
+            const projs = resProjEvt.data || [];
+            if (projs.length > 0) {
+              feiraFinalizada = projs.every((p: any) => {
+                const qtd = Array.isArray(p.avaliacoes) ? p.avaliacoes.length : 0;
+                return qtd >= cotaPadrao;
+              });
+            }
+          }
+        } catch (_errFeira) {
+          // Fallback silencioso
+        }
+
+        if (feiraFinalizada) {
+          setMensagemFila("Avaliações da Feira Concluídas! Todos os projetos atingiram a cota necessária.");
+        } else {
+          setMensagemFila("Todos os projetos disponíveis já foram avaliados ou bloqueados por conflito institucional/modalidade.");
+        }
         setProjetoAtual(null);
         return;
       }
@@ -542,6 +888,11 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
           id_evento_ativo = evt.id_evento;
         }
 
+        const infoEvento = await carregar_dados_janela_evento(id_evento_ativo);
+        const validacao = validarJanelaAvaliacao(infoEvento);
+        set_info_evento_ativo(infoEvento);
+        set_status_janela(validacao.status);
+
         const { data: lockAtivo, error: errLock } = await supabase
           .from('locks_ativos')
           .select('id_projeto')
@@ -553,23 +904,54 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
         }
 
         if (lockAtivo?.id_projeto) {
-          const { data: proj } = await supabase
-            .from('projetos')
-            .select('*, modalidades(nome_modalidade), instituicoes(nome_exibicao)')
-            .eq('id_projeto', lockAtivo.id_projeto)
-            .single();
+          const [resProj, resBloq, resAvalJaFeita] = await Promise.all([
+            supabase
+              .from('projetos')
+              .select('*, modalidades(nome_modalidade), instituicoes(nome_exibicao)')
+              .eq('id_projeto', lockAtivo.id_projeto)
+              .maybeSingle(),
+            supabase
+              .from('avaliador_modalidades_bloqueadas')
+              .select('id_modalidade')
+              .eq('id_usuario', avaliadorId),
+            supabase
+              .from('avaliacoes')
+              .select('id_avaliacao')
+              .eq('id_projeto', lockAtivo.id_projeto)
+              .eq('id_usuario', avaliadorId)
+              .maybeSingle(),
+          ]);
 
-          if (proj) {
+          const proj = resProj.data;
+          const modsBloqueadas = new Set((resBloq.data || []).map((b: any) => b.id_modalidade));
+          const isModBloqueada = proj?.id_modalidade && modsBloqueadas.has(proj.id_modalidade);
+          const jaPossuiAvaliacao = !!resAvalJaFeita?.data?.id_avaliacao;
+
+          if (proj && !isModBloqueada && !jaPossuiAvaliacao) {
             setProjetoAtual(proj);
             setMensagemFila(null);
             exibir_notificacao('Avaliação em andamento retomada do banco de dados.');
           } else {
-            console.warn('Lock ativo para projeto não encontrado. Removendo trava e sorteando...');
+            if (isModBloqueada) {
+              console.warn('Trava ativa anterior pertencia a modalidade bloqueada. Removendo trava e sorteando...');
+            } else if (jaPossuiAvaliacao) {
+              console.warn('Trava ativa para projeto que já possui registro de avaliação (ou cancelada). Removendo trava e sorteando...');
+            } else {
+              console.warn('Lock ativo para projeto não encontrado. Removendo trava e sorteando...');
+            }
             await supabase.from('locks_ativos').delete().eq('id_usuario', avaliadorId);
-            await acionarSorteio(id_evento_ativo);
+            if (validacao.status === 'liberado') {
+              await acionarSorteio(id_evento_ativo);
+            } else {
+              set_projeto_atual(null);
+            }
           }
         } else {
-          await acionarSorteio(id_evento_ativo);
+          if (validacao.status === 'liberado') {
+            await acionarSorteio(id_evento_ativo);
+          } else {
+            set_projeto_atual(null);
+          }
         }
       } catch (err: any) {
         console.error('Falha no fluxo automático do avaliador:', err);
@@ -669,6 +1051,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
   const marcar_presenca = async (status: 'presente' | 'ausente') => {
     if (status === 'presente') {
       set_status_presenca('presente');
+      set_horario_inicio_avaliacao(new Date().toISOString());
 
       if (!projeto_atual) return;
 
@@ -706,8 +1089,11 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
     const soma_notas = valores_notas.reduce((acc, curr) => acc + curr, 0);
     const nota_final = Number((soma_notas / (valores_notas.length || 1)).toFixed(2));
 
+    const timestampSubmissao = new Date().toISOString();
+    const timestampInicio = horario_inicio_avaliacao || timestampSubmissao;
+
     if (!navigator.onLine || !conexao_banco_configurada) {
-      const desconexao_timestamp = new Date().toISOString();
+      const desconexao_timestamp = timestampSubmissao;
 
       const avaliacao_offline = {
         id_usuario: avaliadorId,
@@ -716,6 +1102,8 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
         notas_criterios,
         nota_final,
         parecer_final: parecer_avaliador,
+        tempo_presenca: timestampInicio,
+        tempo_submissao: timestampSubmissao,
         desconexao_timestamp,
       };
 
@@ -746,7 +1134,8 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
           id_usuario: avaliadorId,
           nota_final: nota_final,
           parecer_final: parecer_avaliador,
-          tempo_presenca: new Date().toISOString(),
+          tempo_presenca: timestampInicio,
+          tempo_submissao: timestampSubmissao,
         })
         .select('id_avaliacao')
         .single();
@@ -788,7 +1177,19 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
       await supabase.from('locks_ativos').delete().eq('id_usuario', avaliadorId);
 
+      // Marca item concluído na fila direcionada, se houver
+      try {
+        await supabase
+          .from('fila_atribuicoes_direcionadas')
+          .update({ status: 'concluido' })
+          .eq('id_usuario', avaliadorId)
+          .eq('id_projeto', projetoAtual.id_projeto || projetoAtual.id);
+      } catch (_errConcluirFila) {
+        // Fallback silencioso
+      }
+
       set_projeto_atual(null);
+      set_horario_inicio_avaliacao(null);
       alert('Avaliação gravada com sucesso e trava liberada!');
       exibir_notificacao('Avaliação gravada no Supabase e trava liberada com sucesso!');
       await acionarSorteio();
@@ -889,8 +1290,188 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
         </div>
       )}
 
-      {/* ESTADO 1: FILA VAZIA OU COTA ATINGIDA */}
-      {!verificando_lock && !carregando_sorteio && mensagem_fila_vazia && (
+      {/* ESTADO TEMPORAL 1: ANTES DO INÍCIO DAS AVALIAÇÕES */}
+      {!verificando_lock && !carregando_sorteio && !projeto_atual && status_janela === 'antes_do_inicio' && (
+        <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-700 shadow-md text-center space-y-5">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-full text-xs font-bold mx-auto">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span>Login Conectado com Sucesso</span>
+          </div>
+
+          <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+            <Clock className="w-8 h-8" />
+          </div>
+
+          <div className="space-y-1.5">
+            <h2 className="text-xl font-black text-slate-900 dark:text-white">
+              As avaliações ainda não começaram
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
+              Seu acesso de avaliador está confirmado e ativo. O sorteio e o envio de avaliações serão liberados no horário programado.
+            </p>
+          </div>
+
+          <div className="bg-slate-50 dark:bg-slate-900/70 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/60 text-xs text-left space-y-2">
+            <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
+              <span className="font-semibold flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                Data do Evento:
+              </span>
+              <span className="font-bold text-slate-900 dark:text-white">
+                {formatarDataBr(info_evento_ativo?.data_evento) || 'A definir'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-slate-700 dark:text-slate-300 pt-1.5 border-t border-slate-200/60 dark:border-slate-800">
+              <span className="font-semibold flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                Início Previsto:
+              </span>
+              <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                {formatarHorarioBr(info_evento_ativo?.horario_inicio) || '--:--'}
+                {info_evento_ativo?.horario_fim ? ` (até ${formatarHorarioBr(info_evento_ativo.horario_fim)})` : ''}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2 pt-2">
+            <button
+              type="button"
+              onClick={verificar_horario_evento}
+              disabled={isProcessing || carregando_sorteio}
+              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Atualizar / Verificar Horário
+            </button>
+            <button
+              type="button"
+              onClick={logout_avaliador}
+              className="w-full py-2.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Sair da Conta
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ESTADO TEMPORAL 2: APÓS O ENCERRAMENTO DAS AVALIAÇÕES */}
+      {!verificando_lock && !carregando_sorteio && !projeto_atual && status_janela === 'apos_o_fim' && (
+        <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-700 shadow-md text-center space-y-4">
+          <div className="w-16 h-16 bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-300 rounded-2xl flex items-center justify-center mx-auto">
+            <Clock className="w-8 h-8" />
+          </div>
+
+          <div className="space-y-1.5">
+            <h2 className="text-xl font-black text-slate-900 dark:text-white">
+              Avaliações Encerradas
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
+              O período de avaliação deste evento terminou. Agradecemos imensamente pela sua colaboração e dedicação!
+            </p>
+            {info_evento_ativo?.horario_fim && (
+              <p className="text-[11px] font-semibold text-slate-400 pt-1">
+                Encerrado em {formatarDataBr(info_evento_ativo.data_evento)} às {formatarHorarioBr(info_evento_ativo.horario_fim)}
+              </p>
+            )}
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={logout_avaliador}
+              className="w-full py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-4 h-4" />
+              Sair da Conta
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ESTADO TEMPORAL 3: HORÁRIOS NÃO CONFIGURADOS PELA COORDENAÇÃO */}
+      {!verificando_lock && !carregando_sorteio && !projeto_atual && status_janela === 'horario_nao_configurado' && (
+        <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-700 shadow-md text-center space-y-5">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-full text-xs font-bold mx-auto">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span>Login Conectado com Sucesso</span>
+          </div>
+
+          <div className="w-16 h-16 bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-8 h-8" />
+          </div>
+
+          <div className="space-y-1.5">
+            <h2 className="text-xl font-black text-slate-900 dark:text-white">
+              Horários em Configuração
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
+              Seu login está confirmado e ativo, mas os horários de início e término das avaliações ainda estão sendo configurados pela coordenação do evento.
+            </p>
+          </div>
+
+          <div className="space-y-2 pt-2">
+            <button
+              type="button"
+              onClick={verificar_horario_evento}
+              disabled={isProcessing || carregando_sorteio}
+              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Atualizar / Verificar Horário
+            </button>
+            <button
+              type="button"
+              onClick={logout_avaliador}
+              className="w-full py-2.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Sair da Conta
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ESTADO TEMPORAL 4: SISTEMA TEMPORARIAMENTE PAUSADO */}
+      {!verificando_lock && !carregando_sorteio && !projeto_atual && status_janela === 'sistema_bloqueado' && (
+        <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-700 shadow-md text-center space-y-5">
+          <div className="w-16 h-16 bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
+            <Lock className="w-8 h-8" />
+          </div>
+
+          <div className="space-y-1.5">
+            <h2 className="text-xl font-black text-slate-900 dark:text-white">
+              Avaliações Pausadas
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
+              O sistema de avaliação foi temporariamente pausado pela coordenação do evento. Aguarde a reabertura para novas avaliações.
+            </p>
+          </div>
+
+          <div className="space-y-2 pt-2">
+            <button
+              type="button"
+              onClick={verificar_horario_evento}
+              disabled={isProcessing || carregando_sorteio}
+              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Atualizar / Verificar Horário
+            </button>
+            <button
+              type="button"
+              onClick={logout_avaliador}
+              className="w-full py-2.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Sair da Conta
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ESTADO 1: FILA VAZIA OU COTA ATINGIDA (Sem o subtítulo longo) */}
+      {!verificando_lock && !carregando_sorteio && !projeto_atual && (status_janela === 'liberado' || !status_janela) && mensagem_fila_vazia && (
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 border border-slate-200 dark:border-slate-700 shadow-sm text-center space-y-4">
           <div className="w-16 h-16 bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-200 dark:border-emerald-800">
             <Inbox className="w-8 h-8" />
@@ -898,9 +1479,6 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
           <h2 className="text-xl font-extrabold text-slate-900 dark:text-white">
             {mensagem_fila_vazia}
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
-            Todos os projetos disponíveis já foram avaliados ou não há novas atribuições pendentes no momento.
-          </p>
           <button
             type="button"
             onClick={() => acionarSorteio()}
@@ -978,11 +1556,10 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                 type="button"
                 disabled={isProcessing}
                 onClick={() => marcar_presenca('presente')}
-                className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-extrabold border transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${
-                  status_presenca === 'presente'
+                className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-extrabold border transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${status_presenca === 'presente'
                     ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-500/30'
                     : 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500'
-                }`}
+                  }`}
               >
                 <CheckCircle2 className="w-4 h-4" />
                 Presente
@@ -992,11 +1569,10 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                 type="button"
                 disabled={isProcessing}
                 onClick={registrar_ausencia}
-                className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-extrabold border transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${
-                  status_presenca === 'ausente'
+                className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-extrabold border transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${status_presenca === 'ausente'
                     ? 'bg-amber-600 text-white border-amber-600 shadow-md ring-2 ring-amber-500/30'
                     : 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-500'
-                }`}
+                  }`}
               >
                 {isProcessing && status_presenca === 'ausente' ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -1150,11 +1726,10 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                                       key={valor_escala}
                                       type="button"
                                       onClick={() => selecionar_nota_criterio(criterio.id_criterio, valor_escala)}
-                                      className={`py-2.5 px-1 rounded-xl text-center transition-all flex items-center justify-center border ${
-                                        is_selecionado
+                                      className={`py-2.5 px-1 rounded-xl text-center transition-all flex items-center justify-center border ${is_selecionado
                                           ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-400/50 scale-[1.02]'
                                           : 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500'
-                                      }`}
+                                        }`}
                                     >
                                       <span className="text-base font-black leading-tight">{valor_escala}</span>
                                     </button>

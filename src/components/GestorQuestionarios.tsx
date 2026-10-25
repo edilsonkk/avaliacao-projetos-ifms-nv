@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ClipboardList,
   Plus,
@@ -11,8 +11,13 @@ import {
   HelpCircle,
   Sparkles,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  UploadCloud,
+  FileSpreadsheet,
+  Terminal,
+  X
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
 
 interface ItemPerguntaForm {
@@ -32,8 +37,14 @@ interface QuestionarioSalvoView {
   total_perguntas?: number;
 }
 
-export const GestorQuestionarios: React.FC<{ id_evento_ativo?: string }> = ({
+export const GestorQuestionarios: React.FC<{
+  id_evento_ativo?: string;
+  aoAtualizarMetricas?: () => void;
+  aoFechar?: () => void;
+}> = ({
   id_evento_ativo = 'evt-2026-ifms',
+  aoAtualizarMetricas,
+  aoFechar,
 }) => {
   // Campos do formulário pai
   const [titulo_questionario, set_titulo_questionario] = useState<string>('');
@@ -81,6 +92,15 @@ export const GestorQuestionarios: React.FC<{ id_evento_ativo?: string }> = ({
   const [erroQuest, setErroQuest] = useState<string | null>(null);
   const [sucessoQuest, setSucessoQuest] = useState<string | null>(null);
 
+  // Estados de Importação por Planilha (.CSV/.XLSX/.XLS)
+  const input_file_ref = useRef<HTMLInputElement | null>(null);
+  const [processando_arquivo, set_processando_arquivo] = useState<boolean>(false);
+  const [logs_importacao, set_logs_importacao] = useState<{ tipo: 'info' | 'success' | 'error'; mensagem: string }[]>([]);
+
+  const adicionarLog = (tipo: 'info' | 'success' | 'error', mensagem: string) => {
+    set_logs_importacao((prev) => [...prev, { tipo, mensagem }]);
+  };
+
   const conexao_configurada = verificar_conexao_configurada();
 
   const exibir_notificacao = (texto: string) => {
@@ -88,6 +108,157 @@ export const GestorQuestionarios: React.FC<{ id_evento_ativo?: string }> = ({
     setTimeout(() => {
       set_mensagem_notificacao(null);
     }, 3500);
+  };
+
+  // 1. IMPORTAÇÃO EM MASSA DE PERGUNTAS/CRITÉRIOS POR PLANILHA
+  const handle_upload_questionarios = async (file: File) => {
+    set_processando_arquivo(true);
+    setErroQuest(null);
+    set_logs_importacao([]);
+    adicionarLog('info', `Iniciando leitura da planilha de questionário: ${file.name}`);
+
+    try {
+      const isCSV = file.name.toLowerCase().endsWith('.csv');
+      const reader = new FileReader();
+
+      reader.onload = async (e) => {
+        try {
+          if (!e.target?.result) {
+            adicionarLog('error', 'Falha ao ler o arquivo selecionado.');
+            set_processando_arquivo(false);
+            return;
+          }
+
+          let workbook: XLSX.WorkBook;
+          if (isCSV) {
+            const text = e.target.result as string;
+            workbook = XLSX.read(text, { type: 'string', raw: true });
+          } else {
+            const data = new Uint8Array(e.target.result as ArrayBuffer);
+            workbook = XLSX.read(data, { type: 'array', cellDates: true });
+          }
+
+          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          const dadosBrutos: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+          if (dadosBrutos.length === 0) {
+            adicionarLog('error', 'A planilha selecionada está vazia.');
+            set_processando_arquivo(false);
+            return;
+          }
+
+          adicionarLog('info', `Planilha lida! Total de ${dadosBrutos.length} linhas de critérios encontradas.`);
+
+          const perguntasExtraidas: ItemPerguntaForm[] = [];
+
+          for (let index = 0; index < dadosBrutos.length; index++) {
+            const linha = dadosBrutos[index];
+            const numLinha = index + 2;
+            const keys = Object.keys(linha);
+
+            let pergunta = '';
+            let lembrete = '';
+            let peso = 1.0;
+
+            keys.forEach((k) => {
+              const kLower = k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+              if (
+                kLower.includes('pergunta') ||
+                kLower.includes('criterio') ||
+                kLower.includes('critério') ||
+                kLower.includes('item') ||
+                kLower.includes('texto') ||
+                kLower === 'titulo'
+              ) {
+                pergunta = String(linha[k]).trim();
+              } else if (
+                kLower.includes('lembrete') ||
+                kLower.includes('descricao') ||
+                kLower.includes('descrição') ||
+                kLower.includes('orientacao') ||
+                kLower.includes('observacao')
+              ) {
+                lembrete = String(linha[k]).trim();
+              } else if (kLower.includes('peso')) {
+                const p = parseFloat(String(linha[k]).replace(',', '.'));
+                if (!isNaN(p) && p > 0) peso = p;
+              }
+            });
+
+            if (!pergunta && keys.length > 0) pergunta = String(linha[keys[0]]).trim();
+            if (!lembrete && keys.length > 1) lembrete = String(linha[keys[1]]).trim();
+            if (keys.length > 2 && peso === 1.0) {
+              const p = parseFloat(String(linha[keys[2]]).replace(',', '.'));
+              if (!isNaN(p) && p > 0) peso = p;
+            }
+
+            if (!pergunta) {
+              adicionarLog('error', `Linha ${numLinha}: Pergunta/Critério não identificado. Linha ignorada.`);
+              continue;
+            }
+
+            perguntasExtraidas.push({
+              id_temp: 'p-import-' + Math.random().toString(36).substring(2, 7),
+              ordem: index + 1,
+              texto_pergunta: pergunta,
+              descricao_lembrete: lembrete || undefined,
+              peso_calculo: peso,
+              peso_desempate: index + 1,
+            });
+
+            adicionarLog('info', `Linha ${numLinha}: Pergunta "${pergunta}" (Peso: ${peso}) formatada.`);
+          }
+
+          if (perguntasExtraidas.length === 0) {
+            adicionarLog('error', 'Nenhuma pergunta válida encontrada na planilha.');
+            set_processando_arquivo(false);
+            return;
+          }
+
+          // Escolha do usuário: Anexar ao questionário aberto ou Criar Novo
+          let anexar = false;
+          if (perguntas_lista.length > 0 || titulo_questionario.trim()) {
+            anexar = window.confirm(
+              `Deseja ANEXAR estas ${perguntasExtraidas.length} perguntas ao questionário atualmente aberto?\n\n- Clique em [OK] para ANEXAR ao questionário atual.\n- Clique em [Cancelar] para CRIAR UM NOVO formulário com as perguntas importadas.`
+            );
+          }
+
+          if (anexar) {
+            const ordemInicial = perguntas_lista.length;
+            const ajustadas = perguntasExtraidas.map((p, idx) => ({
+              ...p,
+              ordem: ordemInicial + idx + 1,
+              peso_desempate: ordemInicial + idx + 1,
+            }));
+            set_perguntas_lista((prev) => [...prev, ...ajustadas]);
+            adicionarLog('success', `${ajustadas.length} perguntas anexadas ao questionário aberto com sucesso!`);
+            exibir_notificacao(`${ajustadas.length} perguntas anexadas com sucesso!`);
+          } else {
+            const nomeArquivoLimpo = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
+            set_titulo_questionario(nomeArquivoLimpo);
+            setIdQuestionarioEdicao(null);
+            set_perguntas_lista(perguntasExtraidas);
+            adicionarLog('success', `Novo questionário "${nomeArquivoLimpo}" carregado com ${perguntasExtraidas.length} perguntas da planilha!`);
+            exibir_notificacao(`Novo questionário preparado com ${perguntasExtraidas.length} perguntas!`);
+          }
+        } catch (errParsing: any) {
+          console.error('Erro ao processar planilha de questionários:', errParsing);
+          adicionarLog('error', `Erro ao processar planilha: ${errParsing.message}`);
+          setErroQuest(`Erro ao processar planilha: ${errParsing.message}`);
+        } finally {
+          set_processando_arquivo(false);
+        }
+      };
+
+      if (isCSV) {
+        reader.readAsText(file, 'UTF-8');
+      } else {
+        reader.readAsArrayBuffer(file);
+      }
+    } catch (err: any) {
+      adicionarLog('error', `Falha ao iniciar leitura: ${err.message}`);
+      set_processando_arquivo(false);
+    }
   };
 
   // Função para editar questionário
@@ -143,6 +314,7 @@ export const GestorQuestionarios: React.FC<{ id_evento_ativo?: string }> = ({
       set_titulo_questionario('');
     }
     exibir_notificacao('Questionário excluído com sucesso!');
+    if (aoAtualizarMetricas) aoAtualizarMetricas();
   };
 
   // Carrega a lista de questionários existentes no Supabase
@@ -442,6 +614,7 @@ export const GestorQuestionarios: React.FC<{ id_evento_ativo?: string }> = ({
       exibir_notificacao(msgSucesso);
       set_titulo_questionario('');
       await carregar_questionarios_existentes();
+      if (aoAtualizarMetricas) aoAtualizarMetricas();
     } catch (erro_excecao: any) {
       console.error('Erro de gravação do questionário:', erro_excecao);
       const msg = `Falha inesperada ao gravar o questionário: ${erro_excecao?.message || erro_excecao}`;
@@ -463,15 +636,100 @@ export const GestorQuestionarios: React.FC<{ id_evento_ativo?: string }> = ({
       )}
 
       {/* Cabeçalho do Gestor */}
-      <div className="border-b border-slate-100 dark:border-slate-700 pb-4">
-        <h2 className="text-xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-          <ClipboardList className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-          Gestor de Questionários Dinâmicos e Critérios
-        </h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          Cadastre os formulários de avaliação, critérios com pesos de cálculo e regras de desempate.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 shadow-xs">
+            <ClipboardList className="w-5 h-5" />
+          </div>
+          <h2 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+            Gestor de Questionários
+            <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300 border border-violet-200 dark:border-violet-800">
+              {questionarios_salvos.length} {questionarios_salvos.length === 1 ? 'questionário' : 'questionários'}
+            </span>
+          </h2>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            ref={input_file_ref}
+            type="file"
+            accept=".csv, .xlsx, .xls"
+            className="hidden"
+            disabled={processando_arquivo}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handle_upload_questionarios(f);
+              e.target.value = '';
+            }}
+          />
+
+          <button
+            type="button"
+            onClick={() => input_file_ref.current?.click()}
+            disabled={processando_arquivo}
+            className="px-3.5 py-2.5 bg-violet-600 hover:bg-violet-700 active:scale-98 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs shrink-0 cursor-pointer disabled:opacity-60"
+            title="Importar (.xls/.xlsx/.csv)"
+          >
+            {processando_arquivo ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <UploadCloud className="w-4 h-4" />
+            )}
+            <span>{processando_arquivo ? 'Processando Planilha...' : 'Importar (.xls/.xlsx/.csv)'}</span>
+          </button>
+
+          {aoFechar && (
+            <button
+              type="button"
+              onClick={aoFechar}
+              className="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+              title="Fechar Janela"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Console de Logs da Importação Direta (sem subtítulos) */}
+      {(logs_importacao.length > 0 || processando_arquivo) && (
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-2 animate-in slide-in-from-top-2 duration-150">
+          <div className="flex items-center justify-between text-xs text-slate-400 font-bold uppercase tracking-wider pb-1 border-b border-slate-800">
+            <div className="flex items-center gap-2 text-violet-400">
+              <Terminal className="w-4 h-4" />
+              <span>Console de Importação de Questionários</span>
+            </div>
+            {logs_importacao.length > 0 && !processando_arquivo && (
+              <button
+                type="button"
+                onClick={() => set_logs_importacao([])}
+                className="text-[11px] text-slate-400 hover:text-slate-200 underline cursor-pointer lowercase"
+              >
+                fechar console
+              </button>
+            )}
+          </div>
+          <div className="text-slate-200 font-mono text-[11px] max-h-40 overflow-y-auto space-y-1">
+            {logs_importacao.map((log, idx) => (
+              <div
+                key={idx}
+                className={`leading-relaxed ${
+                  log.tipo === 'success'
+                    ? 'text-emerald-400'
+                    : log.tipo === 'error'
+                    ? 'text-red-400'
+                    : 'text-slate-300'
+                }`}
+              >
+                {log.tipo === 'success' && '✓ '}
+                {log.tipo === 'error' && '✕ '}
+                {log.tipo === 'info' && 'ℹ '}
+                {log.mensagem}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Form de Criação de Questionário Pai e Perguntas Filhas */}
       <form onSubmit={salvar_questionario_completo} className="space-y-6">

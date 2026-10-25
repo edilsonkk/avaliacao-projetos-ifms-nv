@@ -1,0 +1,4 @@
+codigo_projeto,titulo,estande,corredor,instituicao,sigla_instituicao,area_tematica,modalidade,fora_da_competicao
+PROJ-001,Desenvolvimento de Bioplástico a Partir de Casca de Mandioca,EST-A01,Corredor A,IFMS Campus Campo Grande,IFMS-CG,Ciências Agrárias e Meio Ambiente,Ensino Médio Integrado,Não
+PROJ-002,Sistema IoT de Monitoramento de Qualidade da Água em Piscicultura,EST-A02,Corredor A,IFMS Campus Aquidauana,IFMS-AQ,Ciências Exatas e da Terra,Ensino Técnico Subsequente,Não
+PROJ-003,Robô Seguidor de Linha para Demonstração Tecnológica,EST-B01,Corredor B,Escola Estadual Joaquim Murtinho,EEJM,Engenharias e Robótica,Ensino Fundamental,Sim

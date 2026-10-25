@@ -29,6 +29,9 @@ describe('Auditoria de Regressão: Sincronia de Contadores (Escopo do Evento Ati
         mockEqCalls.push({ coluna, valor });
         return chain;
       }),
+      gt: vi.fn(() => chain),
+      gte: vi.fn(() => chain),
+      in: vi.fn(() => chain),
       order: vi.fn(() => chain),
       single: vi.fn(() => Promise.resolve(resultado)),
       maybeSingle: vi.fn(() => Promise.resolve(resultado)),

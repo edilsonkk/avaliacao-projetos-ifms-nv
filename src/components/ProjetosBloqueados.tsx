@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Lock,
   Unlock,
@@ -8,7 +8,10 @@ import {
   AlertTriangle,
   CheckCircle2,
   User,
-  Mail
+  Mail,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
 
@@ -52,22 +55,26 @@ export const ProjetosBloqueados: React.FC<ProjetosBloqueadosProps> = ({
     }
 
     try {
-      // Query obrigatória com JOIN das tabelas projetos (codigo_projeto, titulo, estande, corredor) e usuarios
+      const agoraIso = new Date().toISOString();
+      // Query obrigatória com JOIN das tabelas projetos (codigo_projeto, titulo, estande, corredor) e usuarios, filtrando locks estritamente válidos
       const { data, error } = await supabase
         .from('locks_ativos')
         .select(`
           id_projeto,
           id_usuario,
+          expira_em,
           projetos ( codigo_projeto, titulo, estande, corredor ),
           usuarios ( nome, email )
-        `);
+        `)
+        .gt('expira_em', agoraIso);
 
       if (error) {
         console.warn('JOIN direto em locks_ativos falhou, tentando fallback estruturado:', error.message);
         // Fallback resiliente caso o PostgREST exija consulta com in()
         const { data: rawLocks, error: errRaw } = await supabase
           .from('locks_ativos')
-          .select('id_projeto, id_usuario');
+          .select('id_projeto, id_usuario, expira_em')
+          .gt('expira_em', agoraIso);
 
         if (errRaw) throw error;
 
@@ -206,8 +213,47 @@ export const ProjetosBloqueados: React.FC<ProjetosBloqueadosProps> = ({
     }, 4000);
   };
 
+  // Ordenação de colunas
+  const [colunaOrdenacao, setColunaOrdenacao] = useState<'estande' | 'corredor' | 'titulo' | 'codigo' | 'avaliador'>('estande');
+  const [direcaoOrdenacao, setDirecaoOrdenacao] = useState<'asc' | 'desc'>('asc');
+
+  const alternarOrdenacao = (coluna: 'estande' | 'corredor' | 'titulo' | 'codigo' | 'avaliador') => {
+    if (colunaOrdenacao === coluna) {
+      setDirecaoOrdenacao(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setColunaOrdenacao(coluna);
+      setDirecaoOrdenacao('asc');
+    }
+  };
+
+  const locks_ordenados = useMemo(() => {
+    return [...locks].sort((a, b) => {
+      let valA: any = '';
+      let valB: any = '';
+      if (colunaOrdenacao === 'estande') {
+        valA = a.projeto_estande || '';
+        valB = b.projeto_estande || '';
+      } else if (colunaOrdenacao === 'corredor') {
+        valA = a.projeto_corredor || '';
+        valB = b.projeto_corredor || '';
+      } else if (colunaOrdenacao === 'titulo') {
+        valA = a.projeto_titulo || '';
+        valB = b.projeto_titulo || '';
+      } else if (colunaOrdenacao === 'codigo') {
+        valA = a.codigo_projeto || '';
+        valB = b.codigo_projeto || '';
+      } else if (colunaOrdenacao === 'avaliador') {
+        valA = a.avaliador_nome || '';
+        valB = b.avaliador_nome || '';
+      }
+      return direcaoOrdenacao === 'asc'
+        ? String(valA).localeCompare(String(valB))
+        : String(valB).localeCompare(String(valA));
+    });
+  }, [locks, colunaOrdenacao, direcaoOrdenacao]);
+
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[88vh] font-sans">
+    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col w-full h-full max-h-[95vh] font-sans">
       {/* Cabeçalho */}
       <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-900/50">
         <div className="flex items-center gap-3">
@@ -217,6 +263,9 @@ export const ProjetosBloqueados: React.FC<ProjetosBloqueadosProps> = ({
           <div>
             <h2 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
               Gestor de Projetos Bloqueados
+              <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                {locks.length} {locks.length === 1 ? 'bloqueado' : 'bloqueados'}
+              </span>
             </h2>
           </div>
         </div>
@@ -283,7 +332,7 @@ export const ProjetosBloqueados: React.FC<ProjetosBloqueadosProps> = ({
               Consultando locks_ativos com JOIN de projetos e usuarios no Supabase...
             </p>
           </div>
-        ) : locks.length === 0 ? (
+        ) : locks_ordenados.length === 0 ? (
           <div className="p-12 text-center space-y-2 border border-dashed rounded-2xl dark:border-slate-800">
             <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
             <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
@@ -298,17 +347,76 @@ export const ProjetosBloqueados: React.FC<ProjetosBloqueadosProps> = ({
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100 dark:bg-slate-800 uppercase font-black text-[10px] text-slate-600 dark:text-slate-400 tracking-wider">
                 <tr>
-                  <th className="px-4 py-3">Estande</th>
-                  <th className="px-4 py-3">Corredor</th>
-                  <th className="px-4 py-3">Título do Projeto</th>
-                  {/* BLINDAGEM VISUAL: Cabeçalho como CÓDIGO */}
-                  <th className="px-4 py-3">CÓDIGO</th>
-                  <th className="px-4 py-3">Avaliador (JOIN usuarios)</th>
+                  <th 
+                    onClick={() => alternarOrdenacao('estande')}
+                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Estande</span>
+                      {colunaOrdenacao === 'estande' ? (
+                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-600" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => alternarOrdenacao('corredor')}
+                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Corredor</span>
+                      {colunaOrdenacao === 'corredor' ? (
+                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-600" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => alternarOrdenacao('titulo')}
+                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Título do Projeto</span>
+                      {colunaOrdenacao === 'titulo' ? (
+                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-600" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => alternarOrdenacao('codigo')}
+                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>CÓDIGO</span>
+                      {colunaOrdenacao === 'codigo' ? (
+                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-600" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => alternarOrdenacao('avaliador')}
+                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Avaliador (JOIN usuarios)</span>
+                      {colunaOrdenacao === 'avaliador' ? (
+                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-600" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </div>
+                  </th>
                   <th className="px-4 py-3 text-right">Ação</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
-                {locks.map((lock, idx) => (
+                {locks_ordenados.map((lock, idx) => (
                   <tr key={`${lock.id_projeto}-${lock.id_usuario || idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                     <td className="px-4 py-3 font-mono font-bold text-amber-600 dark:text-amber-400 whitespace-nowrap">
                       {lock.projeto_estande}

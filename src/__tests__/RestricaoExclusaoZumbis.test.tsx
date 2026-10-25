@@ -33,6 +33,7 @@ describe('Auditoria de Regressão: Restrição de Exclusão (Erradicação de C�
     const chain: any = {
       select: vi.fn(() => chain),
       eq: vi.fn(() => chain),
+      gt: vi.fn(() => chain),
       order: vi.fn(() => chain),
       single: vi.fn(() => Promise.resolve(resultado)),
       maybeSingle: vi.fn(() => Promise.resolve(resultado)),
@@ -100,7 +101,7 @@ describe('Auditoria de Regressão: Restrição de Exclusão (Erradicação de C�
 
     await waitFor(() => {
       // 1. OBRIGATÓRIO: A RPC oficial do Supabase DEVE ter sido acionada
-      expect(mockRpc).toHaveBeenCalledWith('admin_reset_global');
+      expect(mockRpc).toHaveBeenCalledWith('admin_reset_global', expect.anything());
 
       // 2. REGRA DE BLINDAGEM: Não deve chamar supabase.from(...).delete() diretamente
       expect(mockDelete).not.toHaveBeenCalled();

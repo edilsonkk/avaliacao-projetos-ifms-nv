@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -7,7 +7,10 @@ import {
   Loader2,
   ShieldCheck,
   User,
-  FileText
+  FileText,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
 
@@ -53,7 +56,28 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({
     }
 
     try {
-      // 2. INJEÇÃO DA NOVA COLUNA NAS CONSULTAS: codigo_projeto no .select()
+      // 1. Consulta preferencial à view_projetos_quarentena (divergência > 2.5 pts OU flag is_quarentena)
+      const { data: viewData, error: viewError } = await supabase
+        .from('view_projetos_quarentena')
+        .select('*');
+
+      if (!viewError && viewData && viewData.length > 0) {
+        const formatados: ItemQuarentena[] = viewData.map((v: any) => ({
+          id_projeto: v.id_projeto,
+          codigo_projeto: v.codigo_projeto || null,
+          nota_final: v.nota_maxima,
+          parecer_final: v.diferenca_notas ? `Divergência: ${v.diferenca_notas} pts (Mín: ${v.nota_minima}, Máx: ${v.nota_maxima})` : 'Quarentena administrativa',
+          projeto_titulo: v.titulo || 'Projeto em Quarentena',
+          projeto_estande: v.estande || 'EST-00',
+          projeto_corredor: v.corredor || 'S/ Corredor',
+          projeto_instituicao: v.nome_instituicao || 'IFMS',
+          avaliador_nome: v.tem_flag_quarentena ? 'Flag Manual' : 'Divergência Aritmética'
+        }));
+        set_quarentenas(formatados);
+        return;
+      }
+
+      // 2. Fallback via avaliacoes com join
       const { data, error } = await supabase
         .from('avaliacoes')
         .select(`
@@ -229,8 +253,47 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({
     }, 4000);
   };
 
+  // Ordenação de colunas
+  const [colunaOrdenacao, setColunaOrdenacao] = useState<'estande' | 'codigo' | 'titulo' | 'avaliador' | 'parecer'>('estande');
+  const [direcaoOrdenacao, setDirecaoOrdenacao] = useState<'asc' | 'desc'>('asc');
+
+  const alternarOrdenacao = (coluna: 'estande' | 'codigo' | 'titulo' | 'avaliador' | 'parecer') => {
+    if (colunaOrdenacao === coluna) {
+      setDirecaoOrdenacao(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setColunaOrdenacao(coluna);
+      setDirecaoOrdenacao('asc');
+    }
+  };
+
+  const quarentenas_ordenadas = useMemo(() => {
+    return [...quarentenas].sort((a, b) => {
+      let valA: any = '';
+      let valB: any = '';
+      if (colunaOrdenacao === 'estande') {
+        valA = a.projeto_estande || '';
+        valB = b.projeto_estande || '';
+      } else if (colunaOrdenacao === 'codigo') {
+        valA = a.codigo_projeto || '';
+        valB = b.codigo_projeto || '';
+      } else if (colunaOrdenacao === 'titulo') {
+        valA = a.projeto_titulo || '';
+        valB = b.projeto_titulo || '';
+      } else if (colunaOrdenacao === 'avaliador') {
+        valA = a.avaliador_nome || '';
+        valB = b.avaliador_nome || '';
+      } else if (colunaOrdenacao === 'parecer') {
+        valA = a.parecer_final || '';
+        valB = b.parecer_final || '';
+      }
+      return direcaoOrdenacao === 'asc'
+        ? String(valA).localeCompare(String(valB))
+        : String(valB).localeCompare(String(valA));
+    });
+  }, [quarentenas, colunaOrdenacao, direcaoOrdenacao]);
+
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[88vh] font-sans">
+    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col w-full h-full max-h-[95vh] font-sans">
       {/* Cabeçalho */}
       <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-900/50">
         <div className="flex items-center gap-3">
@@ -239,14 +302,11 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({
           </div>
           <div>
             <h2 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-              Gestor de Quarentena (`is_quarentena = true`)
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300">
-                {quarentenas.length} pendentes
+              Gestor de Projetos em Quarentena
+              <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                {quarentenas.length} em quarentena
               </span>
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Projetos com avaliações sob discrepância, auditoria ou intervenção do comitê.
-            </p>
           </div>
         </div>
 
@@ -312,7 +372,7 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({
               Consultando projetos em quarentena no Supabase...
             </p>
           </div>
-        ) : quarentenas.length === 0 ? (
+        ) : quarentenas_ordenadas.length === 0 ? (
           <div className="p-12 text-center space-y-2 border border-dashed rounded-2xl dark:border-slate-800">
             <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
             <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
@@ -327,17 +387,76 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100 dark:bg-slate-800 uppercase font-black text-[10px] text-slate-600 dark:text-slate-400 tracking-wider">
                 <tr>
-                  <th className="px-4 py-3">Estande</th>
-                  {/* BLINDAGEM VISUAL: Cabeçalho CÓDIGO */}
-                  <th className="px-4 py-3">CÓDIGO</th>
-                  <th className="px-4 py-3">Título do Projeto</th>
-                  <th className="px-4 py-3">Avaliador / Nota</th>
-                  <th className="px-4 py-3">Parecer de Quarentena</th>
+                  <th 
+                    onClick={() => alternarOrdenacao('estande')}
+                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Estande</span>
+                      {colunaOrdenacao === 'estande' ? (
+                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-red-600" /> : <ArrowDown className="w-3.5 h-3.5 text-red-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => alternarOrdenacao('codigo')}
+                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>CÓDIGO</span>
+                      {colunaOrdenacao === 'codigo' ? (
+                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-red-600" /> : <ArrowDown className="w-3.5 h-3.5 text-red-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => alternarOrdenacao('titulo')}
+                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Título do Projeto</span>
+                      {colunaOrdenacao === 'titulo' ? (
+                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-red-600" /> : <ArrowDown className="w-3.5 h-3.5 text-red-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => alternarOrdenacao('avaliador')}
+                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Avaliador / Nota</span>
+                      {colunaOrdenacao === 'avaliador' ? (
+                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-red-600" /> : <ArrowDown className="w-3.5 h-3.5 text-red-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => alternarOrdenacao('parecer')}
+                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Parecer de Quarentena</span>
+                      {colunaOrdenacao === 'parecer' ? (
+                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-red-600" /> : <ArrowDown className="w-3.5 h-3.5 text-red-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </div>
+                  </th>
                   <th className="px-4 py-3 text-right">Ação</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
-                {quarentenas.map((q, idx) => (
+                {quarentenas_ordenadas.map((q, idx) => (
                   <tr key={q.id_avaliacao || q.id_projeto || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                     <td className="px-4 py-3 font-mono font-bold text-red-600 dark:text-red-400 whitespace-nowrap">
                       {q.projeto_estande}

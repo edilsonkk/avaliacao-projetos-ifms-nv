@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, X, Save, Loader2, CheckCircle2, AlertTriangle, RotateCcw, History, PlusCircle } from 'lucide-react';
+import { Settings, X, Save, Loader2, CheckCircle2, AlertTriangle, RotateCcw, History, PlusCircle, Building2, ShieldCheck } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
 
 interface PropriedadesModalConfiguracoes {
   id_evento_ativo: string;
   nome_evento_atual?: string;
   ao_fechar: () => void;
-  ao_salvar_sucesso?: (novoNome?: string) => void;
+  ao_salvar_sucesso?: (novoNome?: string, novaData?: string) => void;
   ao_disparar_reset_global?: () => void;
   ao_abrir_historico?: () => void;
   ao_abrir_novo_evento?: () => void;
+  ao_abrir_instituicoes?: () => void;
+  ao_abrir_administradores?: () => void;
 }
 
 export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> = ({
@@ -20,9 +22,12 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
   ao_disparar_reset_global,
   ao_abrir_historico,
   ao_abrir_novo_evento,
+  ao_abrir_instituicoes,
+  ao_abrir_administradores,
 }) => {
   // Campos de estado do formulário de configurações do evento
   const [nome_evento, set_nome_evento] = useState<string>(nome_evento_atual || 'FETEC MS 2026');
+  const [data_evento, set_data_evento] = useState<string>(new Date().toISOString().split('T')[0]);
   const [minutos_timeout_lock, set_minutos_timeout_lock] = useState<number>(15);
   const [cota_avaliacoes_padrao, set_cota_avaliacoes_padrao] = useState<number>(3);
   const [sistema_liberado, set_sistema_liberado] = useState<boolean>(true);
@@ -74,6 +79,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
 
         if (dados_evento) {
           set_nome_evento(dados_evento.nome_evento || nome_evento_atual || 'FETEC MS 2026');
+          set_data_evento(dados_evento.data_evento || (dados_evento.limite_corte ? String(dados_evento.limite_corte).split('T')[0] : null) || new Date().toISOString().split('T')[0]);
           set_minutos_timeout_lock(dados_evento.minutos_timeout_lock || 15);
           set_cota_avaliacoes_padrao(dados_evento.cota_avaliacoes_padrao || 3);
           set_sistema_liberado(dados_evento.sistema_liberado !== false);
@@ -96,43 +102,48 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
     set_salvando(true);
     set_mensagem_feedback(null);
 
-    const dados_atualizacao = {
+    const dataFormatada = data_evento || new Date().toISOString().split('T')[0];
+
+    const dados_atualizacao: any = {
       nome_evento,
+      data_evento: dataFormatada,
       minutos_timeout_lock: Number(minutos_timeout_lock),
       cota_avaliacoes_padrao: Number(cota_avaliacoes_padrao),
       sistema_liberado: Boolean(sistema_liberado),
-      horario_inicio,
-      horario_fim,
+      horario_inicio: horario_inicio || '08:00',
+      horario_fim: horario_fim || '18:00',
     };
 
     if (!conexao_configurada) {
       setTimeout(() => {
         set_salvando(false);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('evento_ativo_data', dataFormatada);
+          localStorage.setItem('evento_ativo_nome', nome_evento);
+        }
         alert('Configurações do evento atualizadas com sucesso! (Modo Contingência)');
-        if (ao_salvar_sucesso) ao_salvar_sucesso(nome_evento);
+        if (ao_salvar_sucesso) ao_salvar_sucesso(nome_evento, dataFormatada);
         ao_fechar();
       }, 500);
       return;
     }
 
     try {
-      // 1. Tenta UPDATE na tabela 'eventos' por id_evento
+      // 1. UPDATE direto na tabela 'eventos' por id_evento com data_evento oficial
       let { error: erro_update } = await supabase
         .from('eventos')
         .update(dados_atualizacao)
         .eq('id_evento', id_evento_ativo);
 
-      if (erro_update) {
-        // 2. Fallback na tabela 'eventos' por id
-        const { error: erro_singular } = await supabase
+      // Fallback resiliente: apenas se a coluna data_evento não existir fisicamente no banco
+      if (erro_update && (erro_update.message?.includes('data_evento') || erro_update.code === 'PGRST204')) {
+        console.warn('Coluna data_evento ausente no schema do banco, tentando salvar campos base...');
+        const { data_evento: _de, ...dadosSemData } = dados_atualizacao;
+        const resFallback = await supabase
           .from('eventos')
-          .update({
-            nome_evento,
-            ativo: sistema_liberado,
-          })
-          .eq('id', id_evento_ativo);
-
-        erro_update = erro_singular;
+          .update(dadosSemData)
+          .eq('id_evento', id_evento_ativo);
+        erro_update = resFallback.error;
       }
 
       if (erro_update) {
@@ -143,13 +154,17 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
         });
         alert(`Erro ao salvar configurações do evento: ${erro_update.message}`);
       } else {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('evento_ativo_data', dataFormatada);
+          localStorage.setItem('evento_ativo_nome', nome_evento);
+        }
         set_mensagem_feedback({
           tipo: 'sucesso',
           texto: 'Parâmetros do evento atualizados com sucesso no Supabase!',
         });
         alert('Configurações do evento salvas com sucesso no banco de dados!');
 
-        if (ao_salvar_sucesso) ao_salvar_sucesso(nome_evento);
+        if (ao_salvar_sucesso) ao_salvar_sucesso(nome_evento, dataFormatada);
         setTimeout(() => {
           ao_fechar();
         }, 800);
@@ -168,25 +183,23 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
 
   const handleConfirmarReset = async () => {
     try {
-      // 1. Tenta executar a Stored Procedure oficial no Supabase
-      const { error } = await supabase.rpc('admin_reset_global');
-      if (error) {
-        // Fallback caso a procedure do Supabase dispare "DELETE requires a WHERE clause" (PostgreSQL safeupdate) ou erro de autorização
-        if (error.message?.includes('WHERE') || error.code === '21000' || error.message?.includes('Acesso negado')) {
-          console.warn('RPC admin_reset_global retornou restrição:', error.message, 'Aplicando reset resiliente com WHERE...');
-          await Promise.allSettled([
-            supabase.from('respostas_avaliacao').delete().neq('id_avaliacao', '00000000-0000-0000-0000-000000000000'),
-            supabase.from('avaliacoes').delete().neq('id_projeto', '00000000-0000-0000-0000-000000000000'),
-            supabase.from('locks_ativos').delete().neq('id_lock', '00000000-0000-0000-0000-000000000000'),
-            supabase.from('historico_impedimentos').delete().neq('id_usuario', '00000000-0000-0000-0000-000000000000'),
-            supabase.from('projetos').update({ is_check_in_realizado: false, contagem_ausencia: 0 }).neq('id_projeto', '00000000-0000-0000-0000-000000000000')
-          ]);
-        } else {
-          throw error;
-        }
+      const isUuidVal = (id?: string) => Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+      const idValido = isUuidVal(id_evento_ativo) ? id_evento_ativo : null;
+
+      // Invocação resiliente da Stored Procedure oficial no Supabase
+      let resultado = await supabase.rpc('admin_reset_global', {
+        p_id_evento: idValido,
+      });
+
+      if (resultado.error && (resultado.error.message?.includes('p_id_evento') || resultado.error.code === 'PGRST202')) {
+        resultado = await supabase.rpc('admin_reset_global');
       }
-      alert("Reset executado. O sistema será recarregado.");
-      window.location.reload();
+
+      if (resultado.error) {
+        throw resultado.error;
+      }
+      alert("Reset executado com sucesso.");
+      ao_fechar();
     } catch (err: any) {
       alert(`Falha no Reset: ${err.message}`);
     }
@@ -284,11 +297,24 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
               </div>
             </div>
 
-            {/* Horário de Início e Horário de Fim */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Data do Evento, Horário de Início e Horário de Fim */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                  Horário de Início:
+                  Data do Evento:
+                </label>
+                <input
+                  type="date"
+                  value={data_evento}
+                  onChange={(e) => set_data_evento(e.target.value)}
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                  Horário Início:
                 </label>
                 <input
                   type="time"
@@ -301,7 +327,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                  Horário de Fim:
+                  Horário Fim:
                 </label>
                 <input
                   type="time"
@@ -373,6 +399,44 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
                     </span>
                   </div>
                   <PlusCircle className="w-5 h-5 text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors shrink-0" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    ao_fechar();
+                    if (ao_abrir_instituicoes) ao_abrir_instituicoes();
+                  }}
+                  className="p-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-700 text-left transition-all flex items-center justify-between cursor-pointer group"
+                >
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                      Instituições de Ensino / Escolas
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      Gerenciar instituições e prevenção de conflitos
+                    </span>
+                  </div>
+                  <Building2 className="w-5 h-5 text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors shrink-0" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    ao_fechar();
+                    if (ao_abrir_administradores) ao_abrir_administradores();
+                  }}
+                  className="p-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-700 text-left transition-all flex items-center justify-between cursor-pointer group"
+                >
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                      Gestão de Administradores
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      Cadastrar e gerenciar administradores
+                    </span>
+                  </div>
+                  <ShieldCheck className="w-5 h-5 text-slate-500 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors shrink-0" />
                 </button>
               </div>
             </div>
