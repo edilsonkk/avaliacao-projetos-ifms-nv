@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import { lerPlanilhaParaJson } from '@/lib/excelUtils';
 
 export interface AvaliadorLinhaPlanilha {
   nome: string;
@@ -66,46 +66,18 @@ export const extrairAreas = (valor: unknown): string[] => {
 };
 
 /**
- * Parser puro para arquivos Excel (.xlsx / .xls) ou CSV contendo avaliadores da feira.
+ * Parser puro para arquivos Excel (.xlsx) ou CSV contendo avaliadores da feira.
  * Desacoplado do React e compatível com ambiente Node (para testes unitários).
  */
-export const parsePlanilhaAvaliadores = (
+export const parsePlanilhaAvaliadores = async (
   conteudoArquivo: ArrayBuffer | Uint8Array | string,
   isCSV = false
-): ResultadoParsingAvaliadores => {
+): Promise<ResultadoParsingAvaliadores> => {
   if (!conteudoArquivo) {
     throw new Error('Conteúdo do arquivo ausente ou inválido.');
   }
 
-  let workbook: XLSX.WorkBook;
-
-  try {
-    if (isCSV && typeof conteudoArquivo === 'string') {
-      workbook = XLSX.read(conteudoArquivo, { type: 'string', raw: true });
-    } else if (conteudoArquivo instanceof Uint8Array) {
-      workbook = XLSX.read(conteudoArquivo, { type: 'array', cellDates: true });
-    } else if (conteudoArquivo instanceof ArrayBuffer) {
-      workbook = XLSX.read(new Uint8Array(conteudoArquivo), { type: 'array', cellDates: true });
-    } else {
-      workbook = XLSX.read(conteudoArquivo, { type: 'binary', cellDates: true });
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`Falha ao ler o formato do arquivo: ${msg}`);
-  }
-
-  if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-    throw new Error('A planilha selecionada não contém abas válidas.');
-  }
-
-  const primeiraAba = workbook.Sheets[workbook.SheetNames[0]];
-  if (!primeiraAba) {
-    throw new Error('A aba de dados da planilha está vazia.');
-  }
-
-  const dadosBrutos: Record<string, unknown>[] = XLSX.utils.sheet_to_json(primeiraAba, {
-    defval: '',
-  });
+  const dadosBrutos = await lerPlanilhaParaJson(conteudoArquivo, isCSV);
 
   if (dadosBrutos.length === 0) {
     throw new Error('A planilha selecionada está vazia ou não contém linhas de dados.');

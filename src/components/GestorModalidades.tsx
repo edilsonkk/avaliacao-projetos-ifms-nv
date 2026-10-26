@@ -19,7 +19,7 @@ import {
   Terminal,
   FileSpreadsheet,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { baixarPlanilhaModelo, validarArquivoPlanilha } from '@/lib/excelUtils';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
 import { parsePlanilhaModalidades, ModalidadeImportada } from '../lib/parsers/planilhaModalidadesParser';
 import { ModalDeParaMapping, ItemMapeamentoDePara, DecisaoMapeamento } from './ModalDeParaMapping';
@@ -295,7 +295,7 @@ export const GestorModalidades: React.FC<GestorModalidadesProps> = ({
   };
 
   // Baixar Planilha Modelo (.xlsx)
-  const baixarPlanilhaExemplo = () => {
+  const baixarPlanilhaExemplo = async () => {
     try {
       const dadosExemplo = [
         {
@@ -321,18 +321,8 @@ export const GestorModalidades: React.FC<GestorModalidadesProps> = ({
         },
       ];
 
-      const ws = XLSX.utils.json_to_sheet(dadosExemplo);
-      ws['!cols'] = [
-        { wch: 14 }, // Código
-        { wch: 32 }, // Modalidade
-        { wch: 18 }, // Nível
-        { wch: 30 }, // Área Temática
-        { wch: 45 }, // Descrição
-      ];
-
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Modelo Modalidades');
-      XLSX.writeFile(wb, 'modelo_importacao_modalidades.xlsx');
+      const colunas = ['Código', 'Modalidade', 'Nível', 'Área Temática', 'Descrição'];
+      await baixarPlanilhaModelo('modelo_importacao_modalidades.xlsx', 'Modalidades', colunas, dadosExemplo);
       exibirNotificacao('Planilha modelo de modalidades (.xlsx) gerada e baixada com sucesso!');
     } catch (err: any) {
       console.error('Erro ao gerar modelo:', err);
@@ -346,10 +336,18 @@ export const GestorModalidades: React.FC<GestorModalidadesProps> = ({
     setMensagemErro(null);
     setLogsImportacao([]);
 
+    const validacao = validarArquivoPlanilha(file);
+    if (!validacao.valido) {
+      adicionarLog('error', validacao.erro || 'Arquivo inválido.');
+      setMensagemErro(validacao.erro || 'Arquivo inválido.');
+      setProcessandoArquivo(false);
+      return;
+    }
+
     adicionarLog('info', `Iniciando leitura do arquivo: ${file.name}`);
 
     try {
-      const isCSV = file.name.toLowerCase().endsWith('.csv');
+      const isCSV = validacao.isCSV;
       const reader = new FileReader();
 
       reader.onload = async (e) => {
@@ -360,7 +358,7 @@ export const GestorModalidades: React.FC<GestorModalidadesProps> = ({
             return;
           }
 
-          const resultado = parsePlanilhaModalidades(e.target.result as ArrayBuffer | string, isCSV);
+          const resultado = await parsePlanilhaModalidades(e.target.result as ArrayBuffer | string, isCSV);
 
           if (!resultado.sucesso || resultado.modalidades.length === 0) {
             adicionarLog('error', 'Nenhuma modalidade válida encontrada na planilha.');
@@ -613,7 +611,7 @@ export const GestorModalidades: React.FC<GestorModalidadesProps> = ({
           <input
             ref={inputFileRef}
             type="file"
-            accept=".csv, .xlsx, .xls"
+            accept=".csv, .xlsx"
             className="hidden"
             disabled={processandoArquivo}
             onChange={(e) => {
@@ -639,10 +637,10 @@ export const GestorModalidades: React.FC<GestorModalidadesProps> = ({
             onClick={() => inputFileRef.current?.click()}
             disabled={processandoArquivo}
             className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs shrink-0 cursor-pointer disabled:opacity-60"
-            title="Importar (.xls/.xlsx/.csv)"
+            title="Importar (.xlsx/.csv)"
           >
             {processandoArquivo ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
-            <span>{processandoArquivo ? 'Processando...' : 'Importar (.xls/.xlsx/.csv)'}</span>
+            <span>{processandoArquivo ? 'Processando...' : 'Importar (.xlsx/.csv)'}</span>
           </button>
 
           <button

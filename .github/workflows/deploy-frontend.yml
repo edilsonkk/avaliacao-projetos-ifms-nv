@@ -3,6 +3,8 @@ name: Continuous Deployment (CD) - Front-end Vite
 on:
   push:
     branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
   workflow_dispatch:
     inputs:
       environment:
@@ -62,6 +64,7 @@ jobs:
   deploy-pages:
     name: Deploy no Host de Produção (GitHub Pages / Edge Host)
     needs: build-and-test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

@@ -1,16 +1,27 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import * as XLSX from 'xlsx';
 import {
   parsePlanilhaProjetos,
   normalizarChave,
   formatarValorString,
   formatarBooleano,
 } from '@/lib/parsers/planilhaProjetosParser';
+import { gerarBufferPlanilha } from '@/lib/excelUtils';
 
 describe('Parser de Planilhas de Projetos (Função Pura / Ambiente Node)', () => {
-  it('1. Deve realizar o parsing com sucesso de uma planilha Excel bem formatada', () => {
+  it('1. Deve realizar o parsing com sucesso de uma planilha Excel bem formatada', async () => {
     // Arrange (Preparar)
+    const colunas = [
+      'codigo_projeto',
+      'titulo',
+      'estande',
+      'corredor',
+      'instituicao',
+      'sigla',
+      'area_tematica',
+      'modalidade',
+      'fora_da_competicao',
+    ];
     const dados = [
       {
         codigo_projeto: 'AGRO-001',
@@ -36,13 +47,10 @@ describe('Parser de Planilhas de Projetos (Função Pura / Ambiente Node)', () =
       },
     ];
 
-    const ws = XLSX.utils.json_to_sheet(dados);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Projetos');
-    const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const buffer = await gerarBufferPlanilha('Projetos', colunas, dados);
 
     // Act (Agir)
-    const resultado = parsePlanilhaProjetos(buffer);
+    const resultado = await parsePlanilhaProjetos(buffer);
 
     // Assert (Verificar)
     expect(resultado.sucesso).toBe(true);
@@ -59,7 +67,7 @@ describe('Parser de Planilhas de Projetos (Função Pura / Ambiente Node)', () =
     expect(resultado.projetos[1].fora_da_competicao).toBe(true);
   });
 
-  it('2. Deve realizar parsing correto a partir de string CSV', () => {
+  it('2. Deve realizar parsing correto a partir de string CSV', async () => {
     // Arrange (Preparar)
     const csvContent = [
       'codigo;titulo;estande;corredor;instituicao;fora_da_competicao',
@@ -67,7 +75,7 @@ describe('Parser de Planilhas de Projetos (Função Pura / Ambiente Node)', () =
     ].join('\n');
 
     // Act (Agir)
-    const resultado = parsePlanilhaProjetos(csvContent, true);
+    const resultado = await parsePlanilhaProjetos(csvContent, true);
 
     // Assert (Verificar)
     expect(resultado.sucesso).toBe(true);
@@ -76,30 +84,34 @@ describe('Parser de Planilhas de Projetos (Função Pura / Ambiente Node)', () =
     expect(resultado.projetos[0].titulo).toBe('Dispositivo IoT de Umidade');
   });
 
-  it('3. Deve lançar exceção ao receber planilha vazia ou sem linhas', () => {
+  it('3. Deve lançar exceção ao receber planilha vazia ou sem linhas', async () => {
     // Arrange (Preparar)
-    const ws = XLSX.utils.aoa_to_sheet([]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Vazia');
-    const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const buffer = await gerarBufferPlanilha('Vazia', [], []);
 
     // Act & Assert (Agir e Verificar)
-    expect(() => parsePlanilhaProjetos(buffer)).toThrow(
+    await expect(parsePlanilhaProjetos(buffer)).rejects.toThrow(
       /A planilha selecionada está vazia/i
     );
   });
 
-  it('4. Deve lançar exceção ao receber conteúdo ausente ou inválido', () => {
+  it('4. Deve lançar exceção ao receber conteúdo ausente ou inválido', async () => {
     // Arrange (Preparar)
     const conteudoInvalido = '';
 
     // Act & Assert (Agir e Verificar)
-    expect(() => parsePlanilhaProjetos(conteudoInvalido)).toThrow(
+    await expect(parsePlanilhaProjetos(conteudoInvalido)).rejects.toThrow(
       /Conteúdo do arquivo ausente ou inválido/i
     );
   });
 
-  it('5. Deve converter corretamente tipos de dados (números, datas e booleanos)', () => {
+  it('5. Deve rejeitar arquivos legados .xls com mensagem explicativa', async () => {
+    const fakeXlsBuffer = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x01, 0x02]);
+    await expect(parsePlanilhaProjetos(fakeXlsBuffer)).rejects.toThrow(
+      /O formato legado \.xls \(Excel 97-2003\) não é suportado/i
+    );
+  });
+
+  it('6. Deve converter corretamente tipos de dados (números, datas e booleanos)', () => {
     // Arrange (Preparar)
     const dataObj = new Date('2026-10-24T12:00:00Z');
 
@@ -121,7 +133,7 @@ describe('Parser de Planilhas de Projetos (Função Pura / Ambiente Node)', () =
     expect(formatarBooleano(null)).toBe(false);
   });
 
-  it('6. Deve normalizar chaves e remover diacríticos', () => {
+  it('7. Deve normalizar chaves e remover diacríticos', () => {
     // Act & Assert (Agir e Verificar)
     expect(normalizarChave('  Código do Projeto  ')).toBe('codigo do projeto');
     expect(normalizarChave('Área Temática')).toBe('area tematica');

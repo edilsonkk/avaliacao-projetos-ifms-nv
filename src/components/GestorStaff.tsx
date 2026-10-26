@@ -25,7 +25,7 @@ import {
   Plus,
   Save
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { lerPlanilhaParaJson, validarArquivoPlanilha } from '@/lib/excelUtils';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
 
 export interface UsuarioStaff {
@@ -305,10 +305,18 @@ export const GestorStaff: React.FC<{
     set_mensagem_erro(null);
     setLogsImportacao([]); // Limpa logs anteriores
 
+    const validacao = validarArquivoPlanilha(file);
+    if (!validacao.valido) {
+      adicionarLog('error', validacao.erro || 'Arquivo inválido.');
+      set_mensagem_erro(validacao.erro || 'Arquivo inválido.');
+      set_processando_arquivo(false);
+      return;
+    }
+
     adicionarLog('info', `Iniciando leitura do arquivo de Staff: ${file.name}`);
 
     try {
-      const isCSV = file.name.toLowerCase().endsWith('.csv');
+      const isCSV = validacao.isCSV;
       const reader = new FileReader();
 
       reader.onload = async (e) => {
@@ -319,17 +327,10 @@ export const GestorStaff: React.FC<{
             return;
           }
 
-          let workbook: XLSX.WorkBook;
-          if (isCSV) {
-            const text = e.target.result as string;
-            workbook = XLSX.read(text, { type: 'string', raw: true });
-          } else {
-            const data = new Uint8Array(e.target.result as ArrayBuffer);
-            workbook = XLSX.read(data, { type: 'array', cellDates: true });
-          }
-
-          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-          const dadosBrutos: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+          const dadosBrutos = await lerPlanilhaParaJson(
+            isCSV ? (e.target.result as string) : (e.target.result as ArrayBuffer),
+            isCSV
+          );
 
           if (dadosBrutos.length === 0) {
             adicionarLog('error', 'Erro: O arquivo selecionado não contém dados.');
@@ -744,7 +745,7 @@ export const GestorStaff: React.FC<{
           <input
             ref={input_file_ref}
             type="file"
-            accept=".csv, .xlsx, .xls"
+            accept=".csv, .xlsx"
             onChange={(e) => {
               if (e.target.files && e.target.files[0]) {
                 handle_upload_arquivo(e.target.files[0]);
@@ -759,14 +760,14 @@ export const GestorStaff: React.FC<{
             onClick={() => input_file_ref.current?.click()}
             disabled={processando_arquivo}
             className="px-3.5 py-2 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white flex items-center gap-2 shadow-xs cursor-pointer transition-all disabled:opacity-60"
-            title="Importar (.xls/.xlsx/.csv)"
+            title="Importar (.xlsx/.csv)"
           >
             {processando_arquivo ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <UploadCloud className="w-4 h-4" />
             )}
-            <span>{processando_arquivo ? 'Processando Planilha...' : 'Importar (.xls/.xlsx/.csv)'}</span>
+            <span>{processando_arquivo ? 'Processando Planilha...' : 'Importar (.xlsx/.csv)'}</span>
           </button>
 
           <button

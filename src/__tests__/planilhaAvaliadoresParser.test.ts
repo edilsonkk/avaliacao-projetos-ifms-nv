@@ -1,16 +1,16 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import * as XLSX from 'xlsx';
 import {
   parsePlanilhaAvaliadores,
   extrairModalidadesBloqueadas,
   extrairAreas,
-  normalizarChave,
 } from '../lib/parsers/planilhaAvaliadoresParser';
+import { gerarBufferPlanilha } from '../lib/excelUtils';
 
 describe('Suíte de Testes Unitários: Parser Puro de Planilha de Avaliadores', () => {
-  it('1. SUCESSO: realiza parsing de planilha Excel (.xlsx) com Instituição e Modalidades Bloqueadas', () => {
+  it('1. SUCESSO: realiza parsing de planilha Excel (.xlsx) com Instituição e Modalidades Bloqueadas', async () => {
     // Arrange (Preparar)
+    const colunas = ['Nome', 'E-mail', 'Instituição', 'Modalidades Bloqueadas'];
     const dadosMock = [
       {
         Nome: 'Prof. Carlos Santos',
@@ -32,13 +32,10 @@ describe('Suíte de Testes Unitários: Parser Puro de Planilha de Avaliadores', 
       },
     ];
 
-    const worksheet = XLSX.utils.json_to_sheet(dadosMock);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Avaliadores');
-    const buffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
+    const buffer = await gerarBufferPlanilha('Avaliadores', colunas, dadosMock);
 
     // Act (Agir)
-    const resultado = parsePlanilhaAvaliadores(buffer, false);
+    const resultado = await parsePlanilhaAvaliadores(buffer, false);
 
     // Assert (Verificar)
     expect(resultado.sucesso).toBe(true);
@@ -62,7 +59,7 @@ describe('Suíte de Testes Unitários: Parser Puro de Planilha de Avaliadores', 
     expect(resultado.avaliadores[2].modalidades_bloqueadas).toEqual([]);
   });
 
-  it('2. SUCESSO CSV: realiza parsing de arquivo texto CSV com separador de modalidades', () => {
+  it('2. SUCESSO CSV: realiza parsing de arquivo texto CSV com separador de modalidades', async () => {
     // Arrange
     const csvContent =
       'Nome,Email,Instituicao,Bloqueio Modalidade\n' +
@@ -70,7 +67,7 @@ describe('Suíte de Testes Unitários: Parser Puro de Planilha de Avaliadores', 
       'Bruno Dias,bruno.dias@usp.br,USP,"Ensino Médio, Nível Fundamental"\n';
 
     // Act
-    const resultado = parsePlanilhaAvaliadores(csvContent, true);
+    const resultado = await parsePlanilhaAvaliadores(csvContent, true);
 
     // Assert
     expect(resultado.sucesso).toBe(true);
@@ -83,38 +80,33 @@ describe('Suíte de Testes Unitários: Parser Puro de Planilha de Avaliadores', 
     ]);
   });
 
-  it('3. TRATAMENTO DE EXCEÇÃO: lança erro descritivo para arquivo vazio ou sem linhas', () => {
+  it('3. TRATAMENTO DE EXCEÇÃO: lança erro descritivo para arquivo vazio ou sem linhas', async () => {
     // Arrange
-    const workbookVazio = XLSX.utils.book_new();
-    const wsVazia = XLSX.utils.aoa_to_sheet([]);
-    XLSX.utils.book_append_sheet(workbookVazio, wsVazia, 'Avaliadores');
-    const bufferVazio = XLSX.write(workbookVazio, { type: 'array', bookType: 'xlsx' });
+    const bufferVazio = await gerarBufferPlanilha('Avaliadores', [], []);
 
     // Act & Assert
-    expect(() => parsePlanilhaAvaliadores(bufferVazio, false)).toThrowError(
+    await expect(parsePlanilhaAvaliadores(bufferVazio, false)).rejects.toThrowError(
       /A planilha selecionada está vazia ou não contém linhas de dados/i
     );
 
-    expect(() => parsePlanilhaAvaliadores('', false)).toThrowError(
+    await expect(parsePlanilhaAvaliadores('', false)).rejects.toThrowError(
       /Conteúdo do arquivo ausente ou inválido/i
     );
   });
 
-  it('4. RESILIÊNCIA: ignora linhas com e-mails inválidos e registra no array de erros', () => {
+  it('4. RESILIÊNCIA: ignora linhas com e-mails inválidos e registra no array de erros', async () => {
     // Arrange
+    const colunas = ['Nome', 'E-mail', 'Instituição'];
     const dadosComErro = [
       { Nome: 'Avaliador Sem Email', 'E-mail': '', 'Instituição': 'IFMS' },
       { Nome: 'Avaliador Email Invalido', 'E-mail': 'email-sem-arroba', 'Instituição': 'IFMS' },
       { Nome: 'Avaliador Válido', 'E-mail': 'valido@ifms.edu.br', 'Instituição': 'IFMS' },
     ];
 
-    const worksheet = XLSX.utils.json_to_sheet(dadosComErro);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Avaliadores');
-    const buffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
+    const buffer = await gerarBufferPlanilha('Avaliadores', colunas, dadosComErro);
 
     // Act
-    const resultado = parsePlanilhaAvaliadores(buffer, false);
+    const resultado = await parsePlanilhaAvaliadores(buffer, false);
 
     // Assert
     expect(resultado.sucesso).toBe(true);
@@ -137,7 +129,7 @@ describe('Suíte de Testes Unitários: Parser Puro de Planilha de Avaliadores', 
     expect(extrairModalidadesBloqueadas(undefined)).toEqual([]);
   });
 
-  it('7. FUNÇÃO PURA: extrairAreas lida com vírgula, barra, traço, ponto-e-vírgula e pipes', () => {
+  it('6. FUNÇÃO PURA: extrairAreas lida com vírgula, barra, traço, ponto-e-vírgula e pipes', () => {
     expect(extrairAreas('Ciências Exatas, Biológicas / Engenharias - Ciências da Saúde ; Humanas | Agrárias')).toEqual([
       'Ciências Exatas',
       'Biológicas',
@@ -151,7 +143,8 @@ describe('Suíte de Testes Unitários: Parser Puro de Planilha de Avaliadores', 
     expect(extrairAreas(undefined)).toEqual([]);
   });
 
-  it('8. SUCESSO: realiza parsing de planilha com coluna Áreas de Avaliação', () => {
+  it('7. SUCESSO: realiza parsing de planilha com coluna Áreas de Avaliação', async () => {
+    const colunas = ['Nome', 'E-mail', 'Instituicao', 'Areas'];
     const dadosMock = [
       {
         Nome: 'Dr. Roberto Mendes',
@@ -161,13 +154,17 @@ describe('Suíte de Testes Unitários: Parser Puro de Planilha de Avaliadores', 
       },
     ];
 
-    const worksheet = XLSX.utils.json_to_sheet(dadosMock);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Avaliadores');
-    const buffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
+    const buffer = await gerarBufferPlanilha('Avaliadores', colunas, dadosMock);
 
-    const resultado = parsePlanilhaAvaliadores(buffer, false);
+    const resultado = await parsePlanilhaAvaliadores(buffer, false);
     expect(resultado.sucesso).toBe(true);
     expect(resultado.avaliadores[0].areas).toEqual(['Exatas', 'Engenharias', 'Computação']);
+  });
+
+  it('8. Deve rejeitar arquivos legados .xls com mensagem clara', async () => {
+    const fakeXlsBuffer = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x55, 0x66]);
+    await expect(parsePlanilhaAvaliadores(fakeXlsBuffer, false)).rejects.toThrow(
+      /O formato legado \.xls \(Excel 97-2003\) não é suportado/i
+    );
   });
 });

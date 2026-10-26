@@ -18,13 +18,13 @@
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
     "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^8.3.0",
-    "xlsx": "^0.18.5"
+    "vite": "^8.3.0"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",

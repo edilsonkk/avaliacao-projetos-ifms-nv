@@ -25,7 +25,7 @@ import {
   Tag,
   Layers
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { baixarPlanilhaModelo, validarArquivoPlanilha } from '@/lib/excelUtils';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
 import { parsePlanilhaProjetos } from '@/lib/parsers/planilhaProjetosParser';
 import { ModalDeParaMapping, ItemMapeamentoDePara, DecisaoMapeamento } from './ModalDeParaMapping';
@@ -463,7 +463,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
   };
 
   // Gerar e Baixar Modelo de Planilha (.xlsx) com colunas padrão e exemplos
-  const baixar_planilha_exemplo = () => {
+  const baixar_planilha_exemplo = async () => {
     try {
       const dadosExemplo = [
         {
@@ -501,21 +501,18 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
         },
       ];
 
-      const ws = XLSX.utils.json_to_sheet(dadosExemplo);
-      ws['!cols'] = [
-        { wch: 16 }, // codigo_projeto
-        { wch: 55 }, // titulo
-        { wch: 12 }, // estande
-        { wch: 14 }, // corredor
-        { wch: 32 }, // instituicao
-        { wch: 18 }, // sigla_instituicao
-        { wch: 35 }, // area_tematica
-        { wch: 28 }, // modalidade
-        { wch: 20 }, // fora_da_competicao
+      const colunas = [
+        'codigo_projeto',
+        'titulo',
+        'estande',
+        'corredor',
+        'instituicao',
+        'sigla_instituicao',
+        'area_tematica',
+        'modalidade',
+        'fora_da_competicao',
       ];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Modelo Importação Projetos');
-      XLSX.writeFile(wb, 'modelo_importacao_projetos.xlsx');
+      await baixarPlanilhaModelo('modelo_importacao_projetos.xlsx', 'Projetos', colunas, dadosExemplo);
       exibir_sucesso('Planilha modelo (.xlsx) gerada e baixada com sucesso!');
     } catch (err: any) {
       console.error('Erro ao gerar planilha de exemplo:', err);
@@ -908,10 +905,18 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
     set_mensagem_erro(null);
     set_logs_importacao([]);
 
+    const validacao = validarArquivoPlanilha(file);
+    if (!validacao.valido) {
+      adicionarLog('error', validacao.erro || 'Arquivo inválido.');
+      set_mensagem_erro(validacao.erro || 'Arquivo inválido.');
+      set_processando_arquivo(false);
+      return;
+    }
+
     adicionarLog('info', `Iniciando leitura da planilha: ${file.name}`);
 
     try {
-      const isCSV = file.name.toLowerCase().endsWith('.csv');
+      const isCSV = validacao.isCSV;
       const reader = new FileReader();
 
       reader.onload = async (e) => {
@@ -922,7 +927,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
             return;
           }
 
-          const { projetos: linhasParseadas, total_lido, avisos } = parsePlanilhaProjetos(
+          const { projetos: linhasParseadas, total_lido, avisos } = await parsePlanilhaProjetos(
             isCSV ? (e.target.result as string) : (e.target.result as ArrayBuffer),
             isCSV
           );
@@ -1298,7 +1303,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
           <input
             ref={input_arquivo_ref}
             type="file"
-            accept=".csv, .xlsx, .xls"
+            accept=".csv, .xlsx"
             className="hidden"
             id="input-planilha-projetos"
             disabled={processando_arquivo}
@@ -1313,14 +1318,14 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
             onClick={() => input_arquivo_ref.current?.click()}
             disabled={processando_arquivo}
             className="px-3.5 py-2 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white flex items-center gap-2 shadow-xs cursor-pointer transition-all disabled:opacity-60"
-            title="Importar (.xls/.xlsx/.csv)"
+            title="Importar (.xlsx/.csv)"
           >
             {processando_arquivo ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <UploadCloud className="w-4 h-4" />
             )}
-            <span>{processando_arquivo ? 'Processando Planilha...' : 'Importar (.xls/.xlsx/.csv)'}</span>
+            <span>{processando_arquivo ? 'Processando Planilha...' : 'Importar (.xlsx/.csv)'}</span>
           </button>
 
           <button

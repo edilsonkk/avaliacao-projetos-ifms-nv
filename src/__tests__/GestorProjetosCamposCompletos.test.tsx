@@ -86,7 +86,7 @@ describe('Auditoria de Gestor de Projetos: Campos Completos e Topo da Fila', () 
 
     await waitFor(() => {
       expect(screen.getByText('Baixar Modelo (.xlsx)')).toBeInTheDocument();
-      expect(screen.getByText('Importar (.xls/.xlsx/.csv)')).toBeInTheDocument();
+      expect(screen.getByText('Importar (.xlsx/.csv)')).toBeInTheDocument();
     });
   });
 

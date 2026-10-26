@@ -19,7 +19,7 @@ import {
   ArrowUp,
   ArrowDown
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { lerPlanilhaParaJson, validarArquivoPlanilha } from '@/lib/excelUtils';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
 
 interface InstituicaoRegistro {
@@ -96,15 +96,24 @@ export const GestorInstituicoes: React.FC<{ id_evento_ativo?: string; ao_fechar?
       .replace(/[^a-z0-9]/g, '');
   };
 
-  // 1.1 IMPORTAÇÃO EM MASSA POR PLANILHA (.CSV/.XLSX/.XLS)
+  // 1.1 IMPORTAÇÃO EM MASSA POR PLANILHA (.CSV/.XLSX)
   const handle_upload_instituicoes = async (file: File) => {
     set_processando_arquivo(true);
     set_mensagem_erro(null);
     set_logs_importacao([]);
+
+    const validacao = validarArquivoPlanilha(file);
+    if (!validacao.valido) {
+      adicionarLog('error', validacao.erro || 'Arquivo inválido.');
+      set_mensagem_erro(validacao.erro || 'Arquivo inválido.');
+      set_processando_arquivo(false);
+      return;
+    }
+
     adicionarLog('info', `Iniciando leitura da planilha: ${file.name}`);
 
     try {
-      const isCSV = file.name.toLowerCase().endsWith('.csv');
+      const isCSV = validacao.isCSV;
       const reader = new FileReader();
 
       reader.onload = async (e) => {
@@ -115,17 +124,10 @@ export const GestorInstituicoes: React.FC<{ id_evento_ativo?: string; ao_fechar?
             return;
           }
 
-          let workbook: XLSX.WorkBook;
-          if (isCSV) {
-            const text = e.target.result as string;
-            workbook = XLSX.read(text, { type: 'string', raw: true });
-          } else {
-            const data = new Uint8Array(e.target.result as ArrayBuffer);
-            workbook = XLSX.read(data, { type: 'array', cellDates: true });
-          }
-
-          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-          const dadosBrutos: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+          const dadosBrutos = await lerPlanilhaParaJson(
+            isCSV ? (e.target.result as string) : (e.target.result as ArrayBuffer),
+            isCSV
+          );
 
           if (dadosBrutos.length === 0) {
             adicionarLog('error', 'A planilha de instituições está vazia.');
@@ -566,7 +568,7 @@ export const GestorInstituicoes: React.FC<{ id_evento_ativo?: string; ao_fechar?
           <input
             ref={input_file_ref}
             type="file"
-            accept=".csv, .xlsx, .xls"
+            accept=".csv, .xlsx"
             className="hidden"
             disabled={processando_arquivo}
             onChange={(e) => {
@@ -581,14 +583,14 @@ export const GestorInstituicoes: React.FC<{ id_evento_ativo?: string; ao_fechar?
             onClick={() => input_file_ref.current?.click()}
             disabled={processando_arquivo}
             className="px-3.5 py-2.5 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs shrink-0 cursor-pointer disabled:opacity-60"
-            title="Importar (.xls/.xlsx/.csv)"
+            title="Importar (.xlsx/.csv)"
           >
             {processando_arquivo ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <UploadCloud className="w-4 h-4" />
             )}
-            <span>{processando_arquivo ? 'Processando Planilha...' : 'Importar (.xls/.xlsx/.csv)'}</span>
+            <span>{processando_arquivo ? 'Processando Planilha...' : 'Importar (.xlsx/.csv)'}</span>
           </button>
 
           <button

@@ -96,7 +96,7 @@ describe('Auditoria de Regressão: Impedir Reatribuição do Mesmo Projeto ao Me
           data: {
             id_evento: eventoId,
             nome_evento: 'FETEC 2026',
-            data_evento: new Date().toISOString().split('T')[0],
+            data_evento: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`,
             horario_inicio: '00:00',
             horario_fim: '23:59',
             sistema_liberado: true,

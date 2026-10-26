@@ -464,39 +464,39 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
     fecharGestor2();
   });
 
-  it('9. PADRONIZAÇÃO DE BOTÕES DE IMPORTAÇÃO: todos os 5 gestores exibem botão "Importar (.xls/.xlsx/.csv)"', async () => {
+  it('9. PADRONIZAÇÃO DE BOTÕES DE IMPORTAÇÃO: todos os 5 gestores exibem botão "Importar (.xlsx/.csv)"', async () => {
     // 1. GestorProjetos
     const { unmount: u1 } = render(<GestorProjetos />);
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Importar \(\.xls\/\.xlsx\/\.csv\)/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /Importar \(\.xlsx\/\.csv\)/i })).toBeDefined();
     });
     u1();
 
     // 2. GestorAvaliadores
     const { unmount: u2 } = render(<GestorAvaliadores id_evento_ativo="evt-2026" />);
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: /Importar \(\.xls\/\.xlsx\/\.csv\)/i })[0]).toBeDefined();
+      expect(screen.getAllByRole('button', { name: /Importar \(\.xlsx\/\.csv\)/i })[0]).toBeDefined();
     });
     u2();
 
     // 3. GestorStaff
     const { unmount: u3 } = render(<GestorStaff id_evento_ativo="evt-2026" />);
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: /Importar \(\.xls\/\.xlsx\/\.csv\)/i })[0]).toBeDefined();
+      expect(screen.getAllByRole('button', { name: /Importar \(\.xlsx\/\.csv\)/i })[0]).toBeDefined();
     });
     u3();
 
     // 4. GestorInstituicoes
     const { unmount: u4 } = render(<GestorInstituicoes />);
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Importar \(\.xls\/\.xlsx\/\.csv\)/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /Importar \(\.xlsx\/\.csv\)/i })).toBeDefined();
     });
     u4();
 
     // 5. GestorQuestionarios
     const { unmount: u5 } = render(<GestorQuestionarios id_evento_ativo="evt-2026" />);
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Importar \(\.xls\/\.xlsx\/\.csv\)/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /Importar \(\.xlsx\/\.csv\)/i })).toBeDefined();
     });
     u5();
   });

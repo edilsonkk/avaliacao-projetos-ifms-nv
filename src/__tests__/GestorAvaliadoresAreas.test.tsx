@@ -21,25 +21,19 @@ vi.mock('../lib/supabase', () => ({
   verificar_conexao_configurada: vi.fn(() => true),
 }));
 
-// Mock do xlsx para inspecionar download de modelo
-const { mockXlsxWrite, mockXlsxUtils } = vi.hoisted(() => {
-  const mockXlsxWrite = vi.fn();
-  const mockXlsxUtils = {
-    book_new: vi.fn(() => ({})),
-    json_to_sheet: vi.fn((data: any) => data),
-    book_append_sheet: vi.fn(),
-  };
-  return { mockXlsxWrite, mockXlsxUtils };
+// Mock do excelUtils para inspecionar download de modelo
+const { mockBaixarPlanilhaModelo } = vi.hoisted(() => {
+  const mockBaixarPlanilhaModelo = vi.fn().mockResolvedValue(undefined);
+  return { mockBaixarPlanilhaModelo };
 });
 
-vi.mock('xlsx', () => ({
-  default: {
-    write: mockXlsxWrite,
-    utils: mockXlsxUtils,
-  },
-  write: mockXlsxWrite,
-  utils: mockXlsxUtils,
-}));
+vi.mock('@/lib/excelUtils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/excelUtils')>();
+  return {
+    ...actual,
+    baixarPlanilhaModelo: mockBaixarPlanilhaModelo,
+  };
+});
 
 import { GestorAvaliadores } from '../components/GestorAvaliadores';
 
@@ -265,8 +259,11 @@ describe('Gestor de Avaliadores - Múltiplas Áreas de Avaliação e Afinidade T
     const btnModelo = screen.getByTitle(/Baixar Planilha Modelo/i);
     await user.click(btnModelo);
 
-    // Valida que json_to_sheet recebeu objeto com a propriedade areas
-    expect(mockXlsxUtils.json_to_sheet).toHaveBeenCalledWith(
+    // Valida que baixarPlanilhaModelo recebeu a coluna 'areas' e linhas de exemplo com a propriedade areas
+    expect(mockBaixarPlanilhaModelo).toHaveBeenCalledWith(
+      'modelo_importacao_avaliadores.xlsx',
+      'Avaliadores',
+      expect.arrayContaining(['areas']),
       expect.arrayContaining([
         expect.objectContaining({
           areas: expect.any(String),

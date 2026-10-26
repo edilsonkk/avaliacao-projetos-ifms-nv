@@ -29,7 +29,7 @@ import {
   Save,
   Download,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { baixarPlanilhaModelo, validarArquivoPlanilha } from '@/lib/excelUtils';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
 import { parsePlanilhaAvaliadores, normalizarChave } from '../lib/parsers/planilhaAvaliadoresParser';
 import { ModalDeParaMapping, ItemMapeamentoDePara, DecisaoMapeamento } from './ModalDeParaMapping';
@@ -476,7 +476,7 @@ export const GestorAvaliadores: React.FC<{
   };
 
   // Gerar e Baixar Modelo de Planilha (.xlsx) com colunas padrão de avaliadores
-  const baixar_planilha_exemplo = () => {
+  const baixar_planilha_exemplo = async () => {
     try {
       const dadosExemplo = [
         {
@@ -505,18 +505,8 @@ export const GestorAvaliadores: React.FC<{
         },
       ];
 
-      const ws = XLSX.utils.json_to_sheet(dadosExemplo);
-      ws['!cols'] = [
-        { wch: 32 }, // nome
-        { wch: 35 }, // email
-        { wch: 32 }, // instituicao
-        { wch: 18 }, // sigla_instituicao
-        { wch: 45 }, // modalidades_bloqueadas
-        { wch: 50 }, // areas
-      ];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Modelo Avaliadores');
-      XLSX.writeFile(wb, 'modelo_importacao_avaliadores.xlsx');
+      const colunas = ['nome', 'email', 'instituicao', 'sigla_instituicao', 'modalidades_bloqueadas', 'areas'];
+      await baixarPlanilhaModelo('modelo_importacao_avaliadores.xlsx', 'Avaliadores', colunas, dadosExemplo);
       exibir_notificacao('Planilha modelo de avaliadores (.xlsx) gerada e baixada com sucesso!');
     } catch (err: any) {
       console.error('Erro ao gerar planilha modelo de avaliadores:', err);
@@ -939,10 +929,18 @@ export const GestorAvaliadores: React.FC<{
     set_mensagem_erro(null);
     setLogsImportacao([]); // Limpa logs anteriores
 
+    const validacao = validarArquivoPlanilha(file);
+    if (!validacao.valido) {
+      adicionarLog('error', validacao.erro || 'Arquivo inválido.');
+      set_mensagem_erro(validacao.erro || 'Arquivo inválido.');
+      set_processando_arquivo(false);
+      return;
+    }
+
     adicionarLog('info', `Iniciando leitura do arquivo: ${file.name}`);
 
     try {
-      const isCSV = file.name.toLowerCase().endsWith('.csv');
+      const isCSV = validacao.isCSV;
       const reader = new FileReader();
 
       reader.onload = async (e) => {
@@ -953,7 +951,7 @@ export const GestorAvaliadores: React.FC<{
             return;
           }
 
-          const resultado = parsePlanilhaAvaliadores(e.target.result as ArrayBuffer | string, isCSV);
+          const resultado = await parsePlanilhaAvaliadores(e.target.result as ArrayBuffer | string, isCSV);
 
           if (!resultado.sucesso || resultado.avaliadores.length === 0) {
             adicionarLog('error', 'Nenhum avaliador válido encontrado para importação.');
@@ -1720,7 +1718,7 @@ export const GestorAvaliadores: React.FC<{
           <input
             ref={input_file_ref}
             type="file"
-            accept=".csv, .xlsx, .xls"
+            accept=".csv, .xlsx"
             className="hidden"
             disabled={processando_arquivo}
             onChange={(e) => {
@@ -1746,14 +1744,14 @@ export const GestorAvaliadores: React.FC<{
             onClick={() => input_file_ref.current?.click()}
             disabled={processando_arquivo}
             className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs shrink-0 cursor-pointer disabled:opacity-60"
-            title="Importar (.xls/.xlsx/.csv)"
+            title="Importar (.xlsx/.csv)"
           >
             {processando_arquivo ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <UploadCloud className="w-4 h-4" />
             )}
-            <span>{processando_arquivo ? 'Processando Planilha...' : 'Importar (.xls/.xlsx/.csv)'}</span>
+            <span>{processando_arquivo ? 'Processando Planilha...' : 'Importar (.xlsx/.csv)'}</span>
           </button>
 
           <button

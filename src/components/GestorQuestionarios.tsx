@@ -17,7 +17,7 @@ import {
   Terminal,
   X
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { lerPlanilhaParaJson, validarArquivoPlanilha } from '@/lib/excelUtils';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
 
 interface ItemPerguntaForm {
@@ -110,15 +110,24 @@ export const GestorQuestionarios: React.FC<{
     }, 3500);
   };
 
-  // 1. IMPORTAÇÃO EM MASSA DE PERGUNTAS/CRITÉRIOS POR PLANILHA
+  // 1. IMPORTAÇÃO EM MASSA DE PERGUNTAS/CRITÉRIOS POR PLANILHA (.CSV/.XLSX)
   const handle_upload_questionarios = async (file: File) => {
     set_processando_arquivo(true);
     setErroQuest(null);
     set_logs_importacao([]);
+
+    const validacao = validarArquivoPlanilha(file);
+    if (!validacao.valido) {
+      adicionarLog('error', validacao.erro || 'Arquivo inválido.');
+      setErroQuest(validacao.erro || 'Arquivo inválido.');
+      set_processando_arquivo(false);
+      return;
+    }
+
     adicionarLog('info', `Iniciando leitura da planilha de questionário: ${file.name}`);
 
     try {
-      const isCSV = file.name.toLowerCase().endsWith('.csv');
+      const isCSV = validacao.isCSV;
       const reader = new FileReader();
 
       reader.onload = async (e) => {
@@ -129,17 +138,10 @@ export const GestorQuestionarios: React.FC<{
             return;
           }
 
-          let workbook: XLSX.WorkBook;
-          if (isCSV) {
-            const text = e.target.result as string;
-            workbook = XLSX.read(text, { type: 'string', raw: true });
-          } else {
-            const data = new Uint8Array(e.target.result as ArrayBuffer);
-            workbook = XLSX.read(data, { type: 'array', cellDates: true });
-          }
-
-          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-          const dadosBrutos: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+          const dadosBrutos = await lerPlanilhaParaJson(
+            isCSV ? (e.target.result as string) : (e.target.result as ArrayBuffer),
+            isCSV
+          );
 
           if (dadosBrutos.length === 0) {
             adicionarLog('error', 'A planilha selecionada está vazia.');
@@ -653,7 +655,7 @@ export const GestorQuestionarios: React.FC<{
           <input
             ref={input_file_ref}
             type="file"
-            accept=".csv, .xlsx, .xls"
+            accept=".csv, .xlsx"
             className="hidden"
             disabled={processando_arquivo}
             onChange={(e) => {
@@ -668,14 +670,14 @@ export const GestorQuestionarios: React.FC<{
             onClick={() => input_file_ref.current?.click()}
             disabled={processando_arquivo}
             className="px-3.5 py-2.5 bg-violet-600 hover:bg-violet-700 active:scale-98 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs shrink-0 cursor-pointer disabled:opacity-60"
-            title="Importar (.xls/.xlsx/.csv)"
+            title="Importar (.xlsx/.csv)"
           >
             {processando_arquivo ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <UploadCloud className="w-4 h-4" />
             )}
-            <span>{processando_arquivo ? 'Processando Planilha...' : 'Importar (.xls/.xlsx/.csv)'}</span>
+            <span>{processando_arquivo ? 'Processando Planilha...' : 'Importar (.xlsx/.csv)'}</span>
           </button>
 
           {aoFechar && (

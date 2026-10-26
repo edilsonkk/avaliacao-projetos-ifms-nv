@@ -1,8 +1,8 @@
 /**
- * Parser puro de Planilhas de Modalidades e Níveis (.xlsx, .xls, .csv)
+ * Parser puro de Planilhas de Modalidades e Níveis (.xlsx, .csv)
  * Conforme diretrizes TDD (Regra 2.A): funções puras desacopladas de React/DOM.
  */
-import * as XLSX from 'xlsx';
+import { lerPlanilhaParaJson } from '@/lib/excelUtils';
 import { sanitizarTexto } from './fuzzyMatcher';
 
 export interface ModalidadeImportada {
@@ -31,37 +31,18 @@ export function normalizarHeader(header: string): string {
 /**
  * Realiza parsing determinístico de planilhas de modalidades e níveis
  */
-export function parsePlanilhaModalidades(
-  dataBuffer: ArrayBuffer | string,
+export async function parsePlanilhaModalidades(
+  dataBuffer: ArrayBuffer | Uint8Array | string,
   isCSV: boolean = false
-): ResultadoParsingModalidades {
+): Promise<ResultadoParsingModalidades> {
   try {
-    let workbook: XLSX.WorkBook;
-
-    if (isCSV && typeof dataBuffer === 'string') {
-      workbook = XLSX.read(dataBuffer, { type: 'string' });
-    } else {
-      workbook = XLSX.read(dataBuffer, { type: 'array' });
-    }
-
-    const firstSheetName = workbook.SheetNames[0];
-    if (!firstSheetName) {
-      return {
-        sucesso: false,
-        modalidades: [],
-        erros: [{ linha: 0, mensagem: 'O arquivo não possui nenhuma planilha/aba válida.' }],
-        totalLinhasLidas: 0,
-      };
-    }
-
-    const worksheet = workbook.Sheets[firstSheetName];
-    const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
+    const rawRows = await lerPlanilhaParaJson(dataBuffer, isCSV);
 
     if (!rawRows || rawRows.length === 0) {
       return {
         sucesso: false,
         modalidades: [],
-        erros: [{ linha: 0, mensagem: 'A planilha está vazia.' }],
+        erros: [{ linha: 0, mensagem: 'A planilha está vazia ou não contém abas válidas.' }],
         totalLinhasLidas: 0,
       };
     }
@@ -99,7 +80,7 @@ export function parsePlanilhaModalidades(
         return norm === 'DESCRICAO' || norm === 'OBSERVACAO' || norm === 'DETALHES';
       });
 
-      const valorModalidade = chaveModalidade ? String(row[chaveModalidade]).trim() : '';
+      const valorModalidade = chaveModalidade ? String(row[chaveModalidade] ?? '').trim() : '';
 
       if (!valorModalidade) {
         erros.push({
@@ -125,11 +106,12 @@ export function parsePlanilhaModalidades(
       erros,
       totalLinhasLidas: rawRows.length,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
     return {
       sucesso: false,
       modalidades: [],
-      erros: [{ linha: 0, mensagem: `Erro ao decodificar arquivo: ${err?.message || 'Arquivo corrompido'}` }],
+      erros: [{ linha: 0, mensagem: `Erro ao decodificar arquivo: ${msg}` }],
       totalLinhasLidas: 0,
     };
   }

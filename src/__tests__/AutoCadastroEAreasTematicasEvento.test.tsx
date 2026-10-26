@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import * as XLSX from 'xlsx';
+import { gerarBufferPlanilha } from '../lib/excelUtils';
 import { GestorProjetos } from '../components/GestorProjetos';
 import { GestorAvaliadores } from '../components/GestorAvaliadores';
 import { supabase } from '../lib/supabase';
@@ -193,11 +193,9 @@ describe('Rotinas 3 e 4: Auto-Cadastro de Instituições, Modalidades e Áreas T
       },
     ];
 
-    const ws = XLSX.utils.json_to_sheet(linhasPlanilha);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Projetos');
-    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-    const file = new File([buf], 'projetos.xlsx', {
+    const colunasPrj = ['codigo_projeto', 'titulo', 'instituicao', 'sigla', 'area_tematica', 'modalidade'];
+    const buf = await gerarBufferPlanilha('Projetos', colunasPrj, linhasPlanilha);
+    const file = new File([buf as Uint8Array<ArrayBuffer>], 'projetos.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
 
@@ -285,11 +283,9 @@ describe('Rotinas 3 e 4: Auto-Cadastro de Instituições, Modalidades e Áreas T
       },
     ];
 
-    const ws = XLSX.utils.json_to_sheet(linhasAv);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Avaliadores');
-    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-    const file = new File([buf], 'avaliadores.xlsx', {
+    const colunasAv = ['nome', 'email', 'instituicao', 'sigla_instituicao', 'modalidades_bloqueadas'];
+    const buf = await gerarBufferPlanilha('Avaliadores', colunasAv, linhasAv);
+    const file = new File([buf as Uint8Array<ArrayBuffer>], 'avaliadores.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
 
