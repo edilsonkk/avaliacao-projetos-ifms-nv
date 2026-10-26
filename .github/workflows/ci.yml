@@ -28,3 +28,7 @@ jobs:
 
       - name: Executar Auditoria do Vitest (QA Gate)
         run: npx vitest run
+
+      - name: Validar Build de Produção (Vite Build Gate)
+        run: npm run build
+
