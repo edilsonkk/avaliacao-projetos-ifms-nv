@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Cabecalho, TipoTelaNavegacao } from './components/Cabecalho';
 import { TelaAvaliador } from './components/TelaAvaliador';
 import { TelaStaff } from './components/TelaStaff';
@@ -12,6 +12,7 @@ import { TelaLogin, AbaLogin } from './components/TelaLogin';
 import { TelaoAoVivo } from './components/TelaoAoVivo';
 import { TelaAutocadastroAvaliador } from './components/TelaAutocadastroAvaliador';
 import { supabase } from './lib/supabase';
+import { EVENTO_SESSAO_ADMIN_EXPIRADA, MENSAGEM_SESSAO_EXPIRADA } from './lib/sessaoAdmin';
 
 export default function App() {
   // Inicialização com suporte a autocadastro via QR Code e rota raiz apontando para TelaLogin
@@ -58,6 +59,18 @@ export default function App() {
     set_tela_atual('login');
     set_aba_login('avaliador');
   };
+
+  // Sessão do Supabase Auth inválida durante escrita administrativa: força novo login Admin
+  useEffect(() => {
+    const aoExpirarSessaoAdmin = async () => {
+      await handle_sair();
+      set_aba_login('admin');
+      alert(MENSAGEM_SESSAO_EXPIRADA);
+    };
+    window.addEventListener(EVENTO_SESSAO_ADMIN_EXPIRADA, aoExpirarSessaoAdmin);
+    return () => window.removeEventListener(EVENTO_SESSAO_ADMIN_EXPIRADA, aoExpirarSessaoAdmin);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handle_mudar_tela = (nova_tela: TipoTelaNavegacao) => {
     const userPerfil = (localStorage.getItem('usuario_perfil') || '').toLowerCase();

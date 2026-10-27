@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { baixarPlanilhaModelo, validarArquivoPlanilha } from '@/lib/excelUtils';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
+import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '../lib/sessaoAdmin';
 import { parsePlanilhaAvaliadores, normalizarChave } from '../lib/parsers/planilhaAvaliadoresParser';
 import { ModalDeParaMapping, ItemMapeamentoDePara, DecisaoMapeamento } from './ModalDeParaMapping';
 import { buscarMelhorCorrespondencia, CandidatoMatch } from '@/lib/parsers/fuzzyMatcher';
@@ -519,6 +520,7 @@ export const GestorAvaliadores: React.FC<{
     avaliadoresImportados: any[],
     decisoes: Map<string, DecisaoMapeamento>
   ) => {
+    if (conexao_banco && !(await garantirSessaoAdmin())) return;
     set_processando_arquivo(true);
     try {
       const isUuid = (id?: string) => Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
@@ -817,8 +819,9 @@ export const GestorAvaliadores: React.FC<{
           .upsert(usuariosUpsert, { onConflict: 'email' });
 
         if (errBatch) {
-          adicionarLog('error', `Falha no banco ao realizar UPSERT em lote: ${errBatch.message}`);
-          set_mensagem_erro(`Erro ao importar avaliadores: ${errBatch.message}`);
+          const msgErro = tratarErroEscritaAdmin(errBatch);
+          adicionarLog('error', `Falha no banco ao realizar UPSERT em lote: ${msgErro}`);
+          set_mensagem_erro(`Erro ao importar avaliadores: ${msgErro}`);
           set_processando_arquivo(false);
           return;
         }

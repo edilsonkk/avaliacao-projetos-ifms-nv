@@ -15,6 +15,9 @@ vi.mock('../lib/supabase', () => {
     supabase: {
       from: mockFrom,
       rpc: mockRpc,
+      auth: {
+        getSession: vi.fn(async () => ({ data: { session: { access_token: 'tok-admin' } }, error: null })),
+      },
     },
     verificar_conexao_configurada: () => true,
   };

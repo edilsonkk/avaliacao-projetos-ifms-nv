@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { baixarPlanilhaModelo, validarArquivoPlanilha } from '@/lib/excelUtils';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
+import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '../lib/sessaoAdmin';
 import { parsePlanilhaProjetos } from '@/lib/parsers/planilhaProjetosParser';
 import { ModalDeParaMapping, ItemMapeamentoDePara, DecisaoMapeamento } from './ModalDeParaMapping';
 import { buscarMelhorCorrespondencia, CandidatoMatch } from '@/lib/parsers/fuzzyMatcher';
@@ -533,6 +534,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
     linhasParseadas: any[],
     decisoes: Map<string, DecisaoMapeamento>
   ) => {
+    if (conexao_banco && !(await garantirSessaoAdmin())) return;
     set_processando_arquivo(true);
     try {
       const idEvt = obterEventoAtivoId() || null;
@@ -852,8 +854,9 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
 
           if (error) {
             console.error('Erro no upsert de projetos:', error);
-            adicionarLog('error', `Erro no banco ao realizar UPSERT: ${error.message}`);
-            set_mensagem_erro(`Erro ao importar projetos: ${error.message}`);
+            const msgErro = tratarErroEscritaAdmin(error);
+            adicionarLog('error', `Erro no banco ao realizar UPSERT: ${msgErro}`);
+            set_mensagem_erro(`Erro ao importar projetos: ${msgErro}`);
           } else {
             adicionarLog('success', `UPSERT concluído com sucesso! ${projetosFormatados.length} projetos cadastrados/atualizados com evento e referências.`);
             exibir_sucesso(`Importação concluída: ${projetosFormatados.length} projetos cadastrados/atualizados com sucesso!`);

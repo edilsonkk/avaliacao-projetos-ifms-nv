@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { baixarPlanilhaModelo, validarArquivoPlanilha } from '@/lib/excelUtils';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
+import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '../lib/sessaoAdmin';
 import { parsePlanilhaModalidades, ModalidadeImportada } from '../lib/parsers/planilhaModalidadesParser';
 import { ModalDeParaMapping, ItemMapeamentoDePara, DecisaoMapeamento } from './ModalDeParaMapping';
 import { buscarMelhorCorrespondencia, CandidatoMatch, sanitizarTexto } from '../lib/parsers/fuzzyMatcher';
@@ -458,6 +459,7 @@ export const GestorModalidades: React.FC<GestorModalidadesProps> = ({
     linhas: ModalidadeImportada[],
     decisoes: Map<string, DecisaoMapeamento>
   ) => {
+    if (conexaoBanco && !(await garantirSessaoAdmin())) return;
     setProcessandoArquivo(true);
     try {
       const idEvt = id_evento_ativo || (typeof window !== 'undefined' ? localStorage.getItem('evento_ativo_id') : '') || null;
@@ -520,8 +522,9 @@ export const GestorModalidades: React.FC<GestorModalidadesProps> = ({
       setModalDeParaAberto(false);
     } catch (err: any) {
       console.error('Erro ao gravar modalidades:', err);
-      adicionarLog('error', `Falha ao persistir: ${err.message}`);
-      setMensagemErro(`Erro ao gravar: ${err.message}`);
+      const msgErro = tratarErroEscritaAdmin(err);
+      adicionarLog('error', `Falha ao persistir: ${msgErro}`);
+      setMensagemErro(`Erro ao gravar: ${msgErro}`);
     } finally {
       setProcessandoArquivo(false);
     }

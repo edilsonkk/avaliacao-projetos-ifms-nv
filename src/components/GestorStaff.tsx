@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { lerPlanilhaParaJson, validarArquivoPlanilha } from '@/lib/excelUtils';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
+import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '../lib/sessaoAdmin';
 
 export interface UsuarioStaff {
   id_usuario: string;
@@ -394,6 +395,10 @@ export const GestorStaff: React.FC<{
           adicionarLog('info', `Consolidando ${listaStaff.length} membros do Staff para envio via UPSERT em lote...`);
 
           if (conexao_banco) {
+            if (!(await garantirSessaoAdmin())) {
+              set_processando_arquivo(false);
+              return;
+            }
             try {
               const { data: usuariosUpsert, error: errUpsert } = await supabase
                 .from('usuarios')
@@ -401,8 +406,9 @@ export const GestorStaff: React.FC<{
                 .select('id_usuario, email');
 
               if (errUpsert) {
-                adicionarLog('error', `Falha no banco ao realizar UPSERT em lote: ${errUpsert.message}`);
-                set_mensagem_erro(`Erro ao importar equipe Staff: ${errUpsert.message}`);
+                const msgErro = tratarErroEscritaAdmin(errUpsert);
+                adicionarLog('error', `Falha no banco ao realizar UPSERT em lote: ${msgErro}`);
+                set_mensagem_erro(`Erro ao importar equipe Staff: ${msgErro}`);
               } else {
                 const eventoId = id_evento_ativo || (typeof window !== 'undefined' ? localStorage.getItem('evento_ativo_id') : null);
                 if (eventoId && usuariosUpsert && usuariosUpsert.length > 0) {

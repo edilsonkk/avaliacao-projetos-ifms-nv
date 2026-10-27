@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { lerPlanilhaParaJson, validarArquivoPlanilha } from '@/lib/excelUtils';
 import { supabase, verificar_conexao_configurada } from '../lib/supabase';
+import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '../lib/sessaoAdmin';
 
 interface InstituicaoRegistro {
   id_instituicao: string;
@@ -193,6 +194,10 @@ export const GestorInstituicoes: React.FC<{ id_evento_ativo?: string; ao_fechar?
           adicionarLog('info', `Consolidando ${listaInst.length} instituições para envio via UPSERT em lote...`);
 
           if (conexao_banco) {
+            if (!(await garantirSessaoAdmin())) {
+              set_processando_arquivo(false);
+              return;
+            }
             let { error: errUpsert } = await supabase
               .from('instituicoes')
               .upsert(listaInst, { onConflict: 'nome_normalizado' });
@@ -208,8 +213,9 @@ export const GestorInstituicoes: React.FC<{ id_evento_ativo?: string; ao_fechar?
                 errInsert = retry.error;
               }
               if (errInsert) {
-                adicionarLog('error', `Erro ao gravar no Supabase: ${errInsert.message}`);
-                set_mensagem_erro(`Erro ao importar instituições: ${errInsert.message}`);
+                const msgErro = tratarErroEscritaAdmin(errInsert);
+                adicionarLog('error', `Erro ao gravar no Supabase: ${msgErro}`);
+                set_mensagem_erro(`Erro ao importar instituições: ${msgErro}`);
                 set_processando_arquivo(false);
                 return;
               }
