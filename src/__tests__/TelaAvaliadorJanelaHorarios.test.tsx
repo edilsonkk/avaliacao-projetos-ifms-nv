@@ -291,7 +291,13 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
 
     it('deve permitir concluir e enviar avaliação em andamento mesmo se o horário final expirou', async () => {
       const idProjetoEmAndamento = 'p0000000-0000-0000-0000-000000000099';
-      let insertAvaliacaoRealizado = false;
+
+      // O envio agora passa pela RPC server-side fn_enviar_avaliacao (gravação
+      // segura: trava, cota, janela, escala e nota_final calculados no banco).
+      vi.mocked(supabase.rpc).mockResolvedValue({
+        data: { sucesso: true, id_avaliacao: 'aval-123', nota_final: 4.5 },
+        error: null,
+      } as any);
 
       vi.mocked(supabase.from).mockImplementation((tabela: string) => {
         if (tabela === 'eventos') {
@@ -355,16 +361,7 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
           });
         }
         if (tabela === 'avaliacoes') {
-          const chain = criarQueryChain({ id_avaliacao: 'aval-123' });
-          chain.insert = vi.fn().mockImplementation(() => {
-            insertAvaliacaoRealizado = true;
-            return {
-              select: () => ({
-                single: () => Promise.resolve({ data: { id_avaliacao: 'aval-123' }, error: null }),
-              }),
-            };
-          });
-          return chain;
+          return criarQueryChain({ data: null, error: null });
         }
         if (tabela === 'respostas_avaliacao') {
           return criarQueryChain({ error: null });
@@ -395,7 +392,10 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
       fireEvent.click(btnSalvar);
 
       await waitFor(() => {
-        expect(insertAvaliacaoRealizado).toBe(true);
+        expect(supabase.rpc).toHaveBeenCalledWith(
+          'fn_enviar_avaliacao',
+          expect.objectContaining({ p_id_projeto: idProjetoEmAndamento })
+        );
       });
     });
   });

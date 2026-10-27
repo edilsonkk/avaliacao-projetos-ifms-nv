@@ -1127,65 +1127,100 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
     }
 
     try {
-      const { data: avaliacao_gerada, error: erro_avaliacao } = await supabase
-        .from('avaliacoes')
-        .insert({
-          id_projeto: id_projeto_alvo,
-          id_usuario: avaliadorId,
-          nota_final: nota_final,
-          parecer_final: parecer_avaliador,
-          tempo_presenca: timestampInicio,
-          tempo_submissao: timestampSubmissao,
-        })
-        .select('id_avaliacao')
-        .single();
-
-      if (erro_avaliacao) {
-        console.error('Erro ao gravar avaliação:', erro_avaliacao.message);
-        alert(`Falha no salvamento da avaliação: ${erro_avaliacao.message}`);
-        set_mensagem_erro(`Falha no salvamento: ${erro_avaliacao.message}`);
-        setIsProcessing(false);
-        return;
-      }
-
-      const id_avaliacao_retornado = avaliacao_gerada?.id_avaliacao || 'aval-' + Date.now();
-
-      const respostasMapeadas = Object.entries(notas_criterios).map(([id_crit, nota_val]) => ({
-        id_avaliacao: id_avaliacao_retornado,
-        id_pergunta: id_crit,
-        nota_atribuida: nota_val,
-      }));
-
-      const { error: erro_respostas } = await supabase
-        .from('respostas_avaliacao')
-        .insert(respostasMapeadas);
-
-      if (erro_respostas) {
-        console.warn('Erro ao inserir respostas em lote:', erro_respostas.message);
-        alert(`Aviso ao gravar respostas: ${erro_respostas.message}`);
-      }
-
       const projetoAtual = projeto_atual;
       const idQuestionarioEscolhido = id_questionario_selecionado;
 
-      if (!projetoAtual.id_questionario_fixado && idQuestionarioEscolhido) {
-        await supabase
-          .from('projetos')
-          .update({ id_questionario_fixado: idQuestionarioEscolhido })
-          .eq('id_projeto', projetoAtual.id_projeto || projetoAtual.id);
-      }
+      // Respostas no formato esperado pelo RPC: [{ id_pergunta, nota }, ...]
+      const respostasRpc = Object.entries(notas_criterios).map(([id_crit, nota_val]) => ({
+        id_pergunta: id_crit,
+        nota: nota_val,
+      }));
 
-      await supabase.from('locks_ativos').delete().eq('id_usuario', avaliadorId);
+      // Caminho seguro: toda a gravação (avaliação + respostas + fixar questionário
+      // + liberar trava + concluir fila + quarentena) acontece no banco, com
+      // validação server-side (posse de trava, conflito, cota, janela, escala).
+      // A nota_final é calculada no servidor; o cliente não a envia.
+      const { error: erro_rpc } = await supabase.rpc('fn_enviar_avaliacao', {
+        p_id_usuario: avaliadorId,
+        p_id_projeto: id_projeto_alvo,
+        p_id_questionario: idQuestionarioEscolhido || projetoAtual.id_questionario_fixado || null,
+        p_respostas: respostasRpc,
+        p_parecer: parecer_avaliador,
+        p_tempo_presenca: timestampInicio,
+      });
 
-      // Marca item concluído na fila direcionada, se houver
-      try {
-        await supabase
-          .from('fila_atribuicoes_direcionadas')
-          .update({ status: 'concluido' })
-          .eq('id_usuario', avaliadorId)
-          .eq('id_projeto', projetoAtual.id_projeto || projetoAtual.id);
-      } catch (_errConcluirFila) {
-        // Fallback silencioso
+      if (erro_rpc) {
+        // Fallback resiliente: só enquanto a migration do RPC ainda não foi
+        // aplicada no banco (função inexistente). Nesse caso, grava pelo caminho
+        // legado para não travar a feira. Após aplicar a migration, o RPC existe
+        // e o INSERT anônimo direto deixa de ser permitido pela RLS.
+        const rpcAusente =
+          erro_rpc.code === 'PGRST202' ||
+          erro_rpc.code === '42883' ||
+          /function .*fn_enviar_avaliacao.* does not exist|could not find the function/i.test(
+            erro_rpc.message || ''
+          );
+
+        if (!rpcAusente) {
+          console.error('Erro ao gravar avaliação (RPC):', erro_rpc.message);
+          alert(`Falha no salvamento da avaliação: ${erro_rpc.message}`);
+          set_mensagem_erro(`Falha no salvamento: ${erro_rpc.message}`);
+          setIsProcessing(false);
+          return;
+        }
+
+        console.warn('RPC fn_enviar_avaliacao indisponível; usando gravação legada.');
+        const { data: avaliacao_gerada, error: erro_avaliacao } = await supabase
+          .from('avaliacoes')
+          .insert({
+            id_projeto: id_projeto_alvo,
+            id_usuario: avaliadorId,
+            nota_final: nota_final,
+            parecer_final: parecer_avaliador,
+            tempo_presenca: timestampInicio,
+            tempo_submissao: timestampSubmissao,
+          })
+          .select('id_avaliacao')
+          .single();
+
+        if (erro_avaliacao) {
+          console.error('Erro ao gravar avaliação:', erro_avaliacao.message);
+          alert(`Falha no salvamento da avaliação: ${erro_avaliacao.message}`);
+          set_mensagem_erro(`Falha no salvamento: ${erro_avaliacao.message}`);
+          setIsProcessing(false);
+          return;
+        }
+
+        const id_avaliacao_retornado = avaliacao_gerada?.id_avaliacao || 'aval-' + Date.now();
+        const respostasMapeadas = Object.entries(notas_criterios).map(([id_crit, nota_val]) => ({
+          id_avaliacao: id_avaliacao_retornado,
+          id_pergunta: id_crit,
+          nota_atribuida: nota_val,
+        }));
+        const { error: erro_respostas } = await supabase
+          .from('respostas_avaliacao')
+          .insert(respostasMapeadas);
+        if (erro_respostas) {
+          console.warn('Erro ao inserir respostas em lote:', erro_respostas.message);
+          alert(`Aviso ao gravar respostas: ${erro_respostas.message}`);
+        }
+
+        if (!projetoAtual.id_questionario_fixado && idQuestionarioEscolhido) {
+          await supabase
+            .from('projetos')
+            .update({ id_questionario_fixado: idQuestionarioEscolhido })
+            .eq('id_projeto', projetoAtual.id_projeto || projetoAtual.id);
+        }
+        await supabase.from('locks_ativos').delete().eq('id_usuario', avaliadorId);
+        try {
+          await supabase
+            .from('fila_atribuicoes_direcionadas')
+            .update({ status: 'concluido' })
+            .eq('id_usuario', avaliadorId)
+            .eq('id_projeto', projetoAtual.id_projeto || projetoAtual.id);
+        } catch (_errConcluirFila) {
+          // Fallback silencioso
+        }
       }
 
       set_projeto_atual(null);
