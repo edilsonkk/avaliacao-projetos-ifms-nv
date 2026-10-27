@@ -60,7 +60,7 @@ Fora de `src/`:
 
 ## Testes
 
-Seguem [`.agents/rules/TESTES_TDD.md`](../.agents/rules/TESTES_TDD.md). Onde colocar:
+Seguem [`.agents/rules/TESTES_TDD.md`](../../.agents/rules/TESTES_TDD.md). Onde colocar:
 
 | Tipo | Local |
 |---|---|
@@ -84,7 +84,7 @@ Mocks usam o mesmo alias do código: `vi.mock('@/lib/supabase', ...)`.
 
 ## Próximos passos recomendados
 
-Débitos conhecidos que a nova estrutura facilita resolver (ver também `docs/PRD.md`, item L8):
+Débitos conhecidos que a nova estrutura facilita resolver (ver também [PRD](../PRD.md), item L8):
 
 - **Quebrar componentes grandes** (`RelatoriosAdmin` ~3,2 mil linhas, `GestorAvaliadores` ~2,5 mil, `GestorProjetos` ~2,1 mil,
   `TelaAdmin` ~1,9 mil). Em cada feature, extrair:

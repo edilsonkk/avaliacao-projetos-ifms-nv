@@ -19,11 +19,10 @@ Sistema web para gestão, sorteio, avaliação e homologação de projetos no In
    *(Nota: O arquivo `.npmrc` já está configurado com `legacy-peer-deps=true` para garantir compatibilidade perfeita entre os pacotes)*
 
 2. **Configuração de Variáveis de Ambiente:**
-   O arquivo `.env` já vem pré-configurado para uso imediato com as credenciais do Supabase. Caso queira personalizar ou conectar a outra instância, consulte o [.env.example](.env.example):
-   ```env
-   VITE_SUPABASE_URL="https://siyenrhpejugoghlstqw.supabase.co"
-   VITE_SUPABASE_ANON_KEY="seu_anon_key_aqui"
-   APP_URL="http://localhost:3000"
+   Copie o modelo e preencha com os dados do seu projeto Supabase
+   (detalhes em [docs/arquitetura/configuracao.md](docs/arquitetura/configuracao.md)):
+   ```bash
+   cp .env.example .env
    ```
 
 3. **Iniciar o servidor de desenvolvimento:**
@@ -66,8 +65,14 @@ supabase/
 └── schema.sql    # DDL consolidado
 ```
 
-Convenções, regras de import e o passo a passo para criar uma nova feature: **[docs/ARQUITETURA.md](docs/ARQUITETURA.md)**.
-Diretrizes de testes: **[.agents/rules/TESTES_TDD.md](.agents/rules/TESTES_TDD.md)**.
+## 📚 Documentação
+
+| Documento | Conteúdo |
+|---|---|
+| [docs/README.md](docs/README.md) | Índice: arquitetura, banco de dados, regras de negócio, operação e decisões |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Fluxo de branches, commits, PRs e Definition of Done |
+| [AGENTS.md](AGENTS.md) | Guia para agentes de IA (Claude Code, Antigravity…) |
+| [docs/PRD.md](docs/PRD.md) | Requisitos do produto e roadmap |
 
 ---
 

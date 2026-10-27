@@ -4,8 +4,8 @@
 |---|---|
 | **Status** | Retrato do produto atual + lacunas e roadmap |
 | **Data** | 26-10-2026 |
-| **Base** | Análise do código (`src/`, `supabase/migrations/`, `supabase/schema.sql`, testes em `src/**/__tests__/`) e de `ANTIGRAVITY.MD` |
-| **Documentos relacionados** | [`ANTIGRAVITY.MD`](../ANTIGRAVITY.MD) (especificação técnica), [`README.md`](../README.md) |
+| **Base** | Análise do código (`src/`, `supabase/migrations/`, `supabase/schema.sql`, testes em `src/**/__tests__/`) e da especificação técnica (hoje em `docs/`) |
+| **Documentos relacionados** | [Documentação técnica](README.md), [`README.md`](../README.md) |
 
 ---
 
@@ -227,7 +227,7 @@ usuarios ─┬─ avaliador_areas / avaliador_modalidades_bloqueadas (por event
 | L6 | `@google/genai`, `express`, `dotenv` e `GEMINI_API_KEY` sem uso | Superfície de ataque e dependências desnecessárias | Remover, ou definir um caso de uso de IA (ex.: resumo de pareceres) | Baixa |
 | L7 | QR Code gerado por `api.qrserver.com` | Dependência externa no dia do evento; o link (com o id do evento) é enviado a terceiros | Gerar o QR Code localmente (biblioteca JS) | Média |
 | L8 | Componentes muito grandes (`RelatoriosAdmin` com 3,2 mil linhas, `GestorAvaliadores` 2,5 mil, `GestorProjetos` 2,1 mil) e `schema.sql` duplicado em `docs/` | Manutenção cara e regressões | Extrair hooks e serviços de dados; ter uma única fonte de schema | Média |
-| L9 | Documentação desatualizada: ANTIGRAVITY cita SheetJS (o código usa `exceljs`), contagens de testes antigas e `supabase/migrations/revert/`, que não existe | Decisões tomadas com base em informação errada | Revisar o ANTIGRAVITY.MD e tratar este PRD como fonte do "o quê/porquê" | Baixa |
+| L9 | ~~Documentação desatualizada (ANTIGRAVITY.MD)~~ **Resolvido em 2026-10-27**: conteúdo revisado e dividido em `docs/` por assunto. Pendente: `supabase/schema.sql` defasado em relação às migrations `20261026*` | Decisões tomadas com base em informação errada | Atualizar `supabase/schema.sql` | Baixa |
 | L10 | Sem multi-evento simultâneo nem histórico consultável após o reset global | Perda de dados históricos se o reset for usado no lugar do arquivamento | Arquivar o evento (flag `is_ativo`) em vez de apagar; exportação completa antes do reset | Média |
 | L11 | Apesar do nome, `view_ranking_top3` devolve **todos** os projetos com avaliação, ordenados por média geral simples, sem particionar por modalidade, sem limitar a 3, sem filtrar "fora da competição" e sem usar `peso_desempate`. O agrupamento e o corte ficam no front | Pódio pode incluir projeto fora da competição avaliado por atribuição forçada; empates sem critério oficial | Reescrever a view com `ROW_NUMBER() OVER (PARTITION BY modalidade ORDER BY media DESC, desempate DESC)`, filtrando `is_fora_da_competicao` | **Alta** |
 

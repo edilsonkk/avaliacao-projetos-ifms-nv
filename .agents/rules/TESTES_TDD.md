@@ -11,8 +11,8 @@
 
 ## 2. Regras Específicas por Camada
 
-### A. Utilitários, Parsers e SheetJS (`xlsx`)
-- Parsers ficam em `src/lib/parsers/` como funções puras (sem React).
+### A. Utilitários, Parsers e Planilhas (`exceljs`)
+- Parsers ficam em `src/lib/parsers/` como funções puras (sem React), com testes em `src/lib/parsers/__tests__/`.
 - Teste funções puras sem carregar o JSDOM (anotação `// @vitest-environment node`).
 - Garanta testes para:
   1. Sucesso no parsing de planilhas bem formatadas.
@@ -45,7 +45,7 @@ Todo arquivo de teste deve seguir o padrão Arrange-Act-Assert (AAA):
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
-import { MeuComponente } from './MeuComponente';
+import { MeuComponente } from '@/features/minha-feature';
 
 describe('MeuComponente', () => {
   it('deve submeter os dados corretamente ao clicar no botão', async () => {
