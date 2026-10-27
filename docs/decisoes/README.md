@@ -31,3 +31,4 @@ Correções de bug e ajustes visuais não precisam de ADR: o commit e a doc do d
 | [0007](0007-gravacao-de-notas-via-rpc.md) | Gravação de notas só via `fn_enviar_avaliacao` | Aceito |
 | [0008](0008-frontend-organizado-por-features.md) | Front-end organizado por features | Aceito |
 | [0009](0009-ambientes-e-releases.md) | Ambientes local e produção, com releases versionadas | Aceito |
+| [0010](0010-hospedagem-firebase.md) | Front-end no Firebase Hosting; backend continua no Supabase | Aceito |

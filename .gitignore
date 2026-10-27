@@ -33,3 +33,6 @@ Thumbs.db
 # Supabase CLI (arquivos locais/temporários)
 supabase/.temp/
 supabase/.branches/
+
+# Firebase CLI (cache local)
+.firebase/

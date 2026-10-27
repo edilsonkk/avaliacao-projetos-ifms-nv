@@ -161,7 +161,7 @@ Os critérios de aceite referenciam as suítes de teste (`src/**/__tests__/`) qu
 | Resiliência | Fallback quando o schema cache do PostgREST diverge; RPCs com fallback para views e tabelas; enriquecimento em lote para evitar campos "N/I"; contingência em `localStorage` |
 | Usabilidade | Interface sem jargão técnico; dashboard admin em Bento Grid com modais; UUIDs nunca exibidos; Staff em widescreen (até 1800 px) e tablet; avaliador e autocadastro mobile-first; modo escuro |
 | Qualidade | TDD com Vitest + Testing Library (padrão AAA, seletores acessíveis), **31 suítes / 169 testes passando** (26-10-2026); `tsc --noEmit`; CI com build de produção |
-| DevOps | GitHub Actions: `ci.yml`, `deploy-frontend.yml` (GitHub Pages), `security.yml` (CodeQL, Trivy, npm audit), `supabase-migrations.yml` |
+| DevOps | GitHub Actions: `ci.yml`, `deploy-frontend.yml` (Firebase Hosting), `security.yml` (CodeQL, Trivy, npm audit), `supabase-migrations.yml` |
 
 ## 8. Modelo de dados (resumo)
 

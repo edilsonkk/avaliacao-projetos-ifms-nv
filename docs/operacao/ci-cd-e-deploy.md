@@ -8,7 +8,7 @@ PR ───────────────► ci.yml (lint, testes, build)
 merge em main ────► release.yml → release-please abre/atualiza o "PR de release" (versão + CHANGELOG)
 merge do PR de    ► release.yml → tag vX.Y.Z + GitHub Release
 release               └─► supabase-migrations.yml: backup criptografado + supabase db push
-                          └─► deploy-frontend.yml: build da tag + GitHub Pages
+                          └─► deploy-frontend.yml: build da tag + Firebase Hosting
 manual ───────────► deploy-frontend.yml (rollback para uma tag) · supabase-migrations.yml (dry run)
 ```
 
@@ -20,7 +20,7 @@ manual ───────────► deploy-frontend.yml (rollback para u
 | `security.yml` | PR, push em `main`, toda segunda 06:00 UTC, manual | CodeQL, Trivy (bloqueia HIGH/CRITICAL), `npm audit --audit-level=high` |
 | `release.yml` | Push em `main` | release-please; ao publicar versão, chama migrations e deploy |
 | `supabase-migrations.yml` | PR com migrations (validação); chamado pelo release; manual | Validação, backup e `supabase db push` |
-| `deploy-frontend.yml` | Chamado pelo release; manual (rollback) | Lint, testes, build da tag e publicação no GitHub Pages |
+| `deploy-frontend.yml` | Chamado pelo release; manual (rollback) | Lint, testes, build da tag e publicação no Firebase Hosting |
 | `backup-banco.yml` | Manual | Backup criptografado de produção, sem alterar nada (não é bloqueado pelo congelamento) |
 
 ## Como uma versão é publicada
@@ -98,13 +98,14 @@ Ambiente **production** (*Settings → Environments → production*):
 | `SUPABASE_ACCESS_TOKEN` | Secret | CLI do Supabase (*Account → Access Tokens*) |
 | `SUPABASE_DB_PASSWORD` | Secret | Senha do Postgres de produção |
 | `SUPABASE_PROJECT_REF` | Secret | ID do projeto Supabase |
+| `FIREBASE_SERVICE_ACCOUNT` | Secret | JSON da service account que publica no Firebase Hosting |
 | `BACKUP_PASSPHRASE` | Secret | Senha de criptografia dos backups. **Guarde-a também fora do GitHub**: sem ela o backup é inútil |
 
 Variáveis do repositório (*Settings → Secrets and variables → Actions → Variables*):
 
 | Nome | Uso |
 |---|---|
-| `APP_URL` | URL pública da aplicação |
+| `APP_URL` | URL pública da aplicação: `https://sistema-de-avaliacao-ifms-nv.web.app` |
 | `CONGELAMENTO_DEPLOY` | `true` bloqueia publicações (feira em andamento) |
 
 Nenhum workflow tem valor padrão para esses itens: se faltarem, o job falha com mensagem clara. Nunca versione
@@ -114,10 +115,9 @@ tokens, senhas ou a `service_role` key. Se um segredo vazar (inclusive em URL de
 
 Repositório: `edilsonkk/sistemadeavaliacao` (code owner: `@edilsonkk`).
 
-> **Plano do GitHub.** Em repositório **privado** numa conta Free não existem GitHub Pages, environments nem proteção
-> de branch, e o CodeQL não roda (o `security.yml` o pula automaticamente). Os workflows continuam funcionando se os
-> secrets forem cadastrados como **secrets do repositório** em vez de secrets do environment. Repositório público
-> ou conta GitHub Pro liberam todos os itens abaixo.
+> **Plano do GitHub.** O repositório é privado na conta `edilsonkk` com **GitHub Pro**, que libera environments e
+> proteção de branch. O CodeQL não roda em repositório privado sem Advanced Security (pago à parte); o
+> `security.yml` o pula automaticamente e o Trivy continua bloqueando vulnerabilidades.
 
 Feita uma vez, por quem administra o repositório:
 
@@ -133,7 +133,37 @@ Feita uma vez, por quem administra o repositório:
    *Allow GitHub Actions to create and approve pull requests*.
 4. **Ambiente `production`**: crie em *Settings → Environments* e cadastre os secrets acima. Sem environments
    (privado + Free), cadastre-os em *Settings → Secrets and variables → Actions → Repository secrets*.
-5. **GitHub Pages**: *Settings → Pages → Source: GitHub Actions*.
+5. **Firebase Hosting**: crie a service account e o secret `FIREBASE_SERVICE_ACCOUNT` ([abaixo](#hospedagem-firebase-hosting)).
+
+## Hospedagem (Firebase Hosting)
+
+O front-end é publicado no projeto Firebase `sistema-de-avaliacao-ifms-nv` (`.firebaserc`), em
+`https://sistema-de-avaliacao-ifms-nv.web.app` (também responde em `.firebaseapp.com`). Decisão:
+[ADR 0010](../decisoes/0010-hospedagem-firebase.md).
+
+`firebase.json`:
+- publica a pasta `dist/`;
+- redireciona todas as rotas para `index.html`, então `/admin` e `/staff` funcionam ao recarregar;
+- cache longo para `/assets/**` (nomes com hash) e `no-cache` para `index.html`, para que uma nova versão apareça na
+  hora.
+
+### Criar a service account (uma vez)
+
+1. No [Google Cloud Console](https://console.cloud.google.com/iam-admin/serviceaccounts?project=sistema-de-avaliacao-ifms-nv),
+   com a conta Google dona do projeto: *Criar conta de serviço*, nome `github-deploy-hosting`.
+2. Papéis: **Administrador do Firebase Hosting** (`roles/firebasehosting.admin`) e **Leitor de chaves de API**
+   (`roles/serviceusage.apiKeysViewer`).
+3. Abra a conta criada → *Chaves → Adicionar chave → JSON*. O arquivo é baixado.
+4. No GitHub, ambiente `production` → secret `FIREBASE_SERVICE_ACCOUNT` com **todo o conteúdo** do JSON.
+5. **Apague o arquivo JSON** do computador. Ele dá acesso de publicação ao site.
+
+### Publicar manualmente da sua máquina (emergência)
+
+```bash
+npm run build                      # com o .env de produção — só em emergência
+npx firebase-tools@15.34.0 deploy --only hosting --project sistema-de-avaliacao-ifms-nv
+```
+Prefira sempre o workflow, que publica exatamente a tag versionada.
 
 ## Segurança
 

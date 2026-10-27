@@ -1,6 +1,6 @@
 name: Deploy do Front-end (Produção)
 
-# Publica o front-end no GitHub Pages.
+# Publica o front-end no Firebase Hosting (projeto em .firebaserc).
 # - Chamado pelo release.yml quando uma versão é publicada.
 # - Manual (Actions → Run workflow) para rollback: informe a tag de uma versão anterior.
 # Guia: docs/operacao/ci-cd-e-deploy.md
@@ -26,18 +26,18 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: deploy-frontend-producao
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build da versão ${{ inputs.ref }}
+  deploy:
+    name: Build e publicação da versão ${{ inputs.ref }}
     runs-on: ubuntu-latest
-    environment: production
+    environment:
+      name: production
+      url: ${{ vars.APP_URL }}
     steps:
       - name: Respeitar congelamento de deploy
         if: vars.CONGELAMENTO_DEPLOY == 'true' && !inputs.emergencia
@@ -69,8 +69,9 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          for v in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY; do
+          for v in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY FIREBASE_SERVICE_ACCOUNT; do
             if [ -z "${!v}" ]; then echo "::error::Secret $v não configurado no ambiente production."; exit 1; fi
           done
 
@@ -81,19 +82,9 @@ jobs:
           APP_URL: ${{ vars.APP_URL }}
         run: npm run build
 
-      - name: Empacotar artefato
-        uses: actions/upload-pages-artifact@v3
+      - name: Publicar no Firebase Hosting (canal live)
+        uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          path: ./dist
-
-  deploy:
-    name: Publicar no GitHub Pages
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Publicar
-        id: deployment
-        uses: actions/deploy-pages@v4
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          channelId: live

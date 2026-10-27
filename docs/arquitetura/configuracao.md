@@ -5,7 +5,7 @@
 | Ambiente | Banco | Front-end | Quem usa |
 |---|---|---|---|
 | **Local** | Supabase local em Docker (`npx supabase start`) | `npm run dev` | Desenvolvimento e testes manuais |
-| **Produção** | Projeto Supabase na nuvem | GitHub Pages, publicado a cada versão | Usuários reais |
+| **Produção** | Projeto Supabase na nuvem | Firebase Hosting (`sistema-de-avaliacao-ifms-nv.web.app`), publicado a cada versão | Usuários reais |
 
 Não há homologação: o plano gratuito do Supabase permite dois projetos, e o segundo fica reservado para outra
 aplicação. Por isso a validação antes da produção é feita localmente (`db reset` + testes) e cada versão passa pelo
