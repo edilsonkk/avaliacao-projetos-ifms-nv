@@ -2,8 +2,8 @@
  * Parser puro de Planilhas de Modalidades e Níveis (.xlsx, .csv)
  * Conforme diretrizes TDD (Regra 2.A): funções puras desacopladas de React/DOM.
  */
-import { lerPlanilhaParaJson } from '@/lib/excelUtils';
-import { sanitizarTexto } from './fuzzyMatcher';
+import { lerPlanilhaParaJson } from '@/lib/excel/excelUtils';
+import { sanitizarTexto } from '@/lib/parsers/fuzzyMatcher';
 
 export interface ModalidadeImportada {
   codigo?: string | null;

@@ -115,88 +115,36 @@ O sistema utiliza chaves de armazenamento local para persistência de sessão e 
 
 ## 4. Estrutura do Diretório de Conteúdo
 
+O front-end é organizado por feature (domínio de negócio). A descrição completa, as regras de dependência entre
+módulos e o passo a passo para criar novas features estão em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
+
 ```text
 Sistema-de-Avaliação-de-Projetos-IFMS/
-├── .agents/
-│   └── rules/
-│       └── TESTES_TDD.md           # Diretrizes canônicas de TDD, seletores acessíveis e AAA
-├── .antigravity/                   # Dados de sessão e checkpoints de trabalho
-├── .github/
-│   └── workflows/
-│       ├── ci.yml                  # Pipeline de QA no GitHub Actions (Node 20 + Vitest)
-│       ├── deploy-frontend.yml     # Continuous Deployment (CD) do Vite SPA para o host definitivo
-│       ├── security.yml            # Pipeline de Segurança Contínua (SAST CodeQL + SCA Trivy)
-│       └── supabase-migrations.yml # Automação de Migrações e DDL do Supabase via CLI
+├── .agents/rules/TESTES_TDD.md     # Diretrizes canônicas de TDD, seletores acessíveis e AAA
+├── .github/workflows/              # CI (testes), CD (front-end), segurança e migrações Supabase
 ├── docs/
-│   └── schema.sql                  # Espelho versionado do DDL do banco
+│   ├── ARQUITETURA.md              # Estrutura de pastas, convenções e guia de novas features
+│   └── PRD.md                      # Documento de requisitos do produto
+├── public/modelos/                 # Planilhas-modelo de importação
 ├── src/
-│   ├── __tests__/                  # 12 suítes de teste de regressão e integridade (55 testes)
-│   │   ├── AtribuicaoForcada.test.tsx
-│   │   ├── AuditoriaPerformanceViews.test.tsx
-│   │   ├── ChaveNaturalUpsert.test.tsx
-│   │   ├── GestaoNovoEvento.test.tsx
-│   │   ├── GestorProjetosCamposCompletos.test.tsx
-│   │   ├── LoginZeroFriccao.test.tsx
-│   │   ├── planilhaProjetosParser.test.ts
-│   │   ├── RegrasNegocioBloco1.test.tsx
-│   │   ├── RegrasNegocioBloco2.test.tsx
-│   │   ├── ResetGlobal.test.tsx
-│   │   ├── RestricaoExclusaoZumbis.test.tsx
-│   │   └── SincroniaContadores.test.tsx
-│   ├── components/                 # Componentes visuais e modais do sistema
-│   │   ├── AtribuicaoForcada.tsx        # Modal de bancas simultâneas e fila direcionada
-│   │   ├── Cabecalho.tsx                # Barra de navegação e seletor de perfil
-│   │   ├── GestorAvaliadores.tsx        # Gestão e credenciamento de avaliadores
-│   │   ├── GestorInstituicoes.tsx       # Cadastro de instituições para prevenção de conflito
-│   │   ├── GestorProjetos.tsx           # Gestão de estandes, títulos e carga Excel
-│   │   ├── GestorQuestionarios.tsx      # Configuração de perguntas, pesos e desempates
-│   │   ├── GestorStaff.tsx              # Gestão da equipe de apoio/staff
-│   │   ├── MapaEstandes.tsx             # Pavilhão e distribuição visual de estandes
-│   │   ├── ModalConfiguracoesEvento.tsx # Modal de edição de parâmetros do evento
-│   │   ├── ModalDetalhamento.tsx        # Detalhamento de administradores e cadastros
-│   │   ├── ModalExclusaoAvaliacao.tsx   # Soft delete seguro com histórico e botão desfazer
-│   │   ├── ProjetosBloqueados.tsx       # Monitoramento de travas ativas (locks)
-│   │   ├── ProjetosQuarentena.tsx       # Auditoria de notas divergentes (>2.5 pts)
-│   │   ├── RankingPremiacao.tsx         # Classificação oficial dos 3 primeiros lugares
-│   │   ├── RelatoriosAdmin.tsx          # Emissão de atas e relatórios consolidados
-│   │   ├── TelaAdmin.tsx                # Painel mestre em Bento Grid (Blocos 1, 2 e 3)
-│   │   ├── TelaAvaliador.tsx            # Interface móvel para atribuição e notas Likert
-│   │   ├── TelaLogin.tsx                # Ponto de entrada zero fricção
-│   │   ├── TelaStaff.tsx                # Interface de recepção e credenciamento ágil
-│   │   └── TelaoAoVivo.tsx              # Dashboard de projeção para telão do pavilhão
-│   ├── lib/
-│   │   ├── parsers/
-│   │   │   └── planilhaProjetosParser.ts # Parser desacoplado e puro de planilhas SheetJS
-│   │   └── supabase.ts             # Cliente Supabase com verificação e fallback seguro
-│   ├── types/
-│   │   └── database.ts             # Contratos TypeScript de tabelas, entidades e enums
-│   ├── App.tsx                     # Roteador central e guardas de rota (Single Source of Truth)
-│   ├── index.css                   # Definições base do Tailwind v4
-│   ├── main.tsx                    # Entrypoint React 19 com StrictMode
-│   ├── setupTests.ts               # Configurações globais do Vitest (mocks de alert/confirm/DOM)
-│   ├── supabaseClient.ts           # Re-export e utilitários de compatibilidade
-│   └── vite-env.d.ts               # Tipagens de variáveis de ambiente do Vite
+│   ├── app/                        # main.tsx (entrypoint) e App.tsx (roteamento entre telas)
+│   ├── features/                   # admin, atribuicoes, auth, avaliacao, avaliadores,
+│   │   └── <feature>/              # cadastros, projetos, relatorios, staff
+│   │       ├── components/
+│   │       ├── __tests__/
+│   │       └── index.ts            # API pública da feature
+│   ├── components/                 # Compartilhados: layout/Cabecalho, importacao/ModalDeParaMapping
+│   ├── lib/                        # supabase.ts, sessaoAdmin.ts, excel/, parsers/
+│   ├── types/database.ts           # Contratos TypeScript de tabelas e entidades
+│   ├── styles/index.css            # Tailwind v4
+│   ├── test/setupTests.ts          # Setup global do Vitest
+│   └── __tests__/integracao/       # Testes que cruzam várias features
 ├── supabase/
-│   └── migrations/                 # Migrações incrementais do banco PostgreSQL
-│       ├── 20261019_schema.sql                      # DDL inicial completo
-│       ├── 20261021_atribuicoes_e_bancas.sql        # Bancas simultâneas e fila direcionada
-│       ├── 20261022_admin_reset_global_evento.sql   # Reset global resiliente por evento
-│       ├── 20261022_eventos_campos_data.sql         # Campos de data e horários em eventos
-│       ├── 20261023_remover_repescagem.sql          # Exclusão da regra de repescagem
-│       ├── 20261024_aliases_e_modalidades_niveis.sql # Dicionários de aliases e modalidades com níveis
-│       ├── 20261024_bloqueio_modalidades_e_cota_estrita.sql # Bloqueio de modalidades e cota estrita
-│       ├── 20261024_instituicoes_modalidades_evento_e_reset.sql # Instituições e modalidades com id_evento
-│       └── 20261024_areas_tematicas_evento_e_ajustes.sql # Áreas temáticas com id_evento, unicidade e CNPq
-├── .env                            # Variáveis de ambiente locais
-├── .env.example                    # Modelo para configuração de novas instâncias
-├── .npmrc                          # Configuração legacy-peer-deps=true
-├── ANTIGRAVITY.MD                  # Este documento (Especificação Técnica Canônica)
-├── package.json                    # Dependências e scripts do projeto
-├── schema.sql                      # Export consolidado do banco de produção
-├── tailwind.config.js              # Configurações do Tailwind CSS
-├── tsconfig.json                   # Configuração estrita do compilador TypeScript
-├── vite.config.ts                  # Configuração do Vite e plugins
-└── vitest.config.ts                # Configuração do ambiente de testes Vitest
+│   ├── migrations/                 # Migrações incrementais (fonte da verdade do banco)
+│   └── schema.sql                  # DDL consolidado
+├── ANTIGRAVITY.MD                  # Este documento
+├── vite.config.ts                  # Vite + alias `@/` (herdado pelo vitest.config.ts)
+└── vitest.config.ts
 ```
 
 ---

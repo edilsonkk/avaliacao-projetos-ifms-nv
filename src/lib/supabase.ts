@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { EsqueMABanco } from '../types/database';
+import type { EsqueMABanco } from '@/types/database';
 
 // Declaração das credenciais do Supabase (lê variáveis de ambiente ou usa valores padrão)
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://siyenrhpejugoghlstqw.supabase.co";

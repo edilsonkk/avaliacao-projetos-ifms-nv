@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Retrato do produto atual + lacunas e roadmap |
 | **Data** | 26-10-2026 |
-| **Base** | Análise do código (`src/`, `supabase/migrations/`, `schema.sql`, `src/__tests__/`) e de `ANTIGRAVITY.MD` |
+| **Base** | Análise do código (`src/`, `supabase/migrations/`, `supabase/schema.sql`, testes em `src/**/__tests__/`) e de `ANTIGRAVITY.MD` |
 | **Documentos relacionados** | [`ANTIGRAVITY.MD`](../ANTIGRAVITY.MD) (especificação técnica), [`README.md`](../README.md) |
 
 ---
@@ -54,7 +54,7 @@ O sistema é uma SPA (React 19 + Vite + Tailwind) sobre o Supabase (PostgreSQL +
 
 ## 5. Requisitos funcionais
 
-Os critérios de aceite referenciam as suítes em `src/__tests__/` que já os cobrem.
+Os critérios de aceite referenciam as suítes de teste (`src/**/__tests__/`) que já os cobrem.
 
 ### 5.1 Configuração do evento — `ModalConfiguracoesEvento`
 | ID | Requisito | Critério de aceite |

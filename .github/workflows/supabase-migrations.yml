@@ -5,12 +5,12 @@ on:
     branches: [ "main", "master" ]
     paths:
       - 'supabase/migrations/**'
-      - 'schema.sql'
+      - 'supabase/schema.sql'
   pull_request:
     branches: [ "main", "master" ]
     paths:
       - 'supabase/migrations/**'
-      - 'schema.sql'
+      - 'supabase/schema.sql'
   workflow_dispatch:
     inputs:
       dry_run:
