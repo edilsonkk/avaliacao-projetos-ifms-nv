@@ -10,7 +10,7 @@ sorteio. Isso gerava inconsistência com projetos que de fato não estavam no es
 
 ## Decisão
 
-Remover a repescagem (`20261023_remover_repescagem.sql`). As posições do Bloco 1 passaram a ser **Atribuir Projeto**
+Remover a repescagem (`20261023000000_remover_repescagem.sql`). As posições do Bloco 1 passaram a ser **Atribuir Projeto**
 e **Excluir uma avaliação**.
 
 ## Consequências

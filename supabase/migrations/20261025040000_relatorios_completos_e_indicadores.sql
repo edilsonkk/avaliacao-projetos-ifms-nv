@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261025_relatorios_completos_e_indicadores.sql
+-- MIGRATION: 20261025040000_relatorios_completos_e_indicadores.sql
 -- DESCRIÇÃO: Expansão do sistema de relatórios administrativos e métricas gerenciais:
 --            1. Coluna 'tempo_submissao' na tabela avaliacoes;
 --            2. Atualização da view 'view_relatorio_projetos' com joins normalizados;

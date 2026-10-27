@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261024_areas_tematicas_evento_e_ajustes.sql
+-- MIGRATION: 20261024020000_areas_tematicas_evento_e_ajustes.sql
 -- DESCRIÇÃO: 
 -- 1. Vincula tabelas 'instituicoes', 'modalidades' e 'areas_tematicas' ao evento ativo (id_evento)
 -- 2. Adiciona coluna 'created_at' em instituicoes, modalidades e areas_tematicas caso inexistente

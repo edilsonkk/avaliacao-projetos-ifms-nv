@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261022_eventos_campos_data.sql
+-- MIGRATION: 20261022010000_eventos_campos_data.sql
 -- Adiciona suporte a data_evento e garante colunas de horário e configuração em eventos
 -- ==============================================================================
 

@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261025_garantir_data_evento_persistente.sql
+-- MIGRATION: 20261025000000_garantir_data_evento_persistente.sql
 -- Garante colunas de data e horário do evento para persistência estrita no Admin
 -- ==============================================================================
 

@@ -25,7 +25,7 @@
 --   enviar_avaliacao() deve passar a chamar supabase.rpc('fn_enviar_avaliacao').
 --   Enquanto isso não for feito, o envio de notas deixa de funcionar.
 --
--- IDEMPOTENTE. APLICAÇÃO: colar no SQL Editor do Supabase e executar.
+-- IDEMPOTENTE. APLICAÇÃO: supabase db push (workflow supabase-migrations.yml).
 -- ==============================================================================
 
 BEGIN;

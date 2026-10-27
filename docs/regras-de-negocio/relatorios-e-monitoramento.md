@@ -43,8 +43,11 @@ Botão **Imprimir PDF** em todas as abas (`window.print()`).
 
 ## Classificação (`RankingPremiacao`)
 
-Card **Classificação**: os três primeiros por modalidade e área (`view_ranking_top3`), para a homologação e a
-premiação.
+Card **Classificação**: pódio para homologação e premiação. Os dados vêm de `view_ranking_top3`, que devolve todos
+os projetos avaliados ordenados pela média simples. O agrupamento por modalidade e o corte nos três primeiros são
+feitos no componente.
+
+> ⚠️ A view não exclui projetos fora da competição nem usa `peso_desempate` (PRD, L11).
 
 ## Telão ao Vivo (`TelaoAoVivo`)
 

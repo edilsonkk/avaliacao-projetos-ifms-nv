@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261025_relatorios_functions_rpc.sql
+-- MIGRATION: 20261025050000_relatorios_functions_rpc.sql
 -- DESCRIÇÃO: Stored Functions (RPCs) especializadas para geração de relatórios
 --            administrativos e gerenciais com dados pré-agrupados e sub-itens
 --            em JSON, sem dependência de processamento pesado no cliente.

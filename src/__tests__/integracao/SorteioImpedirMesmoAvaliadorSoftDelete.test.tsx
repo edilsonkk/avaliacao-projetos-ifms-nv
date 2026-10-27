@@ -68,7 +68,7 @@ describe('Auditoria de Regressão: Impedir Reatribuição do Mesmo Projeto ao Me
     const raizProjeto = path.resolve(__dirname, '../../..');
     const schemaSql = fs.readFileSync(path.resolve(raizProjeto, 'supabase/schema.sql'), 'utf-8');
     const migrationSql = fs.readFileSync(
-      path.resolve(raizProjeto, 'supabase/migrations/20261025_sorteio_impedir_mesmo_avaliador_soft_delete.sql'),
+      path.resolve(raizProjeto, 'supabase/migrations/20261025030000_sorteio_impedir_mesmo_avaliador_soft_delete.sql'),
       'utf-8'
     );
 

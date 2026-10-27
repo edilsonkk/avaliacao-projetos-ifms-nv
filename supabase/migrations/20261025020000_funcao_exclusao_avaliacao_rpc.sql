@@ -1,5 +1,5 @@
 -- ------------------------------------------------------------------------------
--- MIGRATION: 20261025_funcao_exclusao_avaliacao_rpc.sql
+-- MIGRATION: 20261025020000_funcao_exclusao_avaliacao_rpc.sql
 -- DESCRIÇÃO: Funções PL/pgSQL com SECURITY DEFINER para exclusão segura 
 --            (soft-delete) e restauração de avaliações via RPC no Supabase.
 -- ------------------------------------------------------------------------------

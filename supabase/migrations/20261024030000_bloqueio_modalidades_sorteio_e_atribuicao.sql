@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261024_bloqueio_modalidades_sorteio_e_atribuicao.sql
+-- MIGRATION: 20261024030000_bloqueio_modalidades_sorteio_e_atribuicao.sql
 -- DESCRIÇÃO: 
 -- 1. Garante a tabela 'avaliador_modalidades_bloqueadas', índices e políticas RLS
 -- 2. Concede permissões completas (GRANT ALL) para anon, authenticated e service_role

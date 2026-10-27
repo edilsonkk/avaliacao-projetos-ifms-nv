@@ -1,25 +1,28 @@
 name: Deploy de Migrações do Supabase (Database CI/CD)
 
+# Aplica supabase/migrations/ no banco remoto com `supabase db push`.
+# Guia: docs/banco-de-dados/migrations.md
+
 on:
   push:
     branches: [ "main", "master" ]
     paths:
       - 'supabase/migrations/**'
-      - 'supabase/schema.sql'
+      - 'supabase/config.toml'
   pull_request:
     branches: [ "main", "master" ]
     paths:
       - 'supabase/migrations/**'
-      - 'supabase/schema.sql'
+      - 'supabase/config.toml'
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Modo Dry Run (Apenas validar sintaxe e plano de migração)'
+        description: 'Dry run: apenas mostrar o que seria aplicado (supabase db push --dry-run)'
         required: true
-        default: false
+        default: true
         type: boolean
       target_environment:
-        description: 'Ambiente de Banco de Dados de Destino'
+        description: 'Ambiente de banco de dados de destino'
         required: true
         default: 'production'
         type: choice
@@ -30,78 +33,98 @@ on:
 permissions:
   contents: read
 
-# Garante serialização estrita para evitar concorrência no DDL do banco
+# Uma aplicação de migrations por ambiente de cada vez, nunca cancelada no meio.
 concurrency:
-  group: supabase-migrations-${{ github.ref }}
+  group: supabase-migrations-${{ inputs.target_environment || 'production' }}
   cancel-in-progress: false
+
+env:
+  SUPABASE_CLI_VERSION: 2.122.0
 
 jobs:
   validate-migrations:
-    name: Validação Estática e Integridade de Migrações SQL
+    name: Validação Estática das Migrações SQL
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do Repositório
         uses: actions/checkout@v4
 
-      - name: Configurar CLI Oficial do Supabase
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
-
-      - name: Verificar Ordem Cronológica e Nomes de Arquivos
+      - name: Validar nomes dos arquivos (AAAAMMDDHHMMSS_descricao.sql, versões únicas)
         run: |
-          echo "=== Inspecionando Arquivos de Migração ==="
-          ls -la supabase/migrations/*.sql
-          
-          # Garante que não existem comandos DELETE sem WHERE (Prevenção de SafeUpdate Error)
-          echo "=== Verificando Regras de SafeUpdate (Prevenção de DELETE sem WHERE) ==="
-          if grep -iE '^\s*DELETE\s+FROM\s+[a-zA-Z0-9_\.]+\s*;' supabase/migrations/*.sql; then
-            echo "::error::Identificado comando DELETE sem cláusula WHERE explícita em migrações. Corrija antes de prosseguir."
-            exit 1
+          status=0
+          for f in supabase/migrations/*.sql; do
+            nome=$(basename "$f")
+            if ! [[ "$nome" =~ ^[0-9]{14}_[a-z0-9_]+\.sql$ ]]; then
+              echo "::error file=$f::Nome fora do padrão AAAAMMDDHHMMSS_descricao_em_snake_case.sql"
+              status=1
+            fi
+          done
+          duplicadas=$(ls supabase/migrations/*.sql | xargs -n1 basename | cut -d_ -f1 | sort | uniq -d)
+          if [ -n "$duplicadas" ]; then
+            echo "::error::Versões de migration repetidas: $duplicadas"
+            status=1
           fi
+          exit $status
 
-          # Prevenção contra TRUNCATE destrutivo acidental
-          if grep -iE '^\s*TRUNCATE\s+(TABLE\s+)?[a-zA-Z0-9_\.]+\s*;' supabase/migrations/*.sql; then
-            echo "::error::Identificado comando TRUNCATE destrutivo em migrações. Utilize transações controladas."
+      - name: Bloquear DELETE sem WHERE, TRUNCATE e INDEX CONCURRENTLY
+        run: |
+          if grep -inE '^\s*DELETE\s+FROM\s+[a-zA-Z0-9_\.]+\s*;' supabase/migrations/*.sql; then
+            echo "::error::DELETE sem cláusula WHERE em migration. Use 'WHERE <id> IS NOT NULL'."
             exit 1
           fi
-          echo "Validação estática de DDL concluída com sucesso."
+          if grep -inE '^\s*TRUNCATE\s+(TABLE\s+)?[a-zA-Z0-9_\.]+' supabase/migrations/*.sql; then
+            echo "::error::TRUNCATE em migration. Use DELETE com WHERE explícito."
+            exit 1
+          fi
+          if grep -inE 'CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY' supabase/migrations/*.sql; then
+            echo "::error::CREATE INDEX CONCURRENTLY não roda dentro da transação do supabase db push."
+            exit 1
+          fi
+          echo "Validação estática concluída."
 
   deploy-migrations:
-    name: Aplicação Automatizada de Migrações no PostgreSQL
+    name: Aplicar Migrações (supabase db push)
     needs: validate-migrations
+    # Só roda em push para main ou manualmente, e somente depois que o histórico de migrations do
+    # banco remoto foi alinhado (variável SUPABASE_DB_PUSH_ENABLED = 'true'). Ver migrations.md.
+    if: >-
+      vars.SUPABASE_DB_PUSH_ENABLED == 'true' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
     environment: ${{ inputs.target_environment || 'production' }}
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
     steps:
       - name: Checkout do Repositório
         uses: actions/checkout@v4
 
-      - name: Configurar CLI Oficial do Supabase
+      - name: Configurar CLI do Supabase
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: ${{ env.SUPABASE_CLI_VERSION }}
 
-      - name: Vincular Projeto Remoto Supabase (Link)
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'siyenrhpejugoghlstqw' }}
+      - name: Conferir segredos obrigatórios
         run: |
-          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+          for v in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF; do
+            if [ -z "${!v}" ]; then echo "::error::Secret $v não configurado no ambiente."; exit 1; fi
+          done
 
-      - name: Executar Migrações Pendentes (supabase db push)
-        env:
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: |
-          echo "=== Aplicando Migrações SQL ao Banco Remoto ==="
-          supabase db push --password "$SUPABASE_DB_PASSWORD"
+      - name: Vincular projeto remoto
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
 
-      - name: Sanity Check e Auditoria Pós-Deploy
-        env:
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'siyenrhpejugoghlstqw' }}
-        run: |
-          echo "=== Verificando Disponibilidade e Integridade de Stored Procedures ==="
-          # Confere se os endpoints RPC e Views pré-computadas estão ativos
-          echo "Banco de dados sincronizado e auditado com sucesso."
+      - name: Histórico antes (local x remoto)
+        run: supabase migration list --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Dry run
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: supabase db push --dry-run --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Aplicar migrations pendentes
+        if: github.event_name == 'push' || !inputs.dry_run
+        run: supabase db push --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Histórico depois (todas devem constar no remoto)
+        if: github.event_name == 'push' || !inputs.dry_run
+        run: supabase migration list --password "$SUPABASE_DB_PASSWORD"

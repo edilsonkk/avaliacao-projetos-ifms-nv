@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261022_admin_reset_global_evento.sql
+-- MIGRATION: 20261022000000_admin_reset_global_evento.sql
 -- Stored Procedure Resiliente para Reset Global do Evento Ativo
 -- Compatível com safeupdate e com esquemas legados (sem coluna id_evento em projetos/questionarios).
 -- Escopo: Ciclo avaliativo, notas, travas, projetos, questionários, staff e avaliadores.

@@ -68,7 +68,7 @@ Uma tarefa está pronta quando:
 - [ ] Importações usam batch upsert e o botão padrão `Importar (.xls/.xlsx/.csv)`.
 - [ ] Modais administrativos novos seguem o [layout canônico](docs/arquitetura/padroes.md#layout-canônico-dos-modais-de-gestão).
 - [ ] A documentação do domínio afetado foi atualizada; decisões de arquitetura têm ADR.
-- [ ] Migrations têm RLS/GRANT definidos e foram aplicadas (ou o PR diz como aplicar).
+- [ ] Migrations seguem o [guia](docs/banco-de-dados/migrations.md), têm RLS/GRANT definidos e `schema.sql` atualizado. A aplicação é feita pelo `db push` no merge.
 
 ## Revisão de código
 

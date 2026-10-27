@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261023_remover_repescagem.sql
+-- MIGRATION: 20261023000000_remover_repescagem.sql
 -- Exclusão da regra de repescagem de ausentes (admin_repescagem_ausentes)
 -- ==============================================================================
 

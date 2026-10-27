@@ -7,7 +7,7 @@ Workflows em `.github/workflows/`.
 | `ci.yml` | `push` e `pull_request` em `main`/`master` | `npm ci`, `npm run lint` (tsc), `npx vitest run`, `npm run build` |
 | `deploy-frontend.yml` | `push`/`pull_request` em `main`/`master`, manual | Lint, testes e build; em `push`, publica `dist/` no GitHub Pages |
 | `security.yml` | `push`, `pull_request`, toda segunda 06:00 UTC, manual | CodeQL (SAST), Trivy (SCA, bloqueia HIGH/CRITICAL) e `npm audit --audit-level=high` |
-| `supabase-migrations.yml` | Mudanças em `supabase/migrations/**` ou `supabase/schema.sql`, manual | Validação estática do SQL; em `push`, `supabase link` + `supabase db push` |
+| `supabase-migrations.yml` | Mudanças em `supabase/migrations/**` ou `supabase/config.toml`, manual | Validação estática; em `push` (ou manual), `supabase db push` |
 
 ## Front-end
 
@@ -28,13 +28,16 @@ Workflows em `.github/workflows/`.
 
 ## Migrations do banco
 
-1. **Validação** (sempre): lista os arquivos e falha se encontrar `DELETE FROM x;` sem `WHERE` ou `TRUNCATE`.
-2. **Aplicação** (em `push`, ou manual com `dry_run = false`): `supabase link --project-ref` e `supabase db push`.
-   Concorrência serializada (`cancel-in-progress: false`).
+CLI do Supabase fixada na versão `2.122.0` (variável `SUPABASE_CLI_VERSION` do workflow).
 
-> ⚠️ Ver o aviso em [migrations](../banco-de-dados/migrations.md#como-aplicar): as migrations recentes são aplicadas
-> manualmente pelo SQL Editor, e a nomeação antiga (prefixo só com a data) não é compatível com `supabase db push`.
-> Confirme o estado do job antes de confiar nele.
+1. **Validação** (sempre, inclusive em PR): nomes no padrão `AAAAMMDDHHMMSS_descricao.sql` com versões únicas;
+   sem `DELETE` sem `WHERE`, `TRUNCATE` ou `CREATE INDEX CONCURRENTLY`.
+2. **Aplicação** (push em `main`, ou manual): `supabase link`, `migration list` (antes), `db push` e `migration list`
+   (depois, para conferir). Execução manual com `dry_run = true` (padrão) roda só `db push --dry-run`.
+3. Uma aplicação por ambiente de cada vez, nunca cancelada no meio.
+4. A aplicação só roda com a variável `SUPABASE_DB_PUSH_ENABLED = true`. Antes de ligá-la, faça a
+   [transição única](../banco-de-dados/migrations.md#transição-para-supabase-db-push).
+5. Os secrets `SUPABASE_*` são obrigatórios; sem eles o job falha (não há valor padrão).
 
 ## Segredos
 
@@ -45,6 +48,7 @@ Workflows em `.github/workflows/`.
 | `SUPABASE_ACCESS_TOKEN` | Secret | CLI do Supabase |
 | `SUPABASE_DB_PASSWORD` | Secret | `supabase link` / `db push` |
 | `SUPABASE_PROJECT_REF` | Secret | ID do projeto Supabase |
+| `SUPABASE_DB_PUSH_ENABLED` | Variable | `true` libera o `db push` (depois da transição) |
 | `VITE_SUPABASE_URL` | Secret | URL do Supabase no build |
 | `VITE_SUPABASE_ANON_KEY` | Secret | Anon key no build |
 | `APP_URL` | Variable | URL pública da aplicação |

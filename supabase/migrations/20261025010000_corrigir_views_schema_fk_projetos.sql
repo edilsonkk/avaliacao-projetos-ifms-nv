@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261025_corrigir_views_schema_fk_projetos.sql
+-- MIGRATION: 20261025010000_corrigir_views_schema_fk_projetos.sql
 -- DESCRIÇÃO: Remove e recria com segurança as views legadas (view_ranking_top3,
 --            view_projetos_quarentena e view_projetos_pendentes_avaliacao),
 --            preservando a ordem de colunas e utilizando chaves estrangeiras

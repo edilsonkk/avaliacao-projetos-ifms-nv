@@ -27,7 +27,7 @@ O CI bloqueia migrations com `DELETE` sem `WHERE`.
 **Causa**: bancos com esquema legado tinham `projetos`/`questionarios` sem `id_evento` (e até a tabela no singular
 `projeto`).
 **Solução**: `admin_reset_global` consulta `information_schema.columns` antes de usar a coluna e usa SQL dinâmico
-(migration `20261022_admin_reset_global_evento.sql`).
+(migration `20261022000000_admin_reset_global_evento.sql`).
 **Teste**: `src/features/admin/__tests__/ResetGlobal.test.tsx`.
 
 ---
@@ -58,7 +58,7 @@ if (res.error && (res.error.message?.includes('schema cache') || res.error.code 
 `PGRST204` acionava o fallback, que removia `data_evento` e salvava só o nome.
 **Solução**: payload só com as colunas oficiais
 ([configurações do evento](../regras-de-negocio/eventos.md#configurações-do-evento)) e migration idempotente
-`20261025_garantir_data_evento_persistente.sql`.
+`20261025000000_garantir_data_evento_persistente.sql`.
 **Teste**: `src/features/admin/__tests__/ModalConfiguracoesEventoData.test.tsx`.
 
 ---
@@ -102,7 +102,7 @@ são descartados. Ver [ADR 0005](../decisoes/0005-sorteio-nao-repete-avaliador.m
 usavam colunas textuais que não existem em `projetos` (`modalidade`, `area_conhecimento`, `nome_instituicao`).
 **Solução**: usar os relacionamentos (`modalidades(nome_modalidade)`, `areas_tematicas(nome_area)`,
 `instituicoes(nome_exibicao, sigla)`) e `LEFT JOIN` nas views
-(`20261025_corrigir_views_schema_fk_projetos.sql`). O mapa tem fallback para colunas nativas.
+(`20261025010000_corrigir_views_schema_fk_projetos.sql`). O mapa tem fallback para colunas nativas.
 **Teste**: `src/features/projetos/__tests__/MapaEstandesVisualEStatus.test.tsx`.
 
 ---

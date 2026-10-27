@@ -19,7 +19,7 @@
 --   passa a precisar de projeção explícita. Os fluxos atuais já projetam apenas
 --   as colunas permitidas (verificado em TelaAvaliador.tsx e TelaLogin.tsx).
 --
--- IDEMPOTENTE. APLICAÇÃO: colar no SQL Editor do Supabase e executar.
+-- IDEMPOTENTE. APLICAÇÃO: supabase db push (workflow supabase-migrations.yml).
 -- ==============================================================================
 
 BEGIN;

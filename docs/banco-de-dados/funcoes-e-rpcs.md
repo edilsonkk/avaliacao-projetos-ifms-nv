@@ -60,5 +60,5 @@ DELETE FROM public.locks_ativos WHERE expira_em < now();
 
 ## Removidas
 
-- `admin_repescagem_ausentes`: removida em `20261023_remover_repescagem.sql`. Ver
+- `admin_repescagem_ausentes`: removida em `20261023000000_remover_repescagem.sql`. Ver
   [ADR 0003](../decisoes/0003-remocao-da-repescagem.md).

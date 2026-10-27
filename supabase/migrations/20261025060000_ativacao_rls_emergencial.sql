@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261025_ativacao_rls_emergencial.sql
+-- MIGRATION: 20261025060000_ativacao_rls_emergencial.sql
 -- DESCRIÇÃO: Ativação formal de Row Level Security (RLS) em 100% das tabelas
 --            expostas do schema público. Implementa políticas cirúrgicas de
 --            contenção contra abusos anônimos, bloqueando mutações administrativas

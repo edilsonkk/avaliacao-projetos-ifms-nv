@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261025_sorteio_impedir_mesmo_avaliador_soft_delete.sql
+-- MIGRATION: 20261025030000_sorteio_impedir_mesmo_avaliador_soft_delete.sql
 -- DESCRIÇÃO: Blindagem do motor de sorteio contra reatribuição de projetos
 --            com avaliações canceladas (soft delete) para o mesmo avaliador.
 --            Garante que o projeto seja redistribuído exclusivamente para

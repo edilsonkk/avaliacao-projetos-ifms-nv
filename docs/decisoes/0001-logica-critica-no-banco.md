@@ -15,6 +15,7 @@ Agregações, ranking, relatórios, sorteio e validações de envio ficam no Pos
 
 ## Consequências
 
-- Uma única fonte de verdade para notas e ranking; o Telão e os relatórios mostram os mesmos números.
+- Uma única fonte de verdade para notas; o Telão e os relatórios mostram os mesmos números.
+- Exceção conhecida: o corte do ranking (top 3 por modalidade) ainda é feito no front-end (PRD, L11).
 - Mudanças de regra exigem migration, além do código React.
 - O front-end mantém fallbacks para quando uma função ainda não foi aplicada ou o schema cache está defasado.

@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261024_avaliador_areas_e_afinidade_tematica.sql
+-- MIGRATION: 20261024050000_avaliador_areas_e_afinidade_tematica.sql
 -- DESCRIÇÃO: 
 -- 1. Cria tabela 'avaliador_areas', índices e políticas RLS
 -- 2. Concede permissões (GRANT ALL) para anon, authenticated e service_role

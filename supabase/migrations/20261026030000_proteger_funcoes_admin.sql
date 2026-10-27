@@ -21,7 +21,7 @@
 --   precisa delas.
 --
 -- PRÉ-REQUISITO: a função public.is_admin() (criada em 20261026000000).
--- IDEMPOTENTE. APLICAÇÃO: colar no SQL Editor do Supabase e executar.
+-- IDEMPOTENTE. APLICAÇÃO: supabase db push (workflow supabase-migrations.yml).
 -- ==============================================================================
 
 BEGIN;

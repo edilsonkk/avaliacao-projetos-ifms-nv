@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261024_instituicoes_modalidades_evento_e_reset.sql
+-- MIGRATION: 20261024010000_instituicoes_modalidades_evento_e_reset.sql
 -- DESCRIÇÃO: 
 -- 1. Vincula tabelas 'instituicoes' e 'modalidades' ao evento ativo (id_evento)
 -- 2. Torna 'sigla' opcional em instituicoes (DROP NOT NULL)

@@ -4,7 +4,7 @@ Como os projetos chegam aos avaliadores: sorteio automático (`sortear_proximo_p
 coordenação (`AtribuicaoForcada`).
 
 Código: `src/features/atribuicoes/`, `src/features/avaliacao/components/TelaAvaliador.tsx`,
-migration `20261025_sorteio_impedir_mesmo_avaliador_soft_delete.sql` (versão vigente do sorteio).
+migration `20261025030000_sorteio_impedir_mesmo_avaliador_soft_delete.sql` (versão vigente do sorteio).
 
 ## Ordem e filtros do sorteio
 

@@ -57,7 +57,8 @@ Antes de mudar uma regra de negócio, leia o arquivo correspondente em `docs/reg
 - Consultas `anon` com `select('*')` em `usuarios`/`avaliacoes` falham: projete colunas.
 - `projetos` não tem colunas textuais `modalidade`, `area_conhecimento`, `nome_instituicao`: use os relacionamentos.
 - `sortear_proximo_projeto` e `sortear_projeto` precisam ficar em sincronia.
-- `supabase/schema.sql` está defasado em relação às migrations `20261026*`. As migrations prevalecem.
+- Migrations são aplicadas só por `supabase db push` (CI). Nunca sugira colar SQL no SQL Editor do painel.
+- `supabase/schema.sql` é referência de leitura; ao criar migration, atualize-o com o estado final.
 - Vários componentes são muito grandes (2–3 mil linhas). Leia por trechos e prefira extrair hooks/subcomponentes
   a aumentar o arquivo.
 

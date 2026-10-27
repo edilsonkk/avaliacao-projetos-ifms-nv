@@ -25,6 +25,6 @@
 
 ### Se houver migration
 
-- [ ] Nome com timestamp de 14 dígitos, idempotente, com RLS/GRANT definidos
-- [ ] `supabase/schema.sql` atualizado
-- [ ] Forma de aplicação descrita e status informado (aplicada / pendente)
+- [ ] Criada com `supabase migration new` (timestamp de 14 dígitos), idempotente, com RLS/GRANT definidos
+- [ ] `supabase/schema.sql` atualizado com o estado final
+- [ ] Dependência de front-end descrita (será aplicada pelo `db push` no merge)

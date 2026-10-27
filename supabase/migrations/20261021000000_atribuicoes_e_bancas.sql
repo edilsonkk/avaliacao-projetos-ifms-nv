@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION: 20261021_atribuicoes_e_bancas.sql
+-- MIGRATION: 20261021000000_atribuicoes_e_bancas.sql
 -- Permite bancas simultâneas (múltiplos avaliadores no mesmo projeto) e fila direcionada
 -- ==============================================================================
 

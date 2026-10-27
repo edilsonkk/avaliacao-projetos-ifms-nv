@@ -1,7 +1,10 @@
 -- ==============================================================================
 -- SISTEMA DE AVALIAÇÃO DE PROJETOS IFMS
--- DDL COMPLETO DO BANCO DE DADOS (PostgreSQL / Supabase)
--- Data de Exportação / Consolidação: 2026-10-19
+-- DDL CONSOLIDADO DO BANCO DE DADOS (PostgreSQL / Supabase)
+--
+-- Retrato do estado final após todas as migrations em supabase/migrations/
+-- (até 20261026030000). Arquivo de REFERÊNCIA para leitura: não é aplicado no
+-- banco. A fonte da verdade são as migrations. Ver docs/banco-de-dados/migrations.md.
 -- ==============================================================================
 
 -- ------------------------------------------------------------------------------
@@ -92,7 +95,6 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
   email VARCHAR(255) UNIQUE NOT NULL,
   nome VARCHAR(255) NOT NULL,
   papel VARCHAR(50) DEFAULT 'AVALIADOR',
-  senha_hash TEXT,
   cpf VARCHAR(14),
   celular VARCHAR(20),
   created_at TIMESTAMPTZ DEFAULT now()
@@ -237,21 +239,7 @@ CREATE TABLE IF NOT EXISTS public.avaliador_modalidades_bloqueadas (
 CREATE INDEX IF NOT EXISTS idx_amb_usuario_evento ON public.avaliador_modalidades_bloqueadas(id_usuario, id_evento);
 CREATE INDEX IF NOT EXISTS idx_amb_modalidade ON public.avaliador_modalidades_bloqueadas(id_modalidade);
 
-ALTER TABLE public.avaliador_modalidades_bloqueadas ENABLE ROW LEVEL SECURITY;
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies 
-    WHERE tablename = 'avaliador_modalidades_bloqueadas' 
-      AND policyname = 'politica_amb_livre'
-  ) THEN
-    CREATE POLICY politica_amb_livre ON public.avaliador_modalidades_bloqueadas 
-      FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-END $$;
-
-GRANT ALL ON TABLE public.avaliador_modalidades_bloqueadas TO anon, authenticated, service_role;
+-- RLS e policies: seção 23.
 
 -- ------------------------------------------------------------------------------
 -- 16.1 TABELA: avaliador_areas (Áreas de Avaliação / Afinidade Temática)
@@ -267,21 +255,7 @@ CREATE TABLE IF NOT EXISTS public.avaliador_areas (
 CREATE INDEX IF NOT EXISTS idx_aa_usuario_evento ON public.avaliador_areas(id_usuario, id_evento);
 CREATE INDEX IF NOT EXISTS idx_aa_area ON public.avaliador_areas(id_area);
 
-ALTER TABLE public.avaliador_areas ENABLE ROW LEVEL SECURITY;
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies 
-    WHERE tablename = 'avaliador_areas' 
-      AND policyname = 'politica_avaliador_areas_livre'
-  ) THEN
-    CREATE POLICY politica_avaliador_areas_livre ON public.avaliador_areas 
-      FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-END $$;
-
-GRANT ALL ON TABLE public.avaliador_areas TO anon, authenticated, service_role;
+-- RLS e policies: seção 23.
 
 -- ------------------------------------------------------------------------------
 -- 16. ÍNDICES DE PERFORMANCE
@@ -832,13 +806,22 @@ END;
 $$;
 
 -- ------------------------------------------------------------------------------
--- 19. PERMISSÕES DE ACESSO (GRANT EXECUTE)
+-- 19. PERMISSÕES DE EXECUÇÃO DAS FUNÇÕES
 -- ------------------------------------------------------------------------------
-GRANT EXECUTE ON FUNCTION public.admin_reset_global() TO authenticated, anon, service_role;
-GRANT EXECUTE ON FUNCTION public.admin_desbloquear_todos() TO authenticated, anon, service_role;
-GRANT EXECUTE ON FUNCTION public.admin_desbloquear_projeto(UUID) TO authenticated, anon, service_role;
-GRANT EXECUTE ON FUNCTION public.admin_remover_quarentena(UUID) TO authenticated, anon, service_role;
-GRANT EXECUTE ON FUNCTION public.admin_remover_quarentena_todos() TO authenticated, anon, service_role;
+-- Funções administrativas: somente Admin autenticado (20261026030000).
+-- Sorteio: também anon, pois o avaliador (sem login autenticado) precisa delas.
+REVOKE EXECUTE ON FUNCTION public.admin_reset_global(uuid)          FROM anon, PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.admin_desbloquear_todos()         FROM anon, PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.admin_desbloquear_projeto(uuid)   FROM anon, PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.admin_remover_quarentena(uuid)    FROM anon, PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.admin_remover_quarentena_todos()  FROM anon, PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.admin_reset_global(uuid)          TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_desbloquear_todos()         TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_desbloquear_projeto(uuid)   TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_remover_quarentena(uuid)    TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_remover_quarentena_todos()  TO authenticated, service_role;
+
 GRANT EXECUTE ON FUNCTION public.sortear_proximo_projeto(UUID, UUID) TO authenticated, anon, service_role;
 GRANT EXECUTE ON FUNCTION public.sortear_projeto(UUID, UUID) TO authenticated, anon, service_role;
 
@@ -875,19 +858,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_idx_modalidades_evento_nome ON public.modal
 CREATE UNIQUE INDEX IF NOT EXISTS uq_idx_areas_tematicas_evento_nome ON public.areas_tematicas (id_evento, nome_area) WHERE id_evento IS NOT NULL;
 
 -- ------------------------------------------------------------------------------
--- 22. FUNÇÕES DE EXCLUSÃO E RESTAURAÇÃO DE AVALIAÇÕES (RPC)
+-- 22. FUNÇÕES DE EXCLUSÃO E RESTAURAÇÃO DE AVALIAÇÕES (RPC, somente Admin)
 -- ------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.excluir_avaliacao(p_id_avaliacao UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_id_projeto UUID;
   v_id_usuario UUID;
   v_status_antigo VARCHAR;
 BEGIN
-  SELECT id_projeto, id_usuario, status 
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT id_projeto, id_usuario, status
   INTO v_id_projeto, v_id_usuario, v_status_antigo
   FROM public.avaliacoes
   WHERE id_avaliacao = p_id_avaliacao;
@@ -900,7 +888,7 @@ BEGIN
   END IF;
 
   UPDATE public.avaliacoes
-  SET 
+  SET
     status = 'CANCELADA',
     status_avaliacao = 'CANCELADA',
     is_quarentena = false
@@ -922,12 +910,17 @@ CREATE OR REPLACE FUNCTION public.restaurar_avaliacao(p_id_avaliacao UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_id_projeto UUID;
   v_id_usuario UUID;
 BEGIN
-  SELECT id_projeto, id_usuario 
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT id_projeto, id_usuario
   INTO v_id_projeto, v_id_usuario
   FROM public.avaliacoes
   WHERE id_avaliacao = p_id_avaliacao;
@@ -940,7 +933,7 @@ BEGIN
   END IF;
 
   UPDATE public.avaliacoes
-  SET 
+  SET
     status = 'CONCLUIDA',
     status_avaliacao = 'concluida'
   WHERE id_avaliacao = p_id_avaliacao;
@@ -956,141 +949,360 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.excluir_avaliacao(UUID) TO authenticated, anon, service_role;
-GRANT EXECUTE ON FUNCTION public.restaurar_avaliacao(UUID) TO authenticated, anon, service_role;
+REVOKE EXECUTE ON FUNCTION public.excluir_avaliacao(uuid)   FROM anon, PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.restaurar_avaliacao(uuid) FROM anon, PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.excluir_avaliacao(uuid)   TO authenticated, service_role;
+GRANT  EXECUTE ON FUNCTION public.restaurar_avaliacao(uuid) TO authenticated, service_role;
 
 -- ------------------------------------------------------------------------------
--- 23. ROW LEVEL SECURITY (RLS) E POLÍTICAS DE GESTÃO E OPERAÇÃO
+-- 23. ROW LEVEL SECURITY: leitura pública, escrita administrativa só para ADMIN
+--     (20261026000000). Ver docs/arquitetura/seguranca.md
 -- ------------------------------------------------------------------------------
-ALTER TABLE public.projetos ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_projetos_select ON public.projetos;
-DROP POLICY IF EXISTS politica_projetos_update_operacional ON public.projetos;
-DROP POLICY IF EXISTS politica_projetos_admin_mutacao ON public.projetos;
-DROP POLICY IF EXISTS politica_projetos_livre ON public.projetos;
-CREATE POLICY politica_projetos_livre ON public.projetos FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.projetos TO anon, authenticated, service_role;
+-- 23.1 is_admin(): SECURITY DEFINER evita recursão de RLS ao consultar usuarios.
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.usuarios u
+    WHERE u.id_usuario = auth.uid()
+      AND upper(u.papel::text) = 'ADMIN'
+  );
+$$;
 
-ALTER TABLE public.instituicoes ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_instituicoes_select ON public.instituicoes;
-DROP POLICY IF EXISTS politica_instituicoes_insert ON public.instituicoes;
-DROP POLICY IF EXISTS politica_instituicoes_admin_mutacao ON public.instituicoes;
-DROP POLICY IF EXISTS politica_instituicoes_livre ON public.instituicoes;
-CREATE POLICY politica_instituicoes_livre ON public.instituicoes FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.instituicoes TO anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated, service_role;
 
-ALTER TABLE public.modalidades ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_modalidades_select ON public.modalidades;
-DROP POLICY IF EXISTS politica_modalidades_admin_mutacao ON public.modalidades;
-DROP POLICY IF EXISTS politica_modalidades_livre ON public.modalidades;
-CREATE POLICY politica_modalidades_livre ON public.modalidades FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.modalidades TO anon, authenticated, service_role;
+-- 23.2 Base: SELECT para todos, ALL só para Admin; TRUNCATE revogado.
+DO $$
+DECLARE
+  r record;
+  tabelas text[] := ARRAY[
+    'eventos', 'instituicoes', 'modalidades', 'areas_tematicas', 'usuarios',
+    'questionarios', 'perguntas_questionario', 'projetos', 'avaliadores_evento',
+    'avaliacoes', 'respostas_avaliacao', 'locks_ativos',
+    'fila_atribuicoes_direcionadas', 'historico_impedimentos',
+    'avaliador_modalidades_bloqueadas', 'avaliador_areas',
+    'instituicao_aliases', 'modalidade_aliases'
+  ];
+  t text;
+BEGIN
+  FOREACH t IN ARRAY tabelas LOOP
+    IF to_regclass('public.' || t) IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+      FOR r IN
+        SELECT policyname FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = t
+      LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', r.policyname, t);
+      END LOOP;
 
-ALTER TABLE public.areas_tematicas ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_areas_tematicas_select ON public.areas_tematicas;
-DROP POLICY IF EXISTS politica_areas_tematicas_admin_mutacao ON public.areas_tematicas;
-DROP POLICY IF EXISTS politica_areas_tematicas_livre ON public.areas_tematicas;
-CREATE POLICY politica_areas_tematicas_livre ON public.areas_tematicas FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.areas_tematicas TO anon, authenticated, service_role;
+      -- Base comum: leitura pública + escrita total do Admin autenticado
+      EXECUTE format(
+        'CREATE POLICY %I ON public.%I FOR SELECT TO anon, authenticated USING (true)',
+        'rls_' || t || '_select', t);
+      EXECUTE format(
+        'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin())',
+        'rls_' || t || '_admin', t);
 
-ALTER TABLE public.usuarios ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_usuarios_select ON public.usuarios;
-DROP POLICY IF EXISTS politica_usuarios_insert_anon ON public.usuarios;
-DROP POLICY IF EXISTS politica_usuarios_update_anon ON public.usuarios;
-DROP POLICY IF EXISTS politica_usuarios_admin_mutacao ON public.usuarios;
-DROP POLICY IF EXISTS politica_usuarios_livre ON public.usuarios;
-CREATE POLICY politica_usuarios_livre ON public.usuarios FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.usuarios TO anon, authenticated, service_role;
+      -- TRUNCATE ignora RLS: nunca permitir via API
+      EXECUTE format('REVOKE TRUNCATE ON TABLE public.%I FROM anon, authenticated', t);
+    END IF;
+  END LOOP;
+END $$;
 
-ALTER TABLE public.questionarios ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_questionarios_select ON public.questionarios;
-DROP POLICY IF EXISTS politica_questionarios_admin_mutacao ON public.questionarios;
-DROP POLICY IF EXISTS politica_questionarios_livre ON public.questionarios;
-CREATE POLICY politica_questionarios_livre ON public.questionarios FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.questionarios TO anon, authenticated, service_role;
+-- 23.3 Exceções operacionais (Avaliador / Staff, role anon)
+-- instituicoes: autocadastro do avaliador pode criar instituição nova
+CREATE POLICY rls_instituicoes_insert_operacional ON public.instituicoes
+  FOR INSERT TO anon, authenticated WITH CHECK (true);
 
-ALTER TABLE public.perguntas_questionario ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_perguntas_select ON public.perguntas_questionario;
-DROP POLICY IF EXISTS politica_perguntas_admin_mutacao ON public.perguntas_questionario;
-DROP POLICY IF EXISTS politica_perguntas_livre ON public.perguntas_questionario;
-CREATE POLICY politica_perguntas_livre ON public.perguntas_questionario FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.perguntas_questionario TO anon, authenticated, service_role;
+-- usuarios: autocadastro e edição no balcão do Staff, restritos a papel AVALIADOR
+CREATE POLICY rls_usuarios_insert_operacional ON public.usuarios
+  FOR INSERT TO anon, authenticated
+  WITH CHECK (upper(coalesce(papel::text, 'AVALIADOR')) = 'AVALIADOR');
+CREATE POLICY rls_usuarios_update_operacional ON public.usuarios
+  FOR UPDATE TO anon, authenticated
+  USING (upper(coalesce(papel::text, 'AVALIADOR')) = 'AVALIADOR')
+  WITH CHECK (upper(coalesce(papel::text, 'AVALIADOR')) = 'AVALIADOR');
 
-ALTER TABLE public.eventos ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_eventos_select ON public.eventos;
-DROP POLICY IF EXISTS politica_eventos_admin_mutacao ON public.eventos;
-DROP POLICY IF EXISTS politica_eventos_livre ON public.eventos;
-CREATE POLICY politica_eventos_livre ON public.eventos FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.eventos TO anon, authenticated, service_role;
+-- projetos: check-in do Staff e fixação de questionário pelo Avaliador
+CREATE POLICY rls_projetos_update_operacional ON public.projetos
+  FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
 
-ALTER TABLE public.avaliadores_evento ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_avaliadores_evento_select ON public.avaliadores_evento;
-DROP POLICY IF EXISTS politica_avaliadores_evento_mutacao_operacional ON public.avaliadores_evento;
-DROP POLICY IF EXISTS politica_avaliadores_evento_update_operacional ON public.avaliadores_evento;
-DROP POLICY IF EXISTS politica_avaliadores_evento_admin_delete ON public.avaliadores_evento;
-DROP POLICY IF EXISTS politica_avaliadores_evento_livre ON public.avaliadores_evento;
-CREATE POLICY politica_avaliadores_evento_livre ON public.avaliadores_evento FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.avaliadores_evento TO anon, authenticated, service_role;
+-- avaliadores_evento: vínculo no autocadastro e no balcão do Staff
+CREATE POLICY rls_avaliadores_evento_insert_operacional ON public.avaliadores_evento
+  FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY rls_avaliadores_evento_update_operacional ON public.avaliadores_evento
+  FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
 
-ALTER TABLE public.avaliacoes ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_avaliacoes_select ON public.avaliacoes;
-DROP POLICY IF EXISTS politica_avaliacoes_insert ON public.avaliacoes;
-DROP POLICY IF EXISTS politica_avaliacoes_delete_pendentes_anon ON public.avaliacoes;
-DROP POLICY IF EXISTS politica_avaliacoes_admin_mutacao ON public.avaliacoes;
-DROP POLICY IF EXISTS politica_avaliacoes_livre ON public.avaliacoes;
-CREATE POLICY politica_avaliacoes_livre ON public.avaliacoes FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.avaliacoes TO anon, authenticated, service_role;
+-- avaliacoes: sem INSERT anônimo (notas só via fn_enviar_avaliacao, 20261026010000);
+-- exclusão apenas de pendentes (sem nota)
+CREATE POLICY rls_avaliacoes_delete_pendentes ON public.avaliacoes
+  FOR DELETE TO anon, authenticated USING (nota_final IS NULL);
 
-ALTER TABLE public.respostas_avaliacao ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_respostas_select ON public.respostas_avaliacao;
-DROP POLICY IF EXISTS politica_respostas_insert ON public.respostas_avaliacao;
-DROP POLICY IF EXISTS politica_respostas_admin_mutacao ON public.respostas_avaliacao;
-DROP POLICY IF EXISTS politica_respostas_livre ON public.respostas_avaliacao;
-CREATE POLICY politica_respostas_livre ON public.respostas_avaliacao FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.respostas_avaliacao TO anon, authenticated, service_role;
+-- respostas_avaliacao: sem INSERT anônimo (gravadas por fn_enviar_avaliacao)
 
-ALTER TABLE public.locks_ativos ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_locks_ativos_operacional ON public.locks_ativos;
-DROP POLICY IF EXISTS politica_locks_ativos_livre ON public.locks_ativos;
-CREATE POLICY politica_locks_ativos_livre ON public.locks_ativos FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.locks_ativos TO anon, authenticated, service_role;
+-- historico_impedimentos: registro de conflito/ausência
+CREATE POLICY rls_historico_impedimentos_insert_operacional ON public.historico_impedimentos
+  FOR INSERT TO anon, authenticated WITH CHECK (true);
 
-ALTER TABLE public.fila_atribuicoes_direcionadas ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_fila_atribuicoes_operacional ON public.fila_atribuicoes_direcionadas;
-DROP POLICY IF EXISTS politica_fila_atribuicoes_livre ON public.fila_atribuicoes_direcionadas;
-CREATE POLICY politica_fila_atribuicoes_livre ON public.fila_atribuicoes_direcionadas FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.fila_atribuicoes_direcionadas TO anon, authenticated, service_role;
+-- Tabelas operacionais dinâmicas (travas, fila, bloqueios e áreas do balcão)
+CREATE POLICY rls_locks_ativos_operacional ON public.locks_ativos
+  FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY rls_fila_atribuicoes_operacional ON public.fila_atribuicoes_direcionadas
+  FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY rls_avaliador_modalidades_bloqueadas_operacional ON public.avaliador_modalidades_bloqueadas
+  FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY rls_avaliador_areas_operacional ON public.avaliador_areas
+  FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
-ALTER TABLE public.historico_impedimentos ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_historico_impedimentos_select ON public.historico_impedimentos;
-DROP POLICY IF EXISTS politica_historico_impedimentos_insert ON public.historico_impedimentos;
-DROP POLICY IF EXISTS politica_historico_impedimentos_admin ON public.historico_impedimentos;
-DROP POLICY IF EXISTS politica_historico_impedimentos_livre ON public.historico_impedimentos;
-CREATE POLICY politica_historico_impedimentos_livre ON public.historico_impedimentos FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.historico_impedimentos TO anon, authenticated, service_role;
+-- 23.4 Views: security_invoker e somente leitura
+DO $$
+DECLARE
+  v record;
+BEGIN
+  FOR v IN
+    SELECT c.relname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'v'
+  LOOP
+    EXECUTE format('ALTER VIEW public.%I SET (security_invoker = true)', v.relname);
+    EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.%I FROM anon, authenticated', v.relname);
+    EXECUTE format('GRANT SELECT ON public.%I TO anon, authenticated', v.relname);
+  END LOOP;
+END $$;
 
-ALTER TABLE public.avaliador_modalidades_bloqueadas ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_amb_livre ON public.avaliador_modalidades_bloqueadas;
-CREATE POLICY politica_amb_livre ON public.avaliador_modalidades_bloqueadas FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.avaliador_modalidades_bloqueadas TO anon, authenticated, service_role;
+-- ------------------------------------------------------------------------------
+-- 24. PRIVILÉGIOS DE LEITURA POR COLUNA (20261026020000)
+-- ------------------------------------------------------------------------------
+REVOKE SELECT ON public.usuarios FROM anon;
+-- ⚠️ A migration concede id_evento, coluna que nenhuma migration cria em usuarios.
+--    Ver docs/banco-de-dados/migrations.md (pendências).
+GRANT  SELECT (id_usuario, nome, email, papel, id_evento, created_at)
+  ON public.usuarios TO anon;
+-- authenticated (admin) mantém leitura total, já gated pela RLS da 20261026000000.
+GRANT SELECT ON public.usuarios TO authenticated;
 
-ALTER TABLE public.avaliador_areas ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_avaliador_areas_livre ON public.avaliador_areas;
-CREATE POLICY politica_avaliador_areas_livre ON public.avaliador_areas FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.avaliador_areas TO anon, authenticated, service_role;
+-- ------------------------------------------------------------------------------
+-- 2. avaliacoes: anon lê só o mínimo para a dedupe; notas/pareceres só admin.
+-- ------------------------------------------------------------------------------
+REVOKE SELECT ON public.avaliacoes FROM anon;
+GRANT  SELECT (id_avaliacao, id_projeto, id_usuario, status, status_avaliacao)
+  ON public.avaliacoes TO anon;
+GRANT SELECT ON public.avaliacoes TO authenticated;
 
-ALTER TABLE public.instituicao_aliases ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_instituicao_aliases_select ON public.instituicao_aliases;
-DROP POLICY IF EXISTS politica_instituicao_aliases_admin ON public.instituicao_aliases;
-DROP POLICY IF EXISTS politica_instituicao_aliases_livre ON public.instituicao_aliases;
-CREATE POLICY politica_instituicao_aliases_livre ON public.instituicao_aliases FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.instituicao_aliases TO anon, authenticated, service_role;
+-- ------------------------------------------------------------------------------
+-- 3. respostas_avaliacao: nenhum fluxo anon lê; só relatórios admin.
+-- ------------------------------------------------------------------------------
+REVOKE SELECT ON public.respostas_avaliacao FROM anon;
+GRANT SELECT ON public.respostas_avaliacao TO authenticated;
 
-ALTER TABLE public.modalidade_aliases ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS politica_modalidade_aliases_select ON public.modalidade_aliases;
-DROP POLICY IF EXISTS politica_modalidade_aliases_admin ON public.modalidade_aliases;
-DROP POLICY IF EXISTS politica_modalidade_aliases_livre ON public.modalidade_aliases;
-CREATE POLICY politica_modalidade_aliases_livre ON public.modalidade_aliases FOR ALL USING (true) WITH CHECK (true);
-GRANT ALL ON TABLE public.modalidade_aliases TO anon, authenticated, service_role;
+-- ------------------------------------------------------------------------------
+-- 25. GRAVAÇÃO DE NOTAS COM VALIDAÇÃO NO SERVIDOR (20261026010000)
+-- ------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_enviar_avaliacao(
+  p_id_usuario      uuid,
+  p_id_projeto      uuid,
+  p_id_questionario uuid,
+  p_respostas       jsonb,          -- [{ "id_pergunta": uuid, "nota": numeric }, ...]
+  p_parecer         text DEFAULT NULL,
+  p_tempo_presenca  text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_id_evento             uuid;
+  v_id_instituicao_aval   uuid;
+  v_inst_projeto          uuid;
+  v_modalidade_projeto    uuid;
+  v_check_in              boolean;
+  v_fora_competicao       boolean;
+  v_tinha_trava           boolean;
+  v_cota_padrao           integer;
+  v_cota_projeto          integer;
+  v_sistema_liberado      boolean;
+  v_escala_min            numeric(5,2);
+  v_escala_max            numeric(5,2);
+  v_qtd_respostas         integer;
+  v_qtd_fora_escala       integer;
+  v_soma                  numeric;
+  v_nota_final            numeric(5,2);
+  v_avaliacoes_ativas     integer;
+  v_nota_min              numeric(5,2);
+  v_nota_max              numeric(5,2);
+  v_is_quarentena         boolean := false;
+  v_id_avaliacao          uuid;
+BEGIN
+  -- 1. POSSE DE TRAVA: o avaliador só grava se detém a trava ativa deste projeto.
+  SELECT EXISTS (
+    SELECT 1 FROM public.locks_ativos
+    WHERE id_usuario = p_id_usuario AND id_projeto = p_id_projeto
+  ) INTO v_tinha_trava;
 
+  IF NOT v_tinha_trava THEN
+    RAISE EXCEPTION 'Sem trava ativa para este avaliador/projeto. Sorteie o projeto antes de avaliar.'
+      USING ERRCODE = '42501';
+  END IF;
 
+  -- 2. PROJETO ELEGÍVEL.
+  SELECT p.id_evento, p.id_instituicao, p.id_modalidade,
+         COALESCE(p.is_check_in_realizado, false),
+         COALESCE(p.is_fora_da_competicao, false),
+         p.cota_avaliacoes_customizada
+    INTO v_id_evento, v_inst_projeto, v_modalidade_projeto,
+         v_check_in, v_fora_competicao, v_cota_projeto
+  FROM public.projetos p
+  WHERE p.id_projeto = p_id_projeto;
 
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Projeto inexistente.' USING ERRCODE = '42501';
+  END IF;
+  IF v_fora_competicao THEN
+    RAISE EXCEPTION 'Projeto fora da competição não pode ser avaliado.' USING ERRCODE = '42501';
+  END IF;
+  IF NOT v_check_in THEN
+    RAISE EXCEPTION 'Projeto sem check-in presencial.' USING ERRCODE = '42501';
+  END IF;
+
+  -- 3. SEM DUPLICIDADE (respeita unica_avaliacao_por_usuario; inclui canceladas).
+  IF EXISTS (
+    SELECT 1 FROM public.avaliacoes
+    WHERE id_projeto = p_id_projeto AND id_usuario = p_id_usuario
+  ) THEN
+    RAISE EXCEPTION 'Este avaliador já possui avaliação registrada para este projeto.'
+      USING ERRCODE = '42501';
+  END IF;
+
+  -- 4. CONFLITO INSTITUCIONAL (mesma regra de sortear_proximo_projeto).
+  SELECT ae.id_instituicao INTO v_id_instituicao_aval
+  FROM public.avaliadores_evento ae
+  WHERE ae.id_usuario = p_id_usuario AND ae.id_evento = v_id_evento;
+
+  IF v_id_instituicao_aval IS NOT NULL
+     AND v_inst_projeto IS NOT DISTINCT FROM v_id_instituicao_aval THEN
+    RAISE EXCEPTION 'Conflito de interesse: avaliador da mesma instituição do projeto.'
+      USING ERRCODE = '42501';
+  END IF;
+
+  -- 5. MODALIDADE BLOQUEADA.
+  IF v_modalidade_projeto IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.avaliador_modalidades_bloqueadas amb
+    WHERE amb.id_usuario = p_id_usuario
+      AND amb.id_evento = v_id_evento
+      AND amb.id_modalidade = v_modalidade_projeto
+  ) THEN
+    RAISE EXCEPTION 'Modalidade do projeto bloqueada para este avaliador.'
+      USING ERRCODE = '42501';
+  END IF;
+
+  -- 6. COTA ESTRITA. A trava deste avaliador (que agora vira avaliação) não conta
+  --    como avaliação ativa, então basta garantir que as avaliações já concluídas
+  --    não tenham atingido a cota. O excesso de travas simultâneas é barrado no
+  --    sorteio; aqui o avaliador já detém a sua e está concluindo.
+  SELECT COALESCE(e.cota_avaliacoes_padrao, 3),
+         COALESCE(e.sistema_liberado, true)
+    INTO v_cota_padrao, v_sistema_liberado
+  FROM public.eventos e WHERE e.id_evento = v_id_evento;
+
+  SELECT COUNT(*) INTO v_avaliacoes_ativas
+  FROM public.avaliacoes a
+  WHERE a.id_projeto = p_id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA');
+
+  IF v_avaliacoes_ativas >= COALESCE(v_cota_projeto, v_cota_padrao) THEN
+    RAISE EXCEPTION 'Cota de avaliações do projeto já atingida.' USING ERRCODE = '42501';
+  END IF;
+
+  -- 7. JANELA TEMPORAL. Tolerância: como há trava ativa, o avaliador está
+  --    concluindo um projeto em andamento; só bloqueamos se o sistema foi
+  --    explicitamente desligado.
+  IF v_sistema_liberado = false THEN
+    RAISE EXCEPTION 'Sistema de avaliação bloqueado pela coordenação.' USING ERRCODE = '42501';
+  END IF;
+
+  -- 8. FAIXA DE NOTA conforme o questionário.
+  SELECT COALESCE(q.escala_minima, 0), COALESCE(q.escala_maxima, 10)
+    INTO v_escala_min, v_escala_max
+  FROM public.questionarios q WHERE q.id_questionario = p_id_questionario;
+  IF NOT FOUND THEN
+    v_escala_min := 0; v_escala_max := 10;
+  END IF;
+
+  SELECT COUNT(*),
+         COUNT(*) FILTER (
+           WHERE (r->>'nota')::numeric < v_escala_min
+              OR (r->>'nota')::numeric > v_escala_max
+         ),
+         COALESCE(SUM((r->>'nota')::numeric), 0)
+    INTO v_qtd_respostas, v_qtd_fora_escala, v_soma
+  FROM jsonb_array_elements(p_respostas) AS r;
+
+  IF v_qtd_respostas = 0 THEN
+    RAISE EXCEPTION 'Nenhuma nota informada.' USING ERRCODE = '22023';
+  END IF;
+  IF v_qtd_fora_escala > 0 THEN
+    RAISE EXCEPTION 'Nota fora da escala permitida (% a %).', v_escala_min, v_escala_max
+      USING ERRCODE = '22003';
+  END IF;
+
+  -- 9. NOTA FINAL calculada no servidor (média simples, mesma semântica do front).
+  v_nota_final := ROUND(v_soma / v_qtd_respostas, 2);
+
+  -- 10. GRAVAÇÃO ATÔMICA.
+  INSERT INTO public.avaliacoes (
+    id_projeto, id_usuario, id_questionario, nota_final, parecer_final,
+    tempo_presenca, tempo_submissao, status, status_avaliacao
+  ) VALUES (
+    p_id_projeto, p_id_usuario, p_id_questionario, v_nota_final, p_parecer,
+    p_tempo_presenca, now(), 'CONCLUIDA', 'concluida'
+  )
+  RETURNING id_avaliacao INTO v_id_avaliacao;
+
+  INSERT INTO public.respostas_avaliacao (id_avaliacao, id_pergunta, nota_atribuida)
+  SELECT v_id_avaliacao, (r->>'id_pergunta')::uuid, (r->>'nota')::numeric
+  FROM jsonb_array_elements(p_respostas) AS r;
+
+  -- Fixa o questionário do projeto se ainda não houver.
+  UPDATE public.projetos
+  SET id_questionario_fixado = p_id_questionario
+  WHERE id_projeto = p_id_projeto AND id_questionario_fixado IS NULL
+    AND p_id_questionario IS NOT NULL;
+
+  -- Quarentena por divergência > 2.5 entre a maior e a menor nota ativa.
+  SELECT MIN(nota_final), MAX(nota_final) INTO v_nota_min, v_nota_max
+  FROM public.avaliacoes
+  WHERE id_projeto = p_id_projeto AND (status IS NULL OR status <> 'CANCELADA');
+  IF v_nota_max IS NOT NULL AND (v_nota_max - v_nota_min) > 2.5 THEN
+    v_is_quarentena := true;
+    UPDATE public.avaliacoes SET is_quarentena = true
+    WHERE id_projeto = p_id_projeto AND (status IS NULL OR status <> 'CANCELADA');
+  END IF;
+
+  -- Libera a trava e conclui a fila direcionada, se houver.
+  DELETE FROM public.locks_ativos
+  WHERE id_usuario = p_id_usuario AND id_projeto = p_id_projeto;
+
+  UPDATE public.fila_atribuicoes_direcionadas
+  SET status = 'concluido'
+  WHERE id_usuario = p_id_usuario AND id_projeto = p_id_projeto
+    AND status IN ('pendente', 'em_andamento');
+
+  RETURN jsonb_build_object(
+    'sucesso', true,
+    'id_avaliacao', v_id_avaliacao,
+    'nota_final', v_nota_final,
+    'is_quarentena', v_is_quarentena
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.fn_enviar_avaliacao(uuid, uuid, uuid, jsonb, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_enviar_avaliacao(uuid, uuid, uuid, jsonb, text, text)
+  TO anon, authenticated, service_role;
