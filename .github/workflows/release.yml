@@ -1,0 +1,54 @@
+name: Release
+
+# A cada merge em main, o release-please abre/atualiza um "PR de release" com a próxima versão
+# (calculada pelos Conventional Commits) e o CHANGELOG. Ao fazer merge desse PR, a versão é
+# publicada (tag vX.Y.Z + GitHub Release) e vai para produção: primeiro as migrations, depois o
+# front-end (as migrations devem ser compatíveis com a versão anterior do front-end).
+# Guia: docs/operacao/ci-cd-e-deploy.md
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Preparar versão
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: release-please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  migrations:
+    name: Banco de dados
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/supabase-migrations.yml
+    secrets: inherit
+
+  frontend:
+    name: Front-end
+    needs: [release-please, migrations]
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/deploy-frontend.yml
+    with:
+      ref: ${{ needs.release-please.outputs.tag_name }}
+    secrets: inherit

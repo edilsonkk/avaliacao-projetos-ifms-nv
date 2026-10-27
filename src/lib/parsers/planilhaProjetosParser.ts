@@ -1,4 +1,4 @@
-import { lerPlanilhaParaJson } from '@/lib/excelUtils';
+import { lerPlanilhaParaJson } from '@/lib/excel/excelUtils';
 
 export interface ProjetoLinhaPlanilha {
   codigo_projeto: string | null;

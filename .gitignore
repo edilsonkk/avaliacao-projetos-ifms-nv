@@ -29,3 +29,10 @@ pnpm-debug.log*
 # Sistema operacional
 .DS_Store
 Thumbs.db
+
+# Supabase CLI (arquivos locais/temporários)
+supabase/.temp/
+supabase/.branches/
+
+# Firebase CLI (cache local)
+.firebase/

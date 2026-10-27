@@ -4,8 +4,8 @@
 |---|---|
 | **Status** | Retrato do produto atual + lacunas e roadmap |
 | **Data** | 26-10-2026 |
-| **Base** | Análise do código (`src/`, `supabase/migrations/`, `schema.sql`, `src/__tests__/`) e de `ANTIGRAVITY.MD` |
-| **Documentos relacionados** | [`ANTIGRAVITY.MD`](../ANTIGRAVITY.MD) (especificação técnica), [`README.md`](../README.md) |
+| **Base** | Análise do código (`src/`, `supabase/migrations/`, `supabase/schema.sql`, testes em `src/**/__tests__/`) e da especificação técnica (hoje em `docs/`) |
+| **Documentos relacionados** | [Documentação técnica](README.md), [`README.md`](../README.md) |
 
 ---
 
@@ -54,7 +54,7 @@ O sistema é uma SPA (React 19 + Vite + Tailwind) sobre o Supabase (PostgreSQL +
 
 ## 5. Requisitos funcionais
 
-Os critérios de aceite referenciam as suítes em `src/__tests__/` que já os cobrem.
+Os critérios de aceite referenciam as suítes de teste (`src/**/__tests__/`) que já os cobrem.
 
 ### 5.1 Configuração do evento — `ModalConfiguracoesEvento`
 | ID | Requisito | Critério de aceite |
@@ -142,7 +142,7 @@ Os critérios de aceite referenciam as suítes em `src/__tests__/` que já os co
 | RN-01 | **Conflito institucional:** o avaliador nunca avalia projeto da própria instituição | `sortear_proximo_projeto` (`IS DISTINCT FROM`), `AtribuicaoForcada.tsx` |
 | RN-02 | **Modalidade bloqueada:** projetos de modalidades bloqueadas para o avaliador são descartados; ao bloquear, locks e itens de fila pendentes dessa modalidade são apagados | SQL + `GestorAvaliadores.tsx`, `TelaStaff.tsx`, `TelaAvaliador.tsx` |
 | RN-03 | **Cota estrita:** `avaliações ativas + locks < COALESCE(cota_customizada, cota_padrao)` | `sortear_proximo_projeto` |
-| RN-04 | **Sem repetição:** o avaliador nunca recebe um projeto que já avaliou, **mesmo que a avaliação tenha sido cancelada** (a constraint `UNIQUE (id_projeto, id_usuario)` impede); a avaliação cancelada não conta para a cota | `20261025_sorteio_impedir_mesmo_avaliador_soft_delete.sql` |
+| RN-04 | **Sem repetição:** o avaliador nunca recebe um projeto que já avaliou, **mesmo que a avaliação tenha sido cancelada** (a constraint `UNIQUE (id_projeto, id_usuario)` impede); a avaliação cancelada não conta para a cota | `20261025030000_sorteio_impedir_mesmo_avaliador_soft_delete.sql` |
 | RN-05 | **Ordem do sorteio:** 1º projetos com `forcar_topo_fila`; 2º afinidade temática (áreas do avaliador); depois, menos avaliações recebidas, menos faltas e estande. Quando acabam os projetos das suas áreas, ele recebe de outras | `ORDER BY` em `sortear_proximo_projeto` |
 | RN-06 | **Uma trava por avaliador** (`locks_ativos.id_usuario UNIQUE`). O sorteio automático ignora projetos com qualquer trava ativa; várias travas no mesmo projeto (banca) só existem pela atribuição forçada | `locks_ativos`, `sortear_proximo_projeto` |
 | RN-07 | Travas expiradas são apagadas a cada chamada de sorteio | `sortear_proximo_projeto` |
@@ -161,7 +161,7 @@ Os critérios de aceite referenciam as suítes em `src/__tests__/` que já os co
 | Resiliência | Fallback quando o schema cache do PostgREST diverge; RPCs com fallback para views e tabelas; enriquecimento em lote para evitar campos "N/I"; contingência em `localStorage` |
 | Usabilidade | Interface sem jargão técnico; dashboard admin em Bento Grid com modais; UUIDs nunca exibidos; Staff em widescreen (até 1800 px) e tablet; avaliador e autocadastro mobile-first; modo escuro |
 | Qualidade | TDD com Vitest + Testing Library (padrão AAA, seletores acessíveis), **31 suítes / 169 testes passando** (26-10-2026); `tsc --noEmit`; CI com build de produção |
-| DevOps | GitHub Actions: `ci.yml`, `deploy-frontend.yml` (GitHub Pages), `security.yml` (CodeQL, Trivy, npm audit), `supabase-migrations.yml` |
+| DevOps | GitHub Actions: `ci.yml`, `deploy-frontend.yml` (Firebase Hosting), `security.yml` (CodeQL, Trivy, npm audit), `supabase-migrations.yml` |
 
 ## 8. Modelo de dados (resumo)
 
@@ -220,19 +220,19 @@ usuarios ─┬─ avaliador_areas / avaliador_modalidades_bloqueadas (por event
 | L13 | **Leitura pública de PII e notas:** a RLS dá `SELECT TO anon` em tudo, expondo `usuarios.cpf`, `celular`, `senha_hash` (coluna morta) e todas as notas/pareceres | Vazamento de dados pessoais (LGPD) e de notas antes da homologação | **Corrigido** por `20261026020000`: `senha_hash` removida; `cpf`/`celular` e `nota_final`/`parecer_final` saem do alcance da `anon` via GRANT de coluna | **Alta** |
 | L14 | **Funções admin abertas à `anon`:** `admin_reset_global`, `excluir/restaurar_avaliacao`, `admin_desbloquear_*`, `admin_remover_quarentena_*` são `SECURITY DEFINER` sem checar o chamador e com `GRANT EXECUTE TO anon` | Visitante anônimo chama `admin_reset_global` e **apaga o evento inteiro** | **Corrigido** por `20261026030000`: `REVOKE EXECUTE FROM anon` + guard `is_admin()` em excluir/restaurar | **Alta** |
 | L1 | Avaliador e Staff entram **só com e-mail** (sem senha/OTP) e escrevem no banco como `anon`; o `id_usuario` vem do `localStorage` | Qualquer pessoa que saiba o e-mail de um avaliador age em nome dele | Migration 1 (não feita): OTP/magic link do Supabase Auth, para o `id_usuario` vir de `auth.uid()` em vez do payload — é o que fecha o L12 por completo | **Alta** |
-| L2 | `20261026000000_rls_admin_definitivo.sql` e as migrations de segurança acima precisam ser **coladas à mão** no SQL Editor; o CI não as aplica, embora exista `supabase-migrations.yml` | Divergência entre o repositório e o banco; a migration 4 só protege depois de aplicada | Commitar, aplicar as 4 migrations e ativar de fato o workflow de migrations | **Alta** |
+| L2 | `20261026000000_rls_admin_definitivo.sql` e as migrations de segurança acima precisam ser **coladas à mão** no SQL Editor; o CI não as aplica, embora exista `supabase-migrations.yml` | Divergência entre o repositório e o banco; a migration 4 só protege depois de aplicada | Commitar, aplicar as 4 migrations e ativar de fato o workflow de migrations. **2026-10-27**: migrations aplicadas por `supabase db push` no workflow de release; falta recriar o banco de teste ([migrations.md](banco-de-dados/migrations.md#recriar-o-banco-remoto-do-zero)) | **Alta** |
 | L3 | Papel e sessão em `localStorage`; a guarda de rota (`App.tsx`) é só no cliente | Basta editar o `localStorage` para abrir as telas (o RLS segura a escrita admin, mas não a leitura) | Derivar o papel da sessão do Supabase; restringir leituras sensíveis (notas, pareceres) via RLS | Média |
 | L4 | Views citam `historico_sorteios`, mas nenhuma migration cria essa tabela | O relatório de ausências pode falhar ou depender do fallback | Criar a tabela ou remover a referência; usar `historico_impedimentos` de forma consistente | Média |
 | L5 | A interface fala em "Importar (.xls/.xlsx/.csv)", mas `.xls` é recusado | Confusão do usuário | Ajustar os rótulos para `.xlsx/.csv` | Baixa |
 | L6 | `@google/genai`, `express`, `dotenv` e `GEMINI_API_KEY` sem uso | Superfície de ataque e dependências desnecessárias | Remover, ou definir um caso de uso de IA (ex.: resumo de pareceres) | Baixa |
 | L7 | QR Code gerado por `api.qrserver.com` | Dependência externa no dia do evento; o link (com o id do evento) é enviado a terceiros | Gerar o QR Code localmente (biblioteca JS) | Média |
-| L8 | Componentes muito grandes (`RelatoriosAdmin` com 3,2 mil linhas, `GestorAvaliadores` 2,5 mil, `GestorProjetos` 2,1 mil) e `schema.sql` duplicado em `docs/` | Manutenção cara e regressões | Extrair hooks e serviços de dados; ter uma única fonte de schema | Média |
-| L9 | Documentação desatualizada: ANTIGRAVITY cita SheetJS (o código usa `exceljs`), contagens de testes antigas e `supabase/migrations/revert/`, que não existe | Decisões tomadas com base em informação errada | Revisar o ANTIGRAVITY.MD e tratar este PRD como fonte do "o quê/porquê" | Baixa |
+| L8 | Componentes muito grandes (`RelatoriosAdmin` com 3,2 mil linhas, `GestorAvaliadores` 2,5 mil, `GestorProjetos` 2,1 mil) | Manutenção cara e regressões | Extrair hooks e serviços de dados (o `schema.sql` duplicado foi resolvido em 2026-10-27) | Média |
+| L9 | ~~Documentação desatualizada (ANTIGRAVITY.MD)~~ **Resolvido em 2026-10-27**: conteúdo revisado e dividido em `docs/` por assunto. `supabase/schema.sql` atualizado com as `20261026*` | Decisões tomadas com base em informação errada | — | Baixa |
 | L10 | Sem multi-evento simultâneo nem histórico consultável após o reset global | Perda de dados históricos se o reset for usado no lugar do arquivamento | Arquivar o evento (flag `is_ativo`) em vez de apagar; exportação completa antes do reset | Média |
 | L11 | Apesar do nome, `view_ranking_top3` devolve **todos** os projetos com avaliação, ordenados por média geral simples, sem particionar por modalidade, sem limitar a 3, sem filtrar "fora da competição" e sem usar `peso_desempate`. O agrupamento e o corte ficam no front | Pódio pode incluir projeto fora da competição avaliado por atribuição forçada; empates sem critério oficial | Reescrever a view com `ROW_NUMBER() OVER (PARTITION BY modalidade ORDER BY media DESC, desempate DESC)`, filtrando `is_fora_da_competicao` | **Alta** |
 
 **Roadmap sugerido**
-- **Aplicar já (SQL Editor):** L14 e L13 (migrations `...030000` e `...020000`, não dependem de frontend), depois L12 (migration `...010000` junto da troca de `TelaAvaliador` para `rpc('fn_enviar_avaliacao')`).
+- **Aplicar já (via `supabase db push`, após [recriar o banco](banco-de-dados/migrations.md#recriar-o-banco-remoto-do-zero)):** L14 e L13 (migrations `...030000` e `...020000`, não dependem de frontend), depois L12 (migration `...010000` junto da troca de `TelaAvaliador` para `rpc('fn_enviar_avaliacao')`).
 - **Curto prazo (antes do próximo evento):** L1 (OTP, fecha o L12), L2 (aplicar/automatizar as migrations), L11, L4, L5, L7.
 - **Médio prazo:** L3, L8, L10; certificados para avaliadores; notificações por e-mail.
 - **Longo prazo:** portal de submissão de projetos; multi-evento; IA para apoio à comissão (resumo de pareceres, detecção de outliers).

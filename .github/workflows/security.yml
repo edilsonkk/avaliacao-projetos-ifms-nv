@@ -2,9 +2,9 @@ name: Pipeline de Segurança (SAST & SCA)
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
   schedule:
     # Executa toda segunda-feira às 06:00 UTC (02:00 BRT)
     - cron: '0 6 * * 1'
@@ -15,9 +15,12 @@ permissions:
   security-events: write
   actions: read
 
+# CodeQL e Code scanning (SARIF) só são gratuitos em repositório público. Em repositório privado,
+# o CodeQL é pulado e o Trivy mostra o resultado no log (continua bloqueando HIGH/CRITICAL).
 jobs:
   sast-codeql:
     name: SAST - Análise Estática de Código (CodeQL)
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do Repositório
@@ -45,19 +48,19 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Executar Varredura SCA com Trivy (Bloqueante para CRITICAL e HIGH)
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 (fixado por hash)
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          format: ${{ github.event.repository.private && 'table' || 'sarif' }}
+          output: ${{ !github.event.repository.private && 'trivy-results.sarif' || '' }}
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
           ignore-unfixed: false
 
       - name: Publicar Resultados SARIF no GitHub Security
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: ${{ always() && !github.event.repository.private }}
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-sca'

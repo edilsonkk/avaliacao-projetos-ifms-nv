@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase } from '@/lib/supabase';
 
 /** Evento global disparado quando a sessão do Admin no Supabase Auth não é válida. */
 export const EVENTO_SESSAO_ADMIN_EXPIRADA = 'sessao-admin-expirada';

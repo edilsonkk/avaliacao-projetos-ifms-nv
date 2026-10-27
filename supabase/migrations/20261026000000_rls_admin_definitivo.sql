@@ -11,11 +11,10 @@
 --   * Remove Admins órfãos (sem conta no Supabase Auth).
 --
 -- IDEMPOTENTE: remove TODAS as policies existentes das tabelas do escopo e
--- recria do zero. Substitui 20261025_ativacao_rls_emergencial.sql e a antiga
+-- recria do zero. Substitui 20261025060000_ativacao_rls_emergencial.sql e a antiga
 -- 20261025213500_ajustar_rls_importacoes_planilhas.sql (removida).
 --
--- APLICAÇÃO: o CI não aplica migrations. Cole este arquivo inteiro no
--- SQL Editor do Supabase e execute.
+-- APLICAÇÃO: supabase db push (workflow supabase-migrations.yml).
 -- ==============================================================================
 
 BEGIN;
