@@ -113,11 +113,10 @@ tokens, senhas ou a `service_role` key. Se um segredo vazar (inclusive em URL de
 
 ## Configuração única do repositório (GitHub)
 
-Repositório: `edilsonkk/sistemadeavaliacao` (code owner: `@edilsonkk`).
-
-> **Plano do GitHub.** O repositório é privado na conta `edilsonkk` com **GitHub Pro**, que libera environments e
-> proteção de branch. O CodeQL não roda em repositório privado sem Advanced Security (pago à parte); o
-> `security.yml` o pula automaticamente e o Trivy continua bloqueando vulnerabilidades.
+Repositório: [`edilsonkk/avaliacao-projetos-ifms-nv`](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv),
+**público** (code owner: `@edilsonkk`). Público no plano Free já inclui environments, proteção de branch, CodeQL e
+Actions ilimitado. Se um dia ele virar privado, o `security.yml` pula o CodeQL automaticamente, e environments e
+proteção de branch passam a exigir GitHub Pro.
 
 Feita uma vez, por quem administra o repositório:
 
