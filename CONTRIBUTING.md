@@ -5,13 +5,17 @@ documentação técnica está em [`docs/`](docs/README.md).
 
 ## Ambiente
 
-Pré-requisito: Node.js 20+.
+Pré-requisitos: Node.js 20+ e Docker em execução. O desenvolvimento usa **sempre** o Supabase local; nunca aponte o
+`.env` para produção.
 
 ```bash
 npm install
-cp .env.example .env     # preencha com os dados do Supabase
-npm run dev              # http://localhost:3000
+npx supabase@2.122.0 start     # banco local com migrations e seed
+cp .env.example .env           # cole a chave exibida por `npx supabase@2.122.0 status`
+npm run dev                    # http://localhost:3000
 ```
+
+Guia completo: [configuração](docs/arquitetura/configuracao.md#desenvolvimento-local).
 
 ## Fluxo de trabalho
 
@@ -41,7 +45,14 @@ npm run dev              # http://localhost:3000
    ```
 6. Abra o Pull Request para `main` e preencha o template. O CI precisa passar e o PR precisa de aprovação do code
    owner (`.github/CODEOWNERS`).
-7. Faça merge com **squash**, mantendo o título do PR no padrão de commit.
+7. Faça merge com **squash**. O **título do PR** vira o commit em `main` e define a próxima versão (`fix:` → patch,
+   `feat:` → minor), então ele precisa seguir o padrão.
+
+## Publicar uma versão
+
+O merge em `main` **não** publica nada. O release-please mantém um PR "chore: release X.Y.Z" com o CHANGELOG; o
+merge dele publica a versão em produção (backup, migrations, front-end). Rollback, congelamento durante a feira e
+backups: [CI/CD e deploy](docs/operacao/ci-cd-e-deploy.md).
 
 ## Onde colocar o código
 

@@ -24,25 +24,41 @@ como uma nova migration. Nunca altere o banco só pelo painel do Supabase.
    `NOTIFY pgrst, 'reload schema';`.
 7. Atualize `supabase/schema.sql` e a documentação afetada (modelo de dados, funções, regras de negócio).
 8. Se a migration exige mudança no front-end, descreva isso no cabeçalho e entregue as duas no mesmo PR.
-9. **Nunca edite nem renomeie uma migration já aplicada.** Para corrigir, crie outra.
+9. Garanta compatibilidade com a versão anterior do front-end ([expand/contract](#compatibilidade-com-a-versão-anterior-expandcontract)).
+10. Teste localmente com `npx supabase@2.122.0 db reset` antes de abrir o PR.
+11. **Nunca edite nem renomeie uma migration já aplicada em produção.** Para corrigir, crie outra.
+
+## Compatibilidade com a versão anterior (expand/contract)
+
+Na publicação de uma versão, as migrations são aplicadas **antes** do novo front-end. Por alguns minutos, e em
+qualquer rollback do front-end, a versão **anterior** do front-end roda sobre o banco **novo**. Por isso, toda
+migration precisa ser compatível com o front-end da versão anterior:
+
+| Mudança | Como fazer |
+|---|---|
+| Nova coluna | Adicione como opcional (`NULL` ou com `DEFAULT`). O front-end antigo a ignora |
+| Renomear coluna | Versão N: crie a nova e mantenha as duas sincronizadas. Versão N+1: o front-end usa a nova. Versão N+2: remova a antiga |
+| Remover coluna/tabela/função | Primeiro uma versão em que o front-end para de usar; depois a migration que remove |
+| Mudar assinatura de RPC | Crie uma função nova (ou um novo parâmetro com `DEFAULT`); remova a antiga numa versão posterior |
+| Restringir permissão (RLS/GRANT) | Garanta que a versão anterior do front-end não dependa do que será fechado |
+
+Assim, voltar o front-end para a versão anterior nunca exige desfazer o banco.
 
 ## Como aplicar
 
-Pelo workflow `supabase-migrations.yml` ([CI/CD](../operacao/ci-cd-e-deploy.md#migrations-do-banco)):
+Só pelo workflow `supabase-migrations.yml` ([CI/CD](../operacao/ci-cd-e-deploy.md#migrations-do-banco)):
 
 | Evento | O que acontece |
 |---|---|
-| Pull request | Só validação estática (nomes, `DELETE` sem `WHERE`, `TRUNCATE`) |
-| Merge em `main` | `supabase db push`: aplica as migrations que o banco ainda não registrou |
-| Manual (*Actions → Run workflow*) | `dry_run = true` mostra o que seria aplicado; `false` aplica |
-
-O job de aplicação só roda quando a variável do repositório `SUPABASE_DB_PUSH_ENABLED` vale `true`. Ela existe para
-impedir a reexecução das migrations antigas antes da [transição](#transição-para-supabase-db-push).
+| Pull request | Validação estática (nomes, `DELETE` sem `WHERE`, `TRUNCATE`, `CONCURRENTLY`) |
+| Publicação de versão (merge do PR de release) | Backup criptografado do banco e `supabase db push` |
+| Manual (*Actions → Run workflow*) | `dry_run = true` (padrão) mostra o que seria aplicado; `false` faz backup e aplica |
 
 **Nunca** aplique migrations pelo SQL Editor do painel: o banco não registra a aplicação e o próximo `db push` tenta
-executá-la de novo.
+executá-la de novo. No ambiente local, use `npx supabase@2.122.0 db reset` (recria o banco local com todas as
+migrations e o `seed.sql`).
 
-Para conferir o estado a partir da sua máquina:
+Para conferir o estado de produção a partir da sua máquina:
 ```bash
 npx supabase@2.122.0 login
 npx supabase@2.122.0 link --project-ref <project-ref>
@@ -50,54 +66,22 @@ npx supabase@2.122.0 migration list          # colunas Local x Remote
 npx supabase@2.122.0 db push --dry-run       # o que seria aplicado
 ```
 
-## Transição para `supabase db push`
+## Recriar o banco remoto do zero
 
-Feita **uma única vez**. Até 2026-10-27 as migrations eram coladas no SQL Editor, então o banco de produção não tem
-o histórico (`supabase_migrations.schema_migrations`). Sem esta etapa, o primeiro `db push` tentaria executar as 22
-migrations de novo.
+Só enquanto **não houver dados reais**. Apaga tudo no banco e aplica todas as migrations, registrando o histórico.
+Foi o procedimento usado para inaugurar o `db push` em 2026-10-27, quando o projeto ainda era de teste.
 
-Em 2026-10-27 os arquivos foram renomeados para o padrão de 14 dígitos. A ordem dentro de cada dia foi definida pelas
-dependências entre eles (ex.: a versão final de `admin_reset_global` está em `20261024020000`).
+```bash
+npx supabase@2.122.0 login
+npx supabase@2.122.0 link --project-ref <project-ref>
+npx supabase@2.122.0 db reset --linked --no-seed     # --no-seed: nunca levar o seed local para o remoto
+npx supabase@2.122.0 migration list                  # todas as versões devem aparecer em Local e Remote
+```
 
-1. **Descubra a última migration de fato executada no banco.** Não presuma que as `20261026*` foram aplicadas: o
-   PRD as lista como pendentes. Confira no SQL Editor:
-   ```sql
-   SELECT proname FROM pg_proc WHERE proname IN ('is_admin', 'fn_enviar_avaliacao');       -- 20261026000000 / 010000
-   SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND policyname LIKE 'rls_%'; -- 20261026000000
-   SELECT has_function_privilege('anon', 'public.admin_reset_global(uuid)', 'EXECUTE');    -- false após 030000
-   SELECT count(*) FROM information_schema.columns
-   WHERE table_name = 'usuarios' AND column_name = 'senha_hash';                            -- 0 após 020000
-   ```
-   Resolva também a [pendência](#pendências) de `usuarios.id_evento`.
-2. **Faça um backup** do banco (Supabase → Database → Backups, ou `pg_dump`).
-3. Rode o script, informando a última versão **confirmada** no passo 1. Ele marca como aplicadas, **sem
-   executar**, só as migrations até essa versão:
-   ```bash
-   SUPABASE_PROJECT_REF=<project-ref> scripts/supabase/alinhar-historico-migrations.sh <ultima_versao_aplicada>
-   ```
-   As posteriores ficam pendentes e serão aplicadas pelo `db push`.
-   Se o `migration list` mostrar versões remotas antigas (ex.: `20261024`), marque-as como revertidas:
-   `npx supabase@2.122.0 migration repair --status reverted <versao>`.
-4. Confira: `npx supabase@2.122.0 db push --dry-run` deve informar que o banco está atualizado.
-5. Configure os secrets do ambiente `production` (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`,
-   `SUPABASE_PROJECT_REF`) e crie a variável `SUPABASE_DB_PUSH_ENABLED = true`
-   (*Settings → Secrets and variables → Actions → Variables*).
-6. Rode o workflow manualmente com `dry_run = true` e confira o log.
+Depois, recrie o vínculo do Admin, porque a tabela `usuarios` volta vazia
+([criar Admin](../arquitetura/configuracao.md#criar-um-administrador)).
 
-## Pendências
-
-> ⚠️ **`usuarios.id_evento`**: a migration `20261026020000_restringir_leitura_sensivel.sql` concede
-> `SELECT (..., id_evento, ...)` em `usuarios`, mas nenhuma migration cria essa coluna. Em um banco novo, essa
-> migration **falha**. Verifique em produção:
-> ```sql
-> SELECT column_name FROM information_schema.columns
-> WHERE table_schema = 'public' AND table_name = 'usuarios' ORDER BY ordinal_position;
-> ```
-> - Se a coluna **existe** em produção (criada fora das migrations): crie uma migration
->   `20261026015000_usuarios_id_evento.sql` com `ADD COLUMN IF NOT EXISTS id_evento uuid` e marque-a como aplicada
->   na transição.
-> - Se **não existe**: a `20261026020000` nunca foi aplicada com sucesso. Remova `id_evento` do `GRANT` antes da
->   transição e aplique-a pelo `db push`.
+Com dados reais, **nunca** use `db reset --linked`. Corrija com uma nova migration.
 
 ## `schema.sql`
 
@@ -109,8 +93,8 @@ policy e remova o que foi apagado. Não acrescente a migration no fim do arquivo
 
 ## Rollback
 
-As migrations são idempotentes e não há migrations de reversão. Para desfazer uma mudança, crie uma **nova**
-migration que reverta o efeito. Em perda de dados, restaure o backup.
+Não há migrations de reversão. Para desfazer uma mudança, crie uma **nova** migration que reverta o efeito. Em perda
+de dados, restaure o backup gerado antes do `db push` ([restaurar backup](../operacao/ci-cd-e-deploy.md#restaurar-um-backup)).
 
 ## Histórico
 

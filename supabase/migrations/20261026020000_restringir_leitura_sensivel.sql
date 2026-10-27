@@ -30,7 +30,9 @@ BEGIN;
 ALTER TABLE public.usuarios DROP COLUMN IF EXISTS senha_hash;
 
 REVOKE SELECT ON public.usuarios FROM anon;
-GRANT  SELECT (id_usuario, nome, email, papel, id_evento, created_at)
+-- (2026-10-27) id_evento removido da lista: a coluna não existe em usuarios e o
+-- GRANT falhava em banco novo. Editado antes da primeira aplicação via db push.
+GRANT  SELECT (id_usuario, nome, email, papel, created_at)
   ON public.usuarios TO anon;
 -- authenticated (admin) mantém leitura total, já gated pela RLS da 20261026000000.
 GRANT SELECT ON public.usuarios TO authenticated;

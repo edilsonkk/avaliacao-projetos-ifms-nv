@@ -1081,9 +1081,7 @@ END $$;
 -- 24. PRIVILÉGIOS DE LEITURA POR COLUNA (20261026020000)
 -- ------------------------------------------------------------------------------
 REVOKE SELECT ON public.usuarios FROM anon;
--- ⚠️ A migration concede id_evento, coluna que nenhuma migration cria em usuarios.
---    Ver docs/banco-de-dados/migrations.md (pendências).
-GRANT  SELECT (id_usuario, nome, email, papel, id_evento, created_at)
+GRANT  SELECT (id_usuario, nome, email, papel, created_at)
   ON public.usuarios TO anon;
 -- authenticated (admin) mantém leitura total, já gated pela RLS da 20261026000000.
 GRANT SELECT ON public.usuarios TO authenticated;

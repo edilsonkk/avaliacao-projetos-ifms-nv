@@ -45,7 +45,6 @@ Fora de `src/`:
 | `supabase/migrations/` | Migrações incrementais — **fonte da verdade** do banco |
 | `supabase/schema.sql` | DDL consolidado (referência de leitura) |
 | `supabase/config.toml` | Configuração da Supabase CLI |
-| `scripts/` | Scripts operacionais (ex.: `scripts/supabase/`) |
 | `public/modelos/` | Planilhas-modelo de importação |
 | `docs/` | PRD e documentação técnica |
 

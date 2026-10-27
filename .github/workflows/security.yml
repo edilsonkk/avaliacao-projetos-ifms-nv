@@ -2,9 +2,9 @@ name: Pipeline de Segurança (SAST & SCA)
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
   schedule:
     # Executa toda segunda-feira às 06:00 UTC (02:00 BRT)
     - cron: '0 6 * * 1'

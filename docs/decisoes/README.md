@@ -30,3 +30,4 @@ Correções de bug e ajustes visuais não precisam de ADR: o commit e a doc do d
 | [0006](0006-rls-escrita-restrita-a-admin.md) | RLS com escrita administrativa restrita ao Admin | Aceito |
 | [0007](0007-gravacao-de-notas-via-rpc.md) | Gravação de notas só via `fn_enviar_avaliacao` | Aceito |
 | [0008](0008-frontend-organizado-por-features.md) | Front-end organizado por features | Aceito |
+| [0009](0009-ambientes-e-releases.md) | Ambientes local e produção, com releases versionadas | Aceito |

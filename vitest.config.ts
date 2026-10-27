@@ -10,6 +10,11 @@ export default mergeConfig(
             globals: true,
             setupFiles: ['./src/test/setupTests.ts'],
             include: ['src/**/*.test.{ts,tsx}'],
+            // Configuração fictícia: os testes nunca acessam a rede (mocks de @/lib/supabase).
+            env: {
+                VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
+                VITE_SUPABASE_ANON_KEY: 'chave-anonima-de-teste',
+            },
         },
     }),
 );

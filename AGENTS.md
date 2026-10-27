@@ -18,7 +18,13 @@ npm run lint         # tsc --noEmit
 npm test             # vitest run (todos os testes)
 npx vitest run <caminho>   # um arquivo de teste
 npm run build        # build de produção
+npx supabase@2.122.0 start      # Supabase local (requer Docker)
+npx supabase@2.122.0 db reset   # recria o banco local com migrations + seed
+npx supabase@2.122.0 migration new <nome>   # nova migration
 ```
+
+Ambientes: só **local** e **produção**. Nunca rode comandos contra o banco de produção (`--linked`, `db push`,
+`db reset --linked`) sem pedido explícito; produção só muda pelo workflow de release.
 
 Antes de dar uma tarefa como concluída: `npm run lint`, `npm test` e `npm run build` precisam passar.
 
@@ -65,5 +71,9 @@ Antes de mudar uma regra de negócio, leia o arquivo correspondente em `docs/reg
 ## Git
 
 - Branches: `feat/...`, `fix/...`, `refactor/...`, `docs/...` a partir de `main`.
-- Commits no padrão Conventional Commits em português, ex.: `feat(avaliacao): ...`.
+- Commits no padrão Conventional Commits em português, ex.: `feat(avaliacao): ...`. O tipo define a versão
+  (`fix` → patch, `feat` → minor); use `chore`/`docs`/`refactor` quando não houver mudança de comportamento.
+- Não edite `CHANGELOG.md` nem a versão no `package.json`: são gerenciados pelo release-please.
+- Migrations devem ser compatíveis com a versão anterior do front-end (expand/contract, ver
+  `docs/banco-de-dados/migrations.md`).
 - Não faça commit, push ou merge sem pedido explícito.

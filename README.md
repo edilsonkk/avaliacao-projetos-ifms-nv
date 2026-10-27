@@ -7,8 +7,8 @@ Sistema web para gestão, sorteio, avaliação e homologação de projetos no In
 ## 🚀 Como Rodar Localmente
 
 ### Pré-requisitos
-- **Node.js** (versão 20 ou superior recomendada)
-- **npm** (incluso com o Node.js)
+- **Node.js** 20 ou superior (com npm)
+- **Docker** em execução (Docker Desktop, OrbStack ou Colima), para o Supabase local
 
 ### Passo a Passo
 
@@ -18,19 +18,25 @@ Sistema web para gestão, sorteio, avaliação e homologação de projetos no In
    ```
    *(Nota: O arquivo `.npmrc` já está configurado com `legacy-peer-deps=true` para garantir compatibilidade perfeita entre os pacotes)*
 
-2. **Configuração de Variáveis de Ambiente:**
-   Copie o modelo e preencha com os dados do seu projeto Supabase
-   (detalhes em [docs/arquitetura/configuracao.md](docs/arquitetura/configuracao.md)):
+2. **Subir o Supabase local** (aplica as migrations e o `supabase/seed.sql`):
+   ```bash
+   npx supabase@2.122.0 start
+   npx supabase@2.122.0 status    # mostra a chave anon/publishable
+   ```
+
+3. **Configurar o ambiente:** copie o modelo e cole a chave exibida acima em `VITE_SUPABASE_ANON_KEY`.
    ```bash
    cp .env.example .env
    ```
+   Para entrar como Admin, crie um administrador local
+   ([guia](docs/arquitetura/configuracao.md#criar-um-administrador)).
 
-3. **Iniciar o servidor de desenvolvimento:**
+4. **Iniciar o servidor de desenvolvimento:**
    ```bash
    npm run dev
    ```
 
-4. **Acessar a aplicação:**
+5. **Acessar a aplicação:**
    Abra o navegador em: [http://localhost:3000](http://localhost:3000)
 
 ---

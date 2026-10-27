@@ -13,14 +13,14 @@ SEGUNDA              TERÇA                QUARTA               QUINTA          
 
 ## Segunda-feira: preparação técnica
 
-- **08:00–10:30**: aplicar migrations pendentes ([migrations](../banco-de-dados/migrations.md#como-aplicar)), conferir
-  os pipelines de segurança e de deploy do front-end ([CI/CD](ci-cd-e-deploy.md)) e verificar que a versão em
-  produção passou no CI.
+- **08:00–10:30**: publicar a versão da feira (merge do PR de release: migrations + front-end,
+  [CI/CD](ci-cd-e-deploy.md#como-uma-versão-é-publicada)) e conferir o pipeline de segurança.
 - **10:30–12:00**: verificação pós-deploy: login nos quatro perfis, sorteio de teste, relatórios abrindo.
 - **13:00–15:30**: importar Instituições (`GestorInstituicoes`), revisando o De-Para.
 - **15:30–17:00**: cadastrar Áreas Temáticas (CNPq) e Modalidades e Níveis.
-- **17:00–18:00**: checagem de prontidão e congelamento da versão. Não fazer deploy durante a feira, salvo correção
-  crítica.
+- **17:00–18:00**: checagem de prontidão. Anotar a tag em produção (para rollback) e ligar
+  `CONGELAMENTO_DEPLOY = true` ([congelamento](ci-cd-e-deploy.md#congelamento-durante-a-feira)). Correção crítica
+  durante a feira só com o modo *emergencia*.
 
 ## Terça-feira: carga de dados e calibração
 
@@ -54,5 +54,5 @@ SEGUNDA              TERÇA                QUARTA               QUINTA          
 - **08:30–10:30**: reunião da comissão científica para homologação das notas.
 - **10:30–12:00**: emitir relatórios oficiais (PDF/CSV) em **Relatórios**.
 - **14:00–17:00**: cerimônia. Ranking top 3 revelado no **Telão**.
-- **17:00–18:00**: exportar/backup do banco para arquivo histórico. Só depois disso considerar o
-  [reset global](../regras-de-negocio/eventos.md#reset-global).
+- **17:00–18:00**: rodar *Actions → Backup do Banco (Produção)*, baixar o backup e guardá-lo fora do GitHub (o
+  artefato expira em 30 dias). Desligar `CONGELAMENTO_DEPLOY`. Só depois disso considerar o [reset global](../regras-de-negocio/eventos.md#reset-global).

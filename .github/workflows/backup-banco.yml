@@ -1,0 +1,60 @@
+name: Backup do Banco (Produção)
+
+# Gera um backup criptografado do banco de produção, sem alterar nada.
+# Uso: ao fim de cada evento e antes de operações arriscadas. Não é bloqueado pelo congelamento.
+# Guia: docs/operacao/ci-cd-e-deploy.md#backups
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_CLI_VERSION: 2.122.0
+
+jobs:
+  backup:
+    name: Backup criptografado
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar CLI do Supabase
+        uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Conferir secrets obrigatórios
+        run: |
+          for v in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF BACKUP_PASSPHRASE; do
+            if [ -z "${!v}" ]; then echo "::error::Secret $v não configurado no ambiente production."; exit 1; fi
+          done
+
+      - name: Vincular projeto remoto
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Backup (estrutura + dados, criptografado)
+        run: |
+          mkdir -p backup
+          supabase db dump --linked --password "$SUPABASE_DB_PASSWORD" -f backup/estrutura.sql
+          supabase db dump --linked --password "$SUPABASE_DB_PASSWORD" --data-only --use-copy -f backup/dados.sql
+          tar -czf backup.tar.gz backup
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
+            --symmetric --cipher-algo AES256 -o "backup-${GITHUB_RUN_ID}.tar.gz.gpg" backup.tar.gz
+          rm -rf backup backup.tar.gz
+
+      - name: Guardar backup (30 dias)
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-banco-${{ github.run_id }}
+          path: backup-${{ github.run_id }}.tar.gz.gpg
+          retention-days: 30
+          if-no-files-found: error

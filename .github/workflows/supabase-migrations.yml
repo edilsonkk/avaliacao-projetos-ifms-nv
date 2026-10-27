@@ -1,41 +1,37 @@
-name: Deploy de Migrações do Supabase (Database CI/CD)
+name: Migrações do Supabase (Produção)
 
-# Aplica supabase/migrations/ no banco remoto com `supabase db push`.
+# Valida e aplica supabase/migrations/ com `supabase db push`.
+# - Pull request: só validação estática.
+# - Chamado pelo release.yml quando uma versão é publicada: backup + db push.
+# - Manual: dry run (padrão) ou aplicação.
 # Guia: docs/banco-de-dados/migrations.md
 
 on:
-  push:
-    branches: [ "main", "master" ]
-    paths:
-      - 'supabase/migrations/**'
-      - 'supabase/config.toml'
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
     paths:
       - 'supabase/migrations/**'
       - 'supabase/config.toml'
+  workflow_call:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run: apenas mostrar o que seria aplicado (supabase db push --dry-run)'
+        description: 'Dry run: apenas mostrar o que seria aplicado'
         required: true
         default: true
         type: boolean
-      target_environment:
-        description: 'Ambiente de banco de dados de destino'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - staging
+      emergencia:
+        description: 'Ignorar o congelamento de deploy (somente correção crítica durante a feira)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
-# Uma aplicação de migrations por ambiente de cada vez, nunca cancelada no meio.
+# Uma aplicação de cada vez, nunca cancelada no meio.
 concurrency:
-  group: supabase-migrations-${{ inputs.target_environment || 'production' }}
+  group: supabase-migrations-producao
   cancel-in-progress: false
 
 env:
@@ -83,20 +79,25 @@ jobs:
           echo "Validação estática concluída."
 
   deploy-migrations:
-    name: Aplicar Migrações (supabase db push)
+    name: Backup e Aplicação (supabase db push)
     needs: validate-migrations
-    # Só roda em push para main ou manualmente, e somente depois que o histórico de migrations do
-    # banco remoto foi alinhado (variável SUPABASE_DB_PUSH_ENABLED = 'true'). Ver migrations.md.
-    if: >-
-      vars.SUPABASE_DB_PUSH_ENABLED == 'true' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    environment: ${{ inputs.target_environment || 'production' }}
+    environment: production
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      # Em workflow_call não há inputs: aplica de fato.
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
     steps:
+      - name: Respeitar congelamento de deploy
+        if: vars.CONGELAMENTO_DEPLOY == 'true' && !inputs.emergencia && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
+        run: |
+          echo "::error::Deploy congelado (variável CONGELAMENTO_DEPLOY = true). Para correção crítica, rode manualmente com 'emergencia'."
+          exit 1
+
       - name: Checkout do Repositório
         uses: actions/checkout@v4
 
@@ -105,10 +106,10 @@ jobs:
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
-      - name: Conferir segredos obrigatórios
+      - name: Conferir secrets obrigatórios
         run: |
-          for v in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF; do
-            if [ -z "${!v}" ]; then echo "::error::Secret $v não configurado no ambiente."; exit 1; fi
+          for v in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF BACKUP_PASSPHRASE; do
+            if [ -z "${!v}" ]; then echo "::error::Secret $v não configurado no ambiente production."; exit 1; fi
           done
 
       - name: Vincular projeto remoto
@@ -118,13 +119,33 @@ jobs:
         run: supabase migration list --password "$SUPABASE_DB_PASSWORD"
 
       - name: Dry run
-        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        if: env.DRY_RUN == 'true'
         run: supabase db push --dry-run --password "$SUPABASE_DB_PASSWORD"
 
+      - name: Backup do banco (estrutura + dados, criptografado)
+        if: env.DRY_RUN != 'true'
+        run: |
+          mkdir -p backup
+          supabase db dump --linked --password "$SUPABASE_DB_PASSWORD" -f backup/estrutura.sql
+          supabase db dump --linked --password "$SUPABASE_DB_PASSWORD" --data-only --use-copy -f backup/dados.sql
+          tar -czf backup.tar.gz backup
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
+            --symmetric --cipher-algo AES256 -o "backup-${GITHUB_RUN_ID}.tar.gz.gpg" backup.tar.gz
+          rm -rf backup backup.tar.gz
+
+      - name: Guardar backup (30 dias)
+        if: env.DRY_RUN != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-banco-${{ github.run_id }}
+          path: backup-${{ github.run_id }}.tar.gz.gpg
+          retention-days: 30
+          if-no-files-found: error
+
       - name: Aplicar migrations pendentes
-        if: github.event_name == 'push' || !inputs.dry_run
+        if: env.DRY_RUN != 'true'
         run: supabase db push --password "$SUPABASE_DB_PASSWORD"
 
       - name: Histórico depois (todas devem constar no remoto)
-        if: github.event_name == 'push' || !inputs.dry_run
+        if: env.DRY_RUN != 'true'
         run: supabase migration list --password "$SUPABASE_DB_PASSWORD"

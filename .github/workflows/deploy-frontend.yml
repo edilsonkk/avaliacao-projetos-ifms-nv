@@ -1,20 +1,28 @@
-name: Continuous Deployment (CD) - Front-end Vite
+name: Deploy do Front-end (Produção)
+
+# Publica o front-end no GitHub Pages.
+# - Chamado pelo release.yml quando uma versão é publicada.
+# - Manual (Actions → Run workflow) para rollback: informe a tag de uma versão anterior.
+# Guia: docs/operacao/ci-cd-e-deploy.md
 
 on:
-  push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Tag ou commit a publicar'
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Ambiente de destino para implantação'
+      ref:
+        description: 'Tag a publicar (ex.: v0.2.0). Use uma tag anterior para rollback.'
         required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - staging
+        type: string
+      emergencia:
+        description: 'Ignorar o congelamento de deploy (somente correção crítica durante a feira)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -22,54 +30,70 @@ permissions:
   id-token: write
 
 concurrency:
-  group: deploy-frontend-${{ github.ref }}
+  group: deploy-frontend-producao
   cancel-in-progress: false
 
 jobs:
-  build-and-test:
-    name: Build & Validação de Qualidade
+  build:
+    name: Build da versão ${{ inputs.ref }}
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || 'production' }}
+    environment: production
     steps:
-      - name: Checkout do Repositório
-        uses: actions/checkout@v4
+      - name: Respeitar congelamento de deploy
+        if: vars.CONGELAMENTO_DEPLOY == 'true' && !inputs.emergencia
+        run: |
+          echo "::error::Deploy congelado (variável CONGELAMENTO_DEPLOY = true). Para correção crítica, rode manualmente com 'emergencia'."
+          exit 1
 
-      - name: Configurar Ambiente Node.js
+      - name: Checkout da versão
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Instalar Dependências Estritas
+      - name: Instalar dependências
         run: npm ci
 
-      - name: Auditoria de Tipagem TypeScript (Linter)
+      - name: Checagem de tipos
         run: npm run lint
 
-      - name: Executar Testes Automatizados (Vitest QA)
+      - name: Testes
         run: npm test
 
-      - name: Compilar Bundle de Produção (Vite)
+      - name: Conferir secrets obrigatórios
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://siyenrhpejugoghlstqw.supabase.co' }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpeWVucmhwZWp1Z29naGxzdHF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxOTU1ODEsImV4cCI6MjEwNzc3MTU4MX0.pf2SCiJfO4kGt9cKnWslf7dIAPwN74Szg9XZm-qV5NM' }}
-          APP_URL: ${{ vars.APP_URL || 'https://avaliacoes-ifms.edu.br' }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          for v in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY; do
+            if [ -z "${!v}" ]; then echo "::error::Secret $v não configurado no ambiente production."; exit 1; fi
+          done
+
+      - name: Build de produção
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          APP_URL: ${{ vars.APP_URL }}
         run: npm run build
 
-      - name: Upload de Artefato de Produção
+      - name: Empacotar artefato
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
 
-  deploy-pages:
-    name: Deploy no Host de Produção (GitHub Pages / Edge Host)
-    needs: build-and-test
-    if: github.event_name != 'pull_request'
+  deploy:
+    name: Publicar no GitHub Pages
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Publicar Aplicação no Host Definitivo
+      - name: Publicar
         id: deployment
         uses: actions/deploy-pages@v4
