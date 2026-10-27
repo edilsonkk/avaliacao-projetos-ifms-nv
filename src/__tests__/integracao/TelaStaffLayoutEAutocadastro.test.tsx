@@ -4,7 +4,6 @@ import userEvent from '@testing-library/user-event';
 import { TelaStaff } from '@/features/staff';
 import { TelaAutocadastroAvaliador } from '@/features/avaliacao';
 import { Cabecalho } from '@/components/layout/Cabecalho';
-import { supabase } from '@/lib/supabase';
 
 // Mock do módulo Supabase
 vi.mock('@/lib/supabase', async (importOriginal) => {

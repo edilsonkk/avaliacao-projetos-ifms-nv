@@ -24,7 +24,7 @@ import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { parsePlanilhaModalidades, ModalidadeImportada } from '@/lib/parsers/planilhaModalidadesParser';
 import { ModalDeParaMapping, ItemMapeamentoDePara, DecisaoMapeamento } from '@/components/importacao/ModalDeParaMapping';
-import { buscarMelhorCorrespondencia, CandidatoMatch, sanitizarTexto } from '@/lib/parsers/fuzzyMatcher';
+import { buscarMelhorCorrespondencia, CandidatoMatch } from '@/lib/parsers/fuzzyMatcher';
 
 export interface ModalidadeItem {
   id_modalidade: string;

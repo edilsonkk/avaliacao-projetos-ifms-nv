@@ -24,7 +24,6 @@ vi.mock('@/lib/supabase', () => ({
 import { TelaAdmin } from '@/features/admin';
 import { ProjetosBloqueados } from '@/features/atribuicoes';
 import { ProjetosQuarentena } from '@/features/atribuicoes';
-import { ModalExclusaoAvaliacao } from '@/features/atribuicoes';
 import { AtribuicaoForcada } from '@/features/atribuicoes';
 
 describe('Validação de Regras de Negócio Remodeladas do Bloco 1', () => {
