@@ -112,6 +112,13 @@ tokens, senhas ou a `service_role` key. Se um segredo vazar (inclusive em URL de
 
 ## Configuração única do repositório (GitHub)
 
+Repositório: `edilsonkk/sistemadeavaliacao` (code owner: `@edilsonkk`).
+
+> **Plano do GitHub.** Em repositório **privado** numa conta Free não existem GitHub Pages, environments nem proteção
+> de branch, e o CodeQL não roda (o `security.yml` o pula automaticamente). Os workflows continuam funcionando se os
+> secrets forem cadastrados como **secrets do repositório** em vez de secrets do environment. Repositório público
+> ou conta GitHub Pro liberam todos os itens abaixo.
+
 Feita uma vez, por quem administra o repositório:
 
 1. **Proteger a `main`** (*Settings → Branches → Add branch ruleset*, alvo `main`):
@@ -124,7 +131,8 @@ Feita uma vez, por quem administra o repositório:
    mensagem.
 3. **Permitir que o release-please abra PRs**: *Settings → Actions → General → Workflow permissions* → marque
    *Allow GitHub Actions to create and approve pull requests*.
-4. **Ambiente `production`**: crie em *Settings → Environments* e cadastre os secrets acima.
+4. **Ambiente `production`**: crie em *Settings → Environments* e cadastre os secrets acima. Sem environments
+   (privado + Free), cadastre-os em *Settings → Secrets and variables → Actions → Repository secrets*.
 5. **GitHub Pages**: *Settings → Pages → Source: GitHub Actions*.
 
 ## Segurança

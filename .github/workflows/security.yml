@@ -15,9 +15,12 @@ permissions:
   security-events: write
   actions: read
 
+# CodeQL e Code scanning (SARIF) só são gratuitos em repositório público. Em repositório privado,
+# o CodeQL é pulado e o Trivy mostra o resultado no log (continua bloqueando HIGH/CRITICAL).
 jobs:
   sast-codeql:
     name: SAST - Análise Estática de Código (CodeQL)
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do Repositório
@@ -49,15 +52,15 @@ jobs:
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          format: ${{ github.event.repository.private && 'table' || 'sarif' }}
+          output: ${{ !github.event.repository.private && 'trivy-results.sarif' || '' }}
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
           ignore-unfixed: false
 
       - name: Publicar Resultados SARIF no GitHub Security
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: ${{ always() && !github.event.repository.private }}
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-sca'
