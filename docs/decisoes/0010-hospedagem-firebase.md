@@ -11,7 +11,7 @@ O mantenedor tem conta Firebase com cobrança por uso. Também foi avaliado migr
 
 ## Decisão
 
-- Hospedar o front-end no **Firebase Hosting** (`sistema-de-avaliacao-ifms-nv`), com rewrite de todas as rotas
+- Hospedar o front-end no **Firebase Hosting** (`avaliacao-projetos-ifms-nv`), com rewrite de todas as rotas
   para `index.html`.
 - **Manter o backend no Supabase.** Migrar para o Firestore exigiria reescrever o modelo relacional, o sorteio
   transacional, as funções SQL, as views e a RLS.

@@ -105,7 +105,7 @@ Variáveis do repositório (*Settings → Secrets and variables → Actions → 
 
 | Nome | Uso |
 |---|---|
-| `APP_URL` | URL pública da aplicação: `https://sistema-de-avaliacao-ifms-nv.web.app` |
+| `APP_URL` | URL pública da aplicação: `https://avaliacao-projetos-ifms-nv.web.app` |
 | `CONGELAMENTO_DEPLOY` | `true` bloqueia publicações (feira em andamento) |
 
 Nenhum workflow tem valor padrão para esses itens: se faltarem, o job falha com mensagem clara. Nunca versione
@@ -136,8 +136,8 @@ Feita uma vez, por quem administra o repositório:
 
 ## Hospedagem (Firebase Hosting)
 
-O front-end é publicado no projeto Firebase `sistema-de-avaliacao-ifms-nv` (`.firebaserc`), em
-`https://sistema-de-avaliacao-ifms-nv.web.app` (também responde em `.firebaseapp.com`). Decisão:
+O front-end é publicado no projeto Firebase `avaliacao-projetos-ifms-nv` (`.firebaserc`), em
+`https://avaliacao-projetos-ifms-nv.web.app` (também responde em `.firebaseapp.com`). Decisão:
 [ADR 0010](../decisoes/0010-hospedagem-firebase.md).
 
 `firebase.json`:
@@ -148,7 +148,7 @@ O front-end é publicado no projeto Firebase `sistema-de-avaliacao-ifms-nv` (`.f
 
 ### Criar a service account (uma vez)
 
-1. No [Google Cloud Console](https://console.cloud.google.com/iam-admin/serviceaccounts?project=sistema-de-avaliacao-ifms-nv),
+1. No [Google Cloud Console](https://console.cloud.google.com/iam-admin/serviceaccounts?project=avaliacao-projetos-ifms-nv),
    com a conta Google dona do projeto: *Criar conta de serviço*, nome `github-deploy-hosting`.
 2. Papéis: **Administrador do Firebase Hosting** (`roles/firebasehosting.admin`) e **Leitor de chaves de API**
    (`roles/serviceusage.apiKeysViewer`).
@@ -160,7 +160,7 @@ O front-end é publicado no projeto Firebase `sistema-de-avaliacao-ifms-nv` (`.f
 
 ```bash
 npm run build                      # com o .env de produção — só em emergência
-npx firebase-tools@15.34.0 deploy --only hosting --project sistema-de-avaliacao-ifms-nv
+npx firebase-tools@15.34.0 deploy --only hosting --project avaliacao-projetos-ifms-nv
 ```
 Prefira sempre o workflow, que publica exatamente a tag versionada.
 

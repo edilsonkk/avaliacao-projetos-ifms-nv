@@ -74,7 +74,7 @@ auditoria e homologação dos resultados.
 | Backend | Supabase (`@supabase/supabase-js`) | Auth, PostgREST, RPC |
 | Banco | PostgreSQL 15+ | Extensões `uuid-ossp` e `pgcrypto` |
 | Testes | Vitest + JSDOM + Testing Library | Testes unitários e de integração |
-| Hospedagem | Firebase Hosting | SPA estática em `sistema-de-avaliacao-ifms-nv.web.app` |
+| Hospedagem | Firebase Hosting | SPA estática em `avaliacao-projetos-ifms-nv.web.app` |
 | CI/CD | GitHub Actions | Ver [CI/CD e deploy](../operacao/ci-cd-e-deploy.md) |
 
 As versões exatas estão em `package.json`.
