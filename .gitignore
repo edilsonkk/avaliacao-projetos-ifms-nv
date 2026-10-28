@@ -30,9 +30,10 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
-# Supabase CLI (arquivos locais/temporários)
+# Supabase CLI e Studio local (arquivos temporários e consultas salvas)
 supabase/.temp/
 supabase/.branches/
 
 # Firebase CLI (cache local)
 .firebase/
+supabase/snippets/

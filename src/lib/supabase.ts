@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { EsqueMABanco } from '@/types/database';
-import { lerConfiguracaoSupabase } from '@/lib/ambiente';
+import { identificarAmbienteSupabase, lerConfiguracaoSupabase, type AmbienteSupabase } from '@/lib/ambiente';
 
 /** Configuração lida do ambiente (`.env` local ou secrets do build). Não há valores padrão. */
 export const configuracao_supabase = lerConfiguracaoSupabase(import.meta.env);
@@ -15,6 +15,11 @@ const URL_CONFIGURACAO_AUSENTE = 'http://configuracao-ausente.invalid';
 export const supabase = configuracao_supabase.valida
   ? createClient<any>(configuracao_supabase.url, configuracao_supabase.chaveAnonima)
   : createClient<any>(URL_CONFIGURACAO_AUSENTE, 'configuracao-ausente');
+
+/** Banco em uso: `local` (Docker), `producao` (nuvem) ou `null` se não configurado. Exibido no cabeçalho. */
+export const ambiente_supabase: AmbienteSupabase | null = configuracao_supabase.valida
+  ? identificarAmbienteSupabase(configuracao_supabase.url)
+  : null;
 
 /**
  * Indica se as variáveis de ambiente do Supabase estão configuradas.
