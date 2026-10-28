@@ -52,6 +52,14 @@ npm run dev                         # http://localhost:3000
 
 O `supabase/seed.sql` cria só um evento de teste. Não coloque credenciais nem dados reais nele.
 
+**Como saber qual banco está em uso:** o cabeçalho do app mostra **Supabase LOCAL** (azul) ou **Supabase PRODUÇÃO**
+(vermelho), a partir da URL do `.env` (`identificarAmbienteSupabase` em `src/lib/ambiente.ts`). Em desenvolvimento,
+o esperado é sempre LOCAL. O Vite só lê o `.env` ao iniciar: depois de trocá-lo, reinicie o `npm run dev`.
+
+O `npm run dev` usa sempre a porta **3000** (`--strictPort`). Se ela estiver ocupada, ele para com
+`Port 3000 is already in use` em vez de abrir em outra porta. Isso evita vários servidores rodando ao mesmo tempo,
+cada um com um `.env` diferente.
+
 ## Criar um administrador
 
 O login do Admin exige uma conta no Supabase Auth **e** uma linha em `usuarios` com o mesmo ID e `papel = 'ADMIN'`.
