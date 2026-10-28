@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.1.0...v0.1.1) (2026-10-28)
+
+
+### Correções
+
+* **ci:** conectar ao banco direto pelo pooler, sem token de conta do Supabase ([#4](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/4)) ([e993395](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/e993395a75381e721b64a89e70b8e4e2f9c7b072))
+
 ## 0.1.0 (2026-10-28)
 
 
