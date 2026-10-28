@@ -85,9 +85,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_HOST: ${{ vars.SUPABASE_DB_HOST }}
       BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
       # Em workflow_call não há inputs: aplica de fato.
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
@@ -108,26 +108,31 @@ jobs:
 
       - name: Conferir secrets obrigatórios
         run: |
-          for v in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF BACKUP_PASSPHRASE; do
-            if [ -z "${!v}" ]; then echo "::error::Secret $v não configurado no ambiente production."; exit 1; fi
+          for v in SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF SUPABASE_DB_HOST BACKUP_PASSPHRASE; do
+            if [ -z "${!v}" ]; then echo "::error::$v não configurado (secret do ambiente production ou variável do repositório)."; exit 1; fi
           done
 
-      - name: Vincular projeto remoto
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+      - name: Montar conexão com o banco (pooler IPv4, sem token de conta)
+        run: |
+          SENHA=$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')
+          URL="postgresql://postgres.${SUPABASE_PROJECT_REF}:${SENHA}@${SUPABASE_DB_HOST}:5432/postgres"
+          echo "::add-mask::$SENHA"
+          echo "::add-mask::$URL"
+          echo "DB_URL=$URL" >> "$GITHUB_ENV"
 
       - name: Histórico antes (local x remoto)
-        run: supabase migration list --password "$SUPABASE_DB_PASSWORD"
+        run: supabase migration list --db-url "$DB_URL"
 
       - name: Dry run
         if: env.DRY_RUN == 'true'
-        run: supabase db push --dry-run --password "$SUPABASE_DB_PASSWORD"
+        run: supabase db push --dry-run --db-url "$DB_URL"
 
       - name: Backup do banco (estrutura + dados, criptografado)
         if: env.DRY_RUN != 'true'
         run: |
           mkdir -p backup
-          supabase db dump --linked --password "$SUPABASE_DB_PASSWORD" -f backup/estrutura.sql
-          supabase db dump --linked --password "$SUPABASE_DB_PASSWORD" --data-only --use-copy -f backup/dados.sql
+          supabase db dump --db-url "$DB_URL" -f backup/estrutura.sql
+          supabase db dump --db-url "$DB_URL" --data-only --use-copy -f backup/dados.sql
           tar -czf backup.tar.gz backup
           gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
             --symmetric --cipher-algo AES256 -o "backup-${GITHUB_RUN_ID}.tar.gz.gpg" backup.tar.gz
@@ -144,8 +149,8 @@ jobs:
 
       - name: Aplicar migrations pendentes
         if: env.DRY_RUN != 'true'
-        run: supabase db push --password "$SUPABASE_DB_PASSWORD"
+        run: supabase db push --db-url "$DB_URL"
 
       - name: Histórico depois (todas devem constar no remoto)
         if: env.DRY_RUN != 'true'
-        run: supabase migration list --password "$SUPABASE_DB_PASSWORD"
+        run: supabase migration list --db-url "$DB_URL"
