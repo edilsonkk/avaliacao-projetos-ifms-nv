@@ -1,0 +1,33 @@
+# Changelog
+
+## 0.1.0 (2026-10-28)
+
+
+### Funcionalidades
+
+* **auth:** validar sessao do Admin antes de escritas e tratar erros de RLS ([edff846](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/edff846b6450587eb444fd4716062af83e0ed9d3))
+* **avaliacao:** gravar notas via RPC fn_enviar_avaliacao com validacao server-side ([3808514](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/3808514c21bb06be82365c838c8a86f8ef757886))
+* commit inicial da estrutura herdada do AI Studio ([cfb116b](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/cfb116bf70d0e4f896ba5b9d59a81cdaf263db1b))
+* consolida arquitetura, testes e esteiras de CI/CD ([a9098f1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/a9098f10a87c928655953fcfde131d65936326ba))
+* estrutura profissional por features, documentação, migrations e pipeline de releases ([#1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/1)) ([4e505fa](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/4e505faa995ad9f1b38e508e3066603e85b67496))
+* **rls:** modelo definitivo de RLS com escrita administrativa restrita a ADMIN ([9fbcaef](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/9fbcaefc8d7cb13a423e2a73244584461058155b))
+* **security:** ativar RLS em 100% das tabelas e migrar para exceljs sem vulnerabilidades ([0a035d0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/0a035d0c1b1cd97064496bd7476e878f2d45222a))
+
+
+### Correções
+
+* adiciona botao desbloquear todos no card e resolve erro DELETE requires a WHERE clause ([14bee1b](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/14bee1bb7fcbf2296cbccfd020efd96fc18d5bc2))
+* **rls:** liberar permissoes de CRUD nas tabelas de gestao para importacao de planilhas e operacao administrativa ([729e88d](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/729e88d77982829d3815a21454076245862a2505))
+* **security:** restringir leitura anonima de dados sensiveis e execucao de funcoes admin ([a4a0b71](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/a4a0b718432bd471bf3e8ced3e602dc9b85d4f10))
+* trata safeupdate no reset global e garante execucao resiliente ([b960e07](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/b960e075648ac7ced3f1c754b79dd9e67074a3fa))
+
+
+### Refatoração
+
+* **admin:** correcao de contadores, limpeza do bloco 3 e realocacao para header e configuracoes ([a5db453](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/a5db4531c0cef6047b10c06e8260760646c82158))
+
+
+### Documentação
+
+* adicionar PRD do produto ([dec24f0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/dec24f0eaee5c22576d02c44aac54e55650b121a))
+* exporta DDL completo do banco para schema.sql e supabase/migrations ([1f96c8a](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/1f96c8a1790f42aed50fe1cca01dc17d3db53bc0))
