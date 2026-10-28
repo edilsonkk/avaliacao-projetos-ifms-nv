@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.1.1...v0.2.0) (2026-10-28)
+
+
+### Funcionalidades
+
+* **layout:** indicar no cabeçalho se o banco em uso é local ou de produção ([#7](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/7)) ([f58fd2c](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/f58fd2ce8620e04f81480dc39b3fb9db7199fd80))
+
+
+### Correções
+
+* **deploy:** servir index.html sem cache e permitir token próprio no release-please ([#9](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/9)) ([eed2b89](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/eed2b898c3df415880ce485f8b6ee3c60b8b34ee))
+
 ## [0.1.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.1.0...v0.1.1) (2026-10-28)
 
 
