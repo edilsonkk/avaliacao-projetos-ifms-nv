@@ -261,6 +261,34 @@ $_$;
 ALTER FUNCTION "public"."admin_reset_global"("p_id_evento" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."avaliador_atual"() RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT d.id_usuario
+  FROM public.dispositivos_avaliador d
+  JOIN public.usuarios u ON u.id_usuario = d.id_usuario
+  WHERE d.auth_uid = auth.uid()
+    AND d.revogado_em IS NULL
+    AND upper(u.papel::text) = 'AVALIADOR'
+  LIMIT 1;
+$$;
+
+
+ALTER FUNCTION "public"."avaliador_atual"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."evento_ativo_id"() RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT id_evento FROM public.eventos WHERE is_ativo = true ORDER BY created_at DESC LIMIT 1;
+$$;
+
+
+ALTER FUNCTION "public"."evento_ativo_id"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -307,6 +335,142 @@ $$;
 
 
 ALTER FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."exigir_staff_ou_admin"() RETURNS "void"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NOT (public.is_staff() OR public.is_admin()) THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita à equipe Staff ou ao Admin.' USING ERRCODE = '42501';
+  END IF;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."exigir_staff_ou_admin"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "uuid", "p_nome" "text", "p_email" "text", "p_id_instituicao" "uuid", "p_nome_instituicao_nova" "text", "p_ids_areas" "uuid"[]) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_evento   uuid := coalesce(p_id_evento, public.evento_ativo_id());
+  v_nome     text := btrim(regexp_replace(coalesce(p_nome, ''), '\s+', ' ', 'g'));
+  v_email    text := lower(btrim(coalesce(p_email, '')));
+  v_inst     uuid := p_id_instituicao;
+  v_inst_nova text := btrim(regexp_replace(coalesce(p_nome_instituicao_nova, ''), '\s+', ' ', 'g'));
+  v_norm     text;
+  v_usuario  public.usuarios;
+BEGIN
+  IF v_evento IS NULL OR NOT EXISTS (SELECT 1 FROM public.eventos WHERE id_evento = v_evento AND is_ativo) THEN
+    RAISE EXCEPTION 'Evento não encontrado ou encerrado.';
+  END IF;
+  IF length(v_nome) < 3 OR length(v_nome) > 150 THEN
+    RAISE EXCEPTION 'Informe o nome completo (3 a 150 caracteres).';
+  END IF;
+  IF v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' OR length(v_email) > 254 THEN
+    RAISE EXCEPTION 'E-mail inválido.';
+  END IF;
+
+  SELECT * INTO v_usuario FROM public.usuarios WHERE lower(email) = v_email LIMIT 1;
+  IF v_usuario.id_usuario IS NOT NULL THEN
+    -- Já existe: não altera nada. Só garante a inscrição no evento, sem
+    -- mudar credenciamento nem instituição de quem já está inscrito.
+    IF upper(v_usuario.papel::text) = 'AVALIADOR' THEN
+      INSERT INTO public.avaliadores_evento (id_usuario, id_evento, is_credenciado)
+      VALUES (v_usuario.id_usuario, v_evento, false)
+      ON CONFLICT (id_usuario, id_evento) DO NOTHING;
+    END IF;
+    RETURN jsonb_build_object('ok', true, 'situacao', 'ja_cadastrado');
+  END IF;
+
+  -- Instituição: existente do evento ou nova (normalizada como o restante do sistema)
+  IF v_inst IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.instituicoes WHERE id_instituicao = v_inst AND id_evento = v_evento) THEN
+    v_inst := NULL;
+  END IF;
+  IF v_inst IS NULL AND length(v_inst_nova) BETWEEN 2 AND 200 THEN
+    v_norm := lower(btrim(extensions.unaccent(v_inst_nova)));
+    SELECT id_instituicao INTO v_inst FROM public.instituicoes WHERE id_evento = v_evento AND nome_normalizado = v_norm;
+    IF v_inst IS NULL THEN
+      INSERT INTO public.instituicoes (id_evento, nome_exibicao, nome_normalizado)
+      VALUES (v_evento, v_inst_nova, v_norm)
+      RETURNING id_instituicao INTO v_inst;
+    END IF;
+  END IF;
+
+  INSERT INTO public.usuarios (email, nome, papel) VALUES (v_email, v_nome, 'AVALIADOR')
+  RETURNING * INTO v_usuario;
+  INSERT INTO public.avaliadores_evento (id_usuario, id_evento, id_instituicao, is_credenciado)
+  VALUES (v_usuario.id_usuario, v_evento, v_inst, false);
+
+  IF p_ids_areas IS NOT NULL THEN
+    INSERT INTO public.avaliador_areas (id_usuario, id_evento, id_area)
+    SELECT v_usuario.id_usuario, v_evento, a.id_area
+    FROM public.areas_tematicas a
+    WHERE a.id_area = ANY (p_ids_areas) AND a.id_evento = v_evento
+    ON CONFLICT DO NOTHING;
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'situacao', 'cadastrado');
+END;
+$_$;
+
+
+ALTER FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "uuid", "p_nome" "text", "p_email" "text", "p_id_instituicao" "uuid", "p_nome_instituicao_nova" "text", "p_ids_areas" "uuid"[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_avaliacoes_ativas_do_projeto"("p_id_projeto" "uuid") RETURNS integer
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT CASE WHEN public.avaliador_atual() IS NULL AND NOT public.is_staff() AND NOT public.is_admin() THEN NULL
+         ELSE (SELECT count(*)::integer FROM public.avaliacoes
+               WHERE id_projeto = p_id_projeto AND (status IS NULL OR status <> 'CANCELADA')) END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_avaliacoes_ativas_do_projeto"("p_id_projeto" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_check_in_projeto"("p_id_projeto" "uuid", "p_check_in" boolean) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  PERFORM public.exigir_staff_ou_admin();
+  UPDATE public.projetos SET is_check_in_realizado = p_check_in WHERE id_projeto = p_id_projeto;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Projeto não encontrado.';
+  END IF;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_check_in_projeto"("p_id_projeto" "uuid", "p_check_in" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_desvincular_dispositivo"("p_id_usuario" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_qtd integer;
+BEGIN
+  PERFORM public.exigir_staff_ou_admin();
+  UPDATE public.dispositivos_avaliador SET revogado_em = now()
+  WHERE id_usuario = p_id_usuario AND revogado_em IS NULL;
+  GET DIAGNOSTICS v_qtd = ROW_COUNT;
+  UPDATE public.codigos_acesso SET usado_em = now() WHERE id_usuario = p_id_usuario AND usado_em IS NULL;
+  DELETE FROM public.locks_ativos WHERE id_usuario = p_id_usuario;
+  RETURN jsonb_build_object('ok', true, 'aparelhos_desvinculados', v_qtd);
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_desvincular_dispositivo"("p_id_usuario" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_enviar_avaliacao"("p_id_usuario" "uuid", "p_id_projeto" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text" DEFAULT NULL::"text", "p_tempo_presenca" "text" DEFAULT NULL::"text") RETURNS "jsonb"
@@ -500,6 +664,165 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_enviar_avaliacao"("p_id_usuario" "uuid", "p_id_projeto" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_tempo_presenca" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_feira_concluida"("p_id_evento" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  WITH ev AS (
+    SELECT coalesce(cota_avaliacoes_padrao, 3) AS cota FROM public.eventos
+    WHERE id_evento = coalesce(p_id_evento, public.evento_ativo_id())
+  ), proj AS (
+    SELECT p.id_projeto, coalesce(p.cota_avaliacoes_customizada, (SELECT cota FROM ev)) AS cota,
+           (SELECT count(*) FROM public.avaliacoes a
+            WHERE a.id_projeto = p.id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')) AS feitas
+    FROM public.projetos p
+    WHERE p.id_evento = coalesce(p_id_evento, public.evento_ativo_id())
+      AND coalesce(p.is_fora_da_competicao, false) = false
+  )
+  SELECT CASE WHEN public.avaliador_atual() IS NULL AND NOT public.is_staff() AND NOT public.is_admin() THEN NULL
+              WHEN NOT EXISTS (SELECT 1 FROM proj) THEN false
+              ELSE bool_and(feitas >= cota) END
+  FROM proj;
+$$;
+
+
+ALTER FUNCTION "public"."fn_feira_concluida"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_fixar_questionario"("p_id_projeto" "uuid", "p_id_questionario" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF public.avaliador_atual() IS NULL THEN
+    RAISE EXCEPTION 'Aparelho não vinculado a um avaliador.' USING ERRCODE = '42501';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.locks_ativos
+    WHERE id_usuario = public.avaliador_atual() AND id_projeto = p_id_projeto AND expira_em > now()
+  ) THEN
+    RAISE EXCEPTION 'É preciso estar com o projeto em avaliação.' USING ERRCODE = '42501';
+  END IF;
+  UPDATE public.projetos SET id_questionario_fixado = p_id_questionario
+  WHERE id_projeto = p_id_projeto AND id_questionario_fixado IS NULL;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_fixar_questionario"("p_id_projeto" "uuid", "p_id_questionario" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_gerar_codigo_acesso"("p_id_usuario" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_evento public.eventos;
+  v_codigo text;
+  v_expira timestamptz;
+BEGIN
+  PERFORM public.exigir_staff_ou_admin();
+  v_evento := public.parametros_acesso(NULL);
+  IF v_evento.metodos_vinculo NOT IN ('ambos', 'codigo') THEN
+    RAISE EXCEPTION 'Código de acesso desativado neste evento (Configurações do evento).';
+  END IF;
+  PERFORM public.validar_avaliador_do_evento(p_id_usuario, v_evento.id_evento);
+
+  -- Um código válido por avaliador: gerar outro invalida o anterior.
+  UPDATE public.codigos_acesso SET usado_em = now() WHERE id_usuario = p_id_usuario AND usado_em IS NULL;
+
+  v_codigo := public.gerar_codigo_curto(v_evento.tamanho_codigo);
+  v_expira := now() + make_interval(mins => v_evento.minutos_validade_codigo_acesso);
+  INSERT INTO public.codigos_acesso (id_usuario, id_evento, codigo_hash, gerado_por, expira_em, max_tentativas)
+  VALUES (p_id_usuario, v_evento.id_evento, extensions.crypt(v_codigo, extensions.gen_salt('bf', 8)),
+          auth.uid(), v_expira, v_evento.max_tentativas_codigo);
+
+  RETURN jsonb_build_object('codigo', v_codigo, 'expira_em', v_expira);
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_gerar_codigo_acesso"("p_id_usuario" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_meu_perfil"() RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_evento  public.eventos;
+  v_usuario public.usuarios;
+  v_papel   text;
+BEGIN
+  v_evento := public.parametros_acesso(NULL);
+
+  IF auth.uid() IS NOT NULL THEN
+    IF public.is_admin() OR public.is_staff() THEN
+      SELECT * INTO v_usuario FROM public.usuarios
+      WHERE (id_usuario = auth.uid() OR id_auth = auth.uid()) LIMIT 1;
+      v_papel := CASE WHEN public.is_admin() THEN 'admin' ELSE 'staff' END;
+    ELSIF public.avaliador_atual() IS NOT NULL THEN
+      SELECT * INTO v_usuario FROM public.usuarios WHERE id_usuario = public.avaliador_atual();
+      v_papel := 'avaliador';
+    END IF;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'autenticado',     auth.uid() IS NOT NULL,
+    'papel',           v_papel,
+    'id_usuario',      v_usuario.id_usuario,
+    'nome',            v_usuario.nome,
+    'email',           v_usuario.email,
+    'id_evento',       v_evento.id_evento,
+    'metodos_vinculo', coalesce(v_evento.metodos_vinculo, 'ambos')
+  );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_meu_perfil"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_pend public.pareamentos_pendentes;
+  v_nome text;
+BEGIN
+  PERFORM public.exigir_staff_ou_admin();
+
+  SELECT * INTO v_pend FROM public.pareamentos_pendentes
+  WHERE codigo = public.normalizar_codigo(p_codigo) AND expira_em > now()
+  FOR UPDATE;
+  IF v_pend.codigo IS NULL THEN
+    RAISE EXCEPTION 'Código de pareamento inválido ou expirado. Peça para o avaliador gerar outro.';
+  END IF;
+
+  PERFORM public.validar_avaliador_do_evento(p_id_usuario, v_pend.id_evento);
+
+  UPDATE public.dispositivos_avaliador SET revogado_em = now()
+  WHERE id_usuario = p_id_usuario AND revogado_em IS NULL AND auth_uid <> v_pend.auth_uid;
+  INSERT INTO public.dispositivos_avaliador (auth_uid, id_usuario, id_evento, metodo, vinculado_por)
+  VALUES (v_pend.auth_uid, p_id_usuario, v_pend.id_evento, 'pareamento', auth.uid())
+  ON CONFLICT (auth_uid) DO UPDATE
+    SET id_usuario = EXCLUDED.id_usuario, id_evento = EXCLUDED.id_evento, metodo = 'pareamento',
+        vinculado_por = EXCLUDED.vinculado_por, vinculado_em = now(), revogado_em = NULL;
+
+  UPDATE public.avaliadores_evento SET is_credenciado = true
+  WHERE id_usuario = p_id_usuario AND id_evento = v_pend.id_evento;
+  DELETE FROM public.pareamentos_pendentes WHERE codigo = v_pend.codigo;
+
+  SELECT nome INTO v_nome FROM public.usuarios WHERE id_usuario = p_id_usuario;
+  RETURN jsonb_build_object('ok', true, 'id_usuario', p_id_usuario, 'nome', v_nome);
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_relatorio_ausencias_completo"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id_usuario" "uuid", "avaliador_nome" "text", "avaliador_email" "text", "total_ausencias" integer, "ausencias" "jsonb")
@@ -902,6 +1225,208 @@ $$;
 ALTER FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_evento" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_situacao_vinculos"("p_id_evento" "uuid") RETURNS TABLE("id_usuario" "uuid", "aparelho_vinculado" boolean, "vinculado_em" timestamp with time zone, "metodo" "text")
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  PERFORM public.exigir_staff_ou_admin();
+  RETURN QUERY
+  SELECT ae.id_usuario, d.auth_uid IS NOT NULL, d.vinculado_em, d.metodo
+  FROM public.avaliadores_evento ae
+  LEFT JOIN public.dispositivos_avaliador d ON d.id_usuario = ae.id_usuario AND d.revogado_em IS NULL
+  WHERE ae.id_evento = coalesce(p_id_evento, public.evento_ativo_id());
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_situacao_vinculos"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_solicitar_pareamento"() RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_evento public.eventos;
+  v_codigo text;
+  v_expira timestamptz;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Sessão do aparelho não iniciada.' USING ERRCODE = '42501';
+  END IF;
+  v_evento := public.parametros_acesso(NULL);
+  IF v_evento.id_evento IS NULL THEN
+    RAISE EXCEPTION 'Nenhum evento ativo.';
+  END IF;
+  IF v_evento.metodos_vinculo NOT IN ('ambos', 'pareamento') THEN
+    RAISE EXCEPTION 'Pareamento desativado neste evento. Use o código de acesso.';
+  END IF;
+
+  DELETE FROM public.pareamentos_pendentes WHERE expira_em < now() OR auth_uid = auth.uid();
+  v_expira := now() + make_interval(mins => v_evento.minutos_validade_pareamento);
+
+  LOOP
+    v_codigo := public.gerar_codigo_curto(v_evento.tamanho_codigo);
+    BEGIN
+      INSERT INTO public.pareamentos_pendentes (codigo, auth_uid, id_evento, expira_em)
+      VALUES (v_codigo, auth.uid(), v_evento.id_evento, v_expira);
+      EXIT;
+    EXCEPTION WHEN unique_violation THEN
+      -- colisão de código: sorteia outro
+    END;
+  END LOOP;
+
+  RETURN jsonb_build_object('codigo', v_codigo, 'expira_em', v_expira);
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_solicitar_pareamento"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  WITH ev AS (
+    SELECT id_evento, coalesce(cota_avaliacoes_padrao, 3) AS cota
+    FROM public.eventos WHERE id_evento = coalesce(p_id_evento, public.evento_ativo_id())
+  )
+  SELECT jsonb_build_object(
+    'total_projetos', (SELECT count(*) FROM public.projetos p, ev WHERE p.id_evento = ev.id_evento),
+    'avaliadores_credenciados', (SELECT count(*) FROM public.avaliadores_evento ae, ev
+                                 WHERE ae.id_evento = ev.id_evento AND ae.is_credenciado),
+    'avaliacoes_em_andamento', (SELECT count(*) FROM public.locks_ativos l JOIN public.projetos p ON p.id_projeto = l.id_projeto, ev
+                                WHERE p.id_evento = ev.id_evento AND l.expira_em > now()),
+    'avaliacoes_realizadas', (SELECT count(*) FROM public.avaliacoes a JOIN public.projetos p ON p.id_projeto = a.id_projeto, ev
+                              WHERE p.id_evento = ev.id_evento AND (a.status IS NULL OR a.status <> 'CANCELADA')
+                                AND a.nota_final IS NOT NULL),
+    'cota_padrao', (SELECT cota FROM ev)
+  );
+$$;
+
+
+ALTER FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_vincular_com_codigo"("p_email" "text", "p_codigo" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_evento     public.eventos;
+  v_usuario    public.usuarios;
+  v_cod        public.codigos_acesso;
+  v_erro_padrao constant text := 'E-mail ou código inválido, expirado ou já utilizado.';
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'erro', 'Sessão do aparelho não iniciada.');
+  END IF;
+  v_evento := public.parametros_acesso(NULL);
+  IF v_evento.metodos_vinculo NOT IN ('ambos', 'codigo') THEN
+    RETURN jsonb_build_object('ok', false, 'erro', 'Código de acesso desativado neste evento. Procure o Staff para parear o aparelho.');
+  END IF;
+
+  SELECT * INTO v_usuario FROM public.usuarios
+  WHERE lower(email) = lower(trim(p_email)) AND upper(papel::text) = 'AVALIADOR'
+  LIMIT 1;
+  IF v_usuario.id_usuario IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'erro', v_erro_padrao);
+  END IF;
+
+  SELECT * INTO v_cod FROM public.codigos_acesso
+  WHERE id_usuario = v_usuario.id_usuario
+    AND usado_em IS NULL
+    AND expira_em > now()
+    AND tentativas < max_tentativas
+  ORDER BY criado_em DESC
+  LIMIT 1
+  FOR UPDATE;
+  IF v_cod.id IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'erro', v_erro_padrao);
+  END IF;
+
+  IF extensions.crypt(public.normalizar_codigo(p_codigo), v_cod.codigo_hash) <> v_cod.codigo_hash THEN
+    UPDATE public.codigos_acesso
+    SET tentativas = tentativas + 1,
+        usado_em = CASE WHEN tentativas + 1 >= max_tentativas THEN now() ELSE NULL END
+    WHERE id = v_cod.id;
+    RETURN jsonb_build_object('ok', false, 'erro', v_erro_padrao);
+  END IF;
+
+  UPDATE public.codigos_acesso SET usado_em = now() WHERE id = v_cod.id;
+  UPDATE public.dispositivos_avaliador SET revogado_em = now()
+  WHERE id_usuario = v_usuario.id_usuario AND revogado_em IS NULL AND auth_uid <> auth.uid();
+  INSERT INTO public.dispositivos_avaliador (auth_uid, id_usuario, id_evento, metodo, vinculado_por)
+  VALUES (auth.uid(), v_usuario.id_usuario, v_cod.id_evento, 'codigo', v_cod.gerado_por)
+  ON CONFLICT (auth_uid) DO UPDATE
+    SET id_usuario = EXCLUDED.id_usuario, id_evento = EXCLUDED.id_evento, metodo = 'codigo',
+        vinculado_por = EXCLUDED.vinculado_por, vinculado_em = now(), revogado_em = NULL;
+
+  RETURN jsonb_build_object('ok', true, 'id_usuario', v_usuario.id_usuario, 'nome', v_usuario.nome);
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_vincular_com_codigo"("p_email" "text", "p_codigo" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_vincular_conta_staff"() RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_email text;
+  v_id    uuid;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Faça login com e-mail e senha.' USING ERRCODE = '42501';
+  END IF;
+  SELECT lower(email) INTO v_email FROM auth.users
+  WHERE id = auth.uid() AND email_confirmed_at IS NOT NULL AND coalesce(is_anonymous, false) = false;
+  IF v_email IS NULL THEN
+    RAISE EXCEPTION 'Conta sem e-mail confirmado.' USING ERRCODE = '42501';
+  END IF;
+
+  UPDATE public.usuarios SET id_auth = auth.uid()
+  WHERE lower(email) = v_email
+    AND upper(papel::text) IN ('STAFF', 'MONITOR')
+    AND (id_auth IS NULL OR id_auth = auth.uid())
+  RETURNING id_usuario INTO v_id;
+
+  RETURN jsonb_build_object('ok', v_id IS NOT NULL OR public.is_staff(), 'papel', CASE WHEN public.is_staff() THEN 'staff' END);
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_vincular_conta_staff"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."gerar_codigo_curto"("p_tamanho" integer) RETURNS "text"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_alfabeto constant text := 'ABCDEFGHJKMNPQRTUVWXYZ2346789';
+  v_n        constant integer := 29;
+  v_codigo   text := '';
+  v_byte     integer;
+BEGIN
+  WHILE length(v_codigo) < p_tamanho LOOP
+    v_byte := get_byte(extensions.gen_random_bytes(1), 0);
+    IF v_byte < 232 THEN  -- 232 = 29 * 8
+      v_codigo := v_codigo || substr(v_alfabeto, (v_byte % v_n) + 1, 1);
+    END IF;
+  END LOOP;
+  RETURN v_codigo;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."gerar_codigo_curto"("p_tamanho" integer) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."is_admin"() RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -909,13 +1434,105 @@ CREATE OR REPLACE FUNCTION "public"."is_admin"() RETURNS boolean
   SELECT EXISTS (
     SELECT 1
     FROM public.usuarios u
-    WHERE u.id_usuario = auth.uid()
+    WHERE (u.id_usuario = auth.uid() OR u.id_auth = auth.uid())
       AND upper(u.papel::text) = 'ADMIN'
   );
 $$;
 
 
 ALTER FUNCTION "public"."is_admin"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."is_staff"() RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.usuarios u
+    WHERE (u.id_usuario = auth.uid() OR u.id_auth = auth.uid())
+      AND upper(u.papel::text) IN ('STAFF', 'MONITOR')
+  );
+$$;
+
+
+ALTER FUNCTION "public"."is_staff"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."normalizar_codigo"("p_codigo" "text") RETURNS "text"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT upper(regexp_replace(coalesce(p_codigo, ''), '[^A-Za-z0-9]', '', 'g'));
+$$;
+
+
+ALTER FUNCTION "public"."normalizar_codigo"("p_codigo" "text") OWNER TO "postgres";
+
+SET default_tablespace = '';
+
+SET default_table_access_method = "heap";
+
+
+CREATE TABLE IF NOT EXISTS "public"."eventos" (
+    "id_evento" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "nome_evento" character varying(255) NOT NULL,
+    "edicao" character varying(100),
+    "descricao" "text",
+    "logo_url" "text",
+    "is_ativo" boolean DEFAULT true,
+    "minutos_timeout_lock" integer DEFAULT 30,
+    "cota_avaliacoes_padrao" integer DEFAULT 3,
+    "limite_corte" numeric(5,2) DEFAULT 0.00,
+    "sistema_liberado" boolean DEFAULT true,
+    "horario_inicio" time without time zone,
+    "horario_fim" time without time zone,
+    "intervalo_pausa_avaliador" integer DEFAULT 0,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "data_evento" "date" DEFAULT CURRENT_DATE,
+    "data_inicio" "date" DEFAULT CURRENT_DATE,
+    "data_fim" "date" DEFAULT CURRENT_DATE,
+    "minutos_validade_pareamento" integer DEFAULT 10 NOT NULL,
+    "minutos_validade_codigo_acesso" integer DEFAULT 15 NOT NULL,
+    "tamanho_codigo" integer DEFAULT 6 NOT NULL,
+    "max_tentativas_codigo" integer DEFAULT 5 NOT NULL,
+    "metodos_vinculo" "text" DEFAULT 'ambos'::"text" NOT NULL,
+    CONSTRAINT "ck_eventos_max_tentativas_codigo" CHECK ((("max_tentativas_codigo" >= 1) AND ("max_tentativas_codigo" <= 10))),
+    CONSTRAINT "ck_eventos_metodos_vinculo" CHECK (("metodos_vinculo" = ANY (ARRAY['ambos'::"text", 'pareamento'::"text", 'codigo'::"text"]))),
+    CONSTRAINT "ck_eventos_minutos_validade_codigo_acesso" CHECK ((("minutos_validade_codigo_acesso" >= 1) AND ("minutos_validade_codigo_acesso" <= 120))),
+    CONSTRAINT "ck_eventos_minutos_validade_pareamento" CHECK ((("minutos_validade_pareamento" >= 1) AND ("minutos_validade_pareamento" <= 60))),
+    CONSTRAINT "ck_eventos_tamanho_codigo" CHECK ((("tamanho_codigo" >= 6) AND ("tamanho_codigo" <= 10)))
+);
+
+
+ALTER TABLE "public"."eventos" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."eventos"."sistema_liberado" IS 'Controle booleano que permite ou pausa o sorteio de avaliações';
+
+
+
+COMMENT ON COLUMN "public"."eventos"."horario_inicio" IS 'Horário de início das avaliações do evento (TIME)';
+
+
+
+COMMENT ON COLUMN "public"."eventos"."horario_fim" IS 'Horário de término das avaliações do evento (TIME)';
+
+
+
+COMMENT ON COLUMN "public"."eventos"."data_evento" IS 'Data oficial de realização do evento (DATE)';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."parametros_acesso"("p_id_evento" "uuid") RETURNS "public"."eventos"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT e.* FROM public.eventos e WHERE e.id_evento = coalesce(p_id_evento, public.evento_ativo_id());
+$$;
+
+
+ALTER FUNCTION "public"."parametros_acesso"("p_id_evento" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid") RETURNS "jsonb"
@@ -1093,9 +1710,24 @@ $$;
 
 ALTER FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") OWNER TO "postgres";
 
-SET default_tablespace = '';
 
-SET default_table_access_method = "heap";
+CREATE OR REPLACE FUNCTION "public"."validar_avaliador_do_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.usuarios u
+    JOIN public.avaliadores_evento ae ON ae.id_usuario = u.id_usuario AND ae.id_evento = p_id_evento
+    WHERE u.id_usuario = p_id_usuario AND upper(u.papel::text) = 'AVALIADOR'
+  ) THEN
+    RAISE EXCEPTION 'Avaliador não encontrado neste evento.';
+  END IF;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."validar_avaliador_do_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."areas_tematicas" (
@@ -1162,44 +1794,36 @@ CREATE TABLE IF NOT EXISTS "public"."avaliadores_evento" (
 ALTER TABLE "public"."avaliadores_evento" OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."eventos" (
-    "id_evento" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "nome_evento" character varying(255) NOT NULL,
-    "edicao" character varying(100),
-    "descricao" "text",
-    "logo_url" "text",
-    "is_ativo" boolean DEFAULT true,
-    "minutos_timeout_lock" integer DEFAULT 30,
-    "cota_avaliacoes_padrao" integer DEFAULT 3,
-    "limite_corte" numeric(5,2) DEFAULT 0.00,
-    "sistema_liberado" boolean DEFAULT true,
-    "horario_inicio" time without time zone,
-    "horario_fim" time without time zone,
-    "intervalo_pausa_avaliador" integer DEFAULT 0,
-    "created_at" timestamp with time zone DEFAULT "now"(),
-    "data_evento" "date" DEFAULT CURRENT_DATE,
-    "data_inicio" "date" DEFAULT CURRENT_DATE,
-    "data_fim" "date" DEFAULT CURRENT_DATE
+CREATE TABLE IF NOT EXISTS "public"."codigos_acesso" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "id_usuario" "uuid" NOT NULL,
+    "id_evento" "uuid",
+    "codigo_hash" "text" NOT NULL,
+    "gerado_por" "uuid",
+    "criado_em" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "expira_em" timestamp with time zone NOT NULL,
+    "usado_em" timestamp with time zone,
+    "tentativas" integer DEFAULT 0 NOT NULL,
+    "max_tentativas" integer NOT NULL
 );
 
 
-ALTER TABLE "public"."eventos" OWNER TO "postgres";
+ALTER TABLE "public"."codigos_acesso" OWNER TO "postgres";
 
 
-COMMENT ON COLUMN "public"."eventos"."sistema_liberado" IS 'Controle booleano que permite ou pausa o sorteio de avaliações';
+CREATE TABLE IF NOT EXISTS "public"."dispositivos_avaliador" (
+    "auth_uid" "uuid" NOT NULL,
+    "id_usuario" "uuid" NOT NULL,
+    "id_evento" "uuid",
+    "metodo" "text" NOT NULL,
+    "vinculado_por" "uuid",
+    "vinculado_em" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "revogado_em" timestamp with time zone,
+    CONSTRAINT "dispositivos_avaliador_metodo_check" CHECK (("metodo" = ANY (ARRAY['pareamento'::"text", 'codigo'::"text"])))
+);
 
 
-
-COMMENT ON COLUMN "public"."eventos"."horario_inicio" IS 'Horário de início das avaliações do evento (TIME)';
-
-
-
-COMMENT ON COLUMN "public"."eventos"."horario_fim" IS 'Horário de término das avaliações do evento (TIME)';
-
-
-
-COMMENT ON COLUMN "public"."eventos"."data_evento" IS 'Data oficial de realização do evento (DATE)';
-
+ALTER TABLE "public"."dispositivos_avaliador" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."fila_atribuicoes_direcionadas" (
@@ -1293,6 +1917,18 @@ CREATE TABLE IF NOT EXISTS "public"."modalidades" (
 ALTER TABLE "public"."modalidades" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."pareamentos_pendentes" (
+    "codigo" "text" NOT NULL,
+    "auth_uid" "uuid" NOT NULL,
+    "id_evento" "uuid",
+    "criado_em" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "expira_em" timestamp with time zone NOT NULL
+);
+
+
+ALTER TABLE "public"."pareamentos_pendentes" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."perguntas_questionario" (
     "id_pergunta" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "id_questionario" "uuid",
@@ -1364,7 +2000,8 @@ CREATE TABLE IF NOT EXISTS "public"."usuarios" (
     "papel" character varying(50) DEFAULT 'AVALIADOR'::character varying,
     "cpf" character varying(14),
     "celular" character varying(20),
-    "created_at" timestamp with time zone DEFAULT "now"()
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "id_auth" "uuid"
 );
 
 
@@ -1591,6 +2228,16 @@ ALTER TABLE ONLY "public"."avaliadores_evento"
 
 
 
+ALTER TABLE ONLY "public"."codigos_acesso"
+    ADD CONSTRAINT "codigos_acesso_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."dispositivos_avaliador"
+    ADD CONSTRAINT "dispositivos_avaliador_pkey" PRIMARY KEY ("auth_uid");
+
+
+
 ALTER TABLE ONLY "public"."eventos"
     ADD CONSTRAINT "eventos_pkey" PRIMARY KEY ("id_evento");
 
@@ -1636,6 +2283,16 @@ ALTER TABLE ONLY "public"."modalidades"
 
 
 
+ALTER TABLE ONLY "public"."pareamentos_pendentes"
+    ADD CONSTRAINT "pareamentos_pendentes_auth_uid_key" UNIQUE ("auth_uid");
+
+
+
+ALTER TABLE ONLY "public"."pareamentos_pendentes"
+    ADD CONSTRAINT "pareamentos_pendentes_pkey" PRIMARY KEY ("codigo");
+
+
+
 ALTER TABLE ONLY "public"."perguntas_questionario"
     ADD CONSTRAINT "perguntas_questionario_pkey" PRIMARY KEY ("id_pergunta");
 
@@ -1677,6 +2334,11 @@ ALTER TABLE ONLY "public"."usuarios"
 
 
 ALTER TABLE ONLY "public"."usuarios"
+    ADD CONSTRAINT "usuarios_id_auth_key" UNIQUE ("id_auth");
+
+
+
+ALTER TABLE ONLY "public"."usuarios"
     ADD CONSTRAINT "usuarios_pkey" PRIMARY KEY ("id_usuario");
 
 
@@ -1706,6 +2368,14 @@ CREATE INDEX "idx_avaliacoes_projeto" ON "public"."avaliacoes" USING "btree" ("i
 
 
 CREATE INDEX "idx_avaliacoes_usuario" ON "public"."avaliacoes" USING "btree" ("id_usuario");
+
+
+
+CREATE INDEX "idx_codigos_acesso_usuario_ativo" ON "public"."codigos_acesso" USING "btree" ("id_usuario") WHERE ("usado_em" IS NULL);
+
+
+
+CREATE INDEX "idx_dispositivos_avaliador_usuario_ativo" ON "public"."dispositivos_avaliador" USING "btree" ("id_usuario") WHERE ("revogado_em" IS NULL);
 
 
 
@@ -1830,6 +2500,31 @@ ALTER TABLE ONLY "public"."avaliadores_evento"
 
 
 
+ALTER TABLE ONLY "public"."codigos_acesso"
+    ADD CONSTRAINT "codigos_acesso_id_evento_fkey" FOREIGN KEY ("id_evento") REFERENCES "public"."eventos"("id_evento") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."codigos_acesso"
+    ADD CONSTRAINT "codigos_acesso_id_usuario_fkey" FOREIGN KEY ("id_usuario") REFERENCES "public"."usuarios"("id_usuario") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."dispositivos_avaliador"
+    ADD CONSTRAINT "dispositivos_avaliador_auth_uid_fkey" FOREIGN KEY ("auth_uid") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."dispositivos_avaliador"
+    ADD CONSTRAINT "dispositivos_avaliador_id_evento_fkey" FOREIGN KEY ("id_evento") REFERENCES "public"."eventos"("id_evento") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."dispositivos_avaliador"
+    ADD CONSTRAINT "dispositivos_avaliador_id_usuario_fkey" FOREIGN KEY ("id_usuario") REFERENCES "public"."usuarios"("id_usuario") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."fila_atribuicoes_direcionadas"
     ADD CONSTRAINT "fila_atribuicoes_direcionadas_id_projeto_fkey" FOREIGN KEY ("id_projeto") REFERENCES "public"."projetos"("id_projeto") ON DELETE CASCADE;
 
@@ -1880,6 +2575,16 @@ ALTER TABLE ONLY "public"."modalidades"
 
 
 
+ALTER TABLE ONLY "public"."pareamentos_pendentes"
+    ADD CONSTRAINT "pareamentos_pendentes_auth_uid_fkey" FOREIGN KEY ("auth_uid") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."pareamentos_pendentes"
+    ADD CONSTRAINT "pareamentos_pendentes_id_evento_fkey" FOREIGN KEY ("id_evento") REFERENCES "public"."eventos"("id_evento") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."perguntas_questionario"
     ADD CONSTRAINT "perguntas_questionario_id_questionario_fkey" FOREIGN KEY ("id_questionario") REFERENCES "public"."questionarios"("id_questionario") ON DELETE CASCADE;
 
@@ -1925,6 +2630,11 @@ ALTER TABLE ONLY "public"."respostas_avaliacao"
 
 
 
+ALTER TABLE ONLY "public"."usuarios"
+    ADD CONSTRAINT "usuarios_id_auth_fkey" FOREIGN KEY ("id_auth") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE "public"."areas_tematicas" ENABLE ROW LEVEL SECURITY;
 
 
@@ -1938,6 +2648,12 @@ ALTER TABLE "public"."avaliador_modalidades_bloqueadas" ENABLE ROW LEVEL SECURIT
 
 
 ALTER TABLE "public"."avaliadores_evento" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."codigos_acesso" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."dispositivos_avaliador" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."eventos" ENABLE ROW LEVEL SECURITY;
@@ -1962,6 +2678,9 @@ ALTER TABLE "public"."modalidade_aliases" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."modalidades" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."pareamentos_pendentes" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."perguntas_questionario" ENABLE ROW LEVEL SECURITY;
@@ -2208,9 +2927,53 @@ GRANT ALL ON FUNCTION "public"."admin_reset_global"("p_id_evento" "uuid") TO "se
 
 
 
+REVOKE ALL ON FUNCTION "public"."avaliador_atual"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."avaliador_atual"() TO "anon";
+GRANT ALL ON FUNCTION "public"."avaliador_atual"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."avaliador_atual"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."evento_ativo_id"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."evento_ativo_id"() TO "anon";
+GRANT ALL ON FUNCTION "public"."evento_ativo_id"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."evento_ativo_id"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."exigir_staff_ou_admin"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."exigir_staff_ou_admin"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "uuid", "p_nome" "text", "p_email" "text", "p_id_instituicao" "uuid", "p_nome_instituicao_nova" "text", "p_ids_areas" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "uuid", "p_nome" "text", "p_email" "text", "p_id_instituicao" "uuid", "p_nome_instituicao_nova" "text", "p_ids_areas" "uuid"[]) TO "anon";
+GRANT ALL ON FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "uuid", "p_nome" "text", "p_email" "text", "p_id_instituicao" "uuid", "p_nome_instituicao_nova" "text", "p_ids_areas" "uuid"[]) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "uuid", "p_nome" "text", "p_email" "text", "p_id_instituicao" "uuid", "p_nome_instituicao_nova" "text", "p_ids_areas" "uuid"[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_avaliacoes_ativas_do_projeto"("p_id_projeto" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_avaliacoes_ativas_do_projeto"("p_id_projeto" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_avaliacoes_ativas_do_projeto"("p_id_projeto" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_check_in_projeto"("p_id_projeto" "uuid", "p_check_in" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_check_in_projeto"("p_id_projeto" "uuid", "p_check_in" boolean) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_check_in_projeto"("p_id_projeto" "uuid", "p_check_in" boolean) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_desvincular_dispositivo"("p_id_usuario" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_desvincular_dispositivo"("p_id_usuario" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_desvincular_dispositivo"("p_id_usuario" "uuid") TO "service_role";
 
 
 
@@ -2218,6 +2981,37 @@ REVOKE ALL ON FUNCTION "public"."fn_enviar_avaliacao"("p_id_usuario" "uuid", "p_
 GRANT ALL ON FUNCTION "public"."fn_enviar_avaliacao"("p_id_usuario" "uuid", "p_id_projeto" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_tempo_presenca" "text") TO "anon";
 GRANT ALL ON FUNCTION "public"."fn_enviar_avaliacao"("p_id_usuario" "uuid", "p_id_projeto" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_tempo_presenca" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_enviar_avaliacao"("p_id_usuario" "uuid", "p_id_projeto" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_tempo_presenca" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_feira_concluida"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_feira_concluida"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_feira_concluida"("p_id_evento" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_fixar_questionario"("p_id_projeto" "uuid", "p_id_questionario" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_fixar_questionario"("p_id_projeto" "uuid", "p_id_questionario" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_fixar_questionario"("p_id_projeto" "uuid", "p_id_questionario" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_gerar_codigo_acesso"("p_id_usuario" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_gerar_codigo_acesso"("p_id_usuario" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_gerar_codigo_acesso"("p_id_usuario" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_meu_perfil"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_meu_perfil"() TO "anon";
+GRANT ALL ON FUNCTION "public"."fn_meu_perfil"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_meu_perfil"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") TO "service_role";
 
 
 
@@ -2251,10 +3045,69 @@ GRANT ALL ON FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_evento" "u
 
 
 
+REVOKE ALL ON FUNCTION "public"."fn_situacao_vinculos"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_situacao_vinculos"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_situacao_vinculos"("p_id_evento" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_solicitar_pareamento"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_solicitar_pareamento"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_solicitar_pareamento"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_vincular_com_codigo"("p_email" "text", "p_codigo" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_vincular_com_codigo"("p_email" "text", "p_codigo" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_vincular_com_codigo"("p_email" "text", "p_codigo" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_vincular_conta_staff"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_vincular_conta_staff"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_vincular_conta_staff"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."gerar_codigo_curto"("p_tamanho" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."gerar_codigo_curto"("p_tamanho" integer) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."is_admin"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."is_admin"() TO "anon";
 GRANT ALL ON FUNCTION "public"."is_admin"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."is_admin"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."is_staff"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."is_staff"() TO "anon";
+GRANT ALL ON FUNCTION "public"."is_staff"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."is_staff"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."normalizar_codigo"("p_codigo" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."normalizar_codigo"("p_codigo" "text") TO "service_role";
+
+
+
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."eventos" TO "anon";
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."eventos" TO "authenticated";
+GRANT ALL ON TABLE "public"."eventos" TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."parametros_acesso"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."parametros_acesso"("p_id_evento" "uuid") TO "service_role";
 
 
 
@@ -2273,6 +3126,11 @@ GRANT ALL ON FUNCTION "public"."sortear_projeto"("p_id_usuario" "uuid", "p_id_ev
 GRANT ALL ON FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."validar_avaliador_do_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."validar_avaliador_do_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "service_role";
 
 
 
@@ -2326,9 +3184,11 @@ GRANT ALL ON TABLE "public"."avaliadores_evento" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."eventos" TO "anon";
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."eventos" TO "authenticated";
-GRANT ALL ON TABLE "public"."eventos" TO "service_role";
+GRANT ALL ON TABLE "public"."codigos_acesso" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."dispositivos_avaliador" TO "service_role";
 
 
 
@@ -2371,6 +3231,10 @@ GRANT ALL ON TABLE "public"."modalidade_aliases" TO "service_role";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."modalidades" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."modalidades" TO "authenticated";
 GRANT ALL ON TABLE "public"."modalidades" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pareamentos_pendentes" TO "service_role";
 
 
 

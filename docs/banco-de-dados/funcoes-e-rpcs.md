@@ -24,6 +24,30 @@ Funções PostgreSQL chamadas pelo front-end via `supabase.rpc()`. Quem pode exe
 6. Grava `avaliacoes` + `respostas_avaliacao`, remove a trava e conclui o item da fila.
 7. Aplica quarentena se a divergência entre maior e menor nota ativa do projeto passar de 2,5.
 
+## Identidade e vínculo do celular
+
+Desenho completo em [segurança](../arquitetura/seguranca.md). Erros de negócio são `RAISE EXCEPTION` com mensagem em
+português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa errada fique gravada.
+
+| Função | Quem chama | Descrição |
+|---|---|---|
+| `is_admin()`, `is_staff()` | RLS e funções | Papel da sessão (`id_usuario` ou `id_auth` = `auth.uid()`) |
+| `avaliador_atual()` | RLS e funções | Avaliador vinculado ao aparelho atual, ou `NULL` |
+| `fn_meu_perfil()` | Qualquer um | Papel, identificação e métodos de vínculo liberados no evento |
+| `fn_solicitar_pareamento()` | Celular (sessão anônima) | Gera o código de pareamento |
+| `fn_vincular_com_codigo(email, codigo)` | Celular | Vincula com o código de acesso |
+| `fn_parear_dispositivo(codigo, id_usuario)` | Staff/Admin | Vincula o celular que mostrou o código e credencia o avaliador |
+| `fn_gerar_codigo_acesso(id_usuario)` | Staff/Admin | Gera o código de acesso (mostrado uma única vez) |
+| `fn_desvincular_dispositivo(id_usuario)` | Staff/Admin | Revoga o aparelho e os códigos e libera a trava |
+| `fn_situacao_vinculos(id_evento)` | Staff/Admin | Quem já tem aparelho vinculado |
+| `fn_vincular_conta_staff()` | Staff (primeiro login) | Liga a conta do Auth ao perfil `STAFF` |
+| `fn_check_in_projeto(id_projeto, bool)` | Staff/Admin | Check-in do estande |
+| `fn_fixar_questionario(id_projeto, id_questionario)` | Avaliador com a trava | Fixa o questionário na primeira avaliação |
+| `fn_avaliacoes_ativas_do_projeto(id_projeto)` | Avaliador/Staff/Admin | Contagem para a cota, sem expor notas |
+| `fn_feira_concluida(id_evento)` | Avaliador/Staff/Admin | Todos os projetos em competição atingiram a cota |
+| `fn_autocadastro_avaliador(...)` | Público | Autocadastro pelo QR; nunca altera cadastro existente |
+| `fn_telao_resumo(id_evento)` | Público | Totais do Telão, sem nomes nem notas |
+
 ## Administração
 
 | Função | Descrição |

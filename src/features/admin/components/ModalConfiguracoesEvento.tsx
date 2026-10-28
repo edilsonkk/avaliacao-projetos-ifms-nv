@@ -1,4 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import {
+  LIMITES_ACESSO,
+  METODOS_VINCULO,
+  PARAMETROS_ACESSO_PADRAO,
+  lerParametrosAcesso,
+  validarParametrosAcesso,
+  type MetodoVinculo,
+  type ParametrosAcesso,
+} from '../acessoAvaliadores';
 import { Settings, X, Save, Loader2, CheckCircle2, AlertTriangle, RotateCcw, History, PlusCircle, Building2, ShieldCheck } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 
@@ -33,6 +42,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
   const [sistema_liberado, set_sistema_liberado] = useState<boolean>(true);
   const [horario_inicio, set_horario_inicio] = useState<string>('08:00');
   const [horario_fim, set_horario_fim] = useState<string>('18:00');
+  const [parametros_acesso, set_parametros_acesso] = useState<ParametrosAcesso>(PARAMETROS_ACESSO_PADRAO);
 
   // Sincronia de estado imediata com a prop recebida do Header/Painel Admin
   useEffect(() => {
@@ -85,6 +95,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
           set_sistema_liberado(dados_evento.sistema_liberado !== false);
           set_horario_inicio(dados_evento.horario_inicio || '08:00');
           set_horario_fim(dados_evento.horario_fim || '18:00');
+          set_parametros_acesso(lerParametrosAcesso(dados_evento));
         }
       } catch (e) {
         console.error('Erro ao carregar dados do evento:', e);
@@ -104,6 +115,13 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
 
     const dataFormatada = data_evento || new Date().toISOString().split('T')[0];
 
+    const erros_acesso = validarParametrosAcesso(parametros_acesso);
+    if (erros_acesso.length > 0) {
+      set_mensagem_feedback({ tipo: 'erro', texto: erros_acesso.join(' ') });
+      set_salvando(false);
+      return;
+    }
+
     const dados_atualizacao: any = {
       nome_evento,
       data_evento: dataFormatada,
@@ -112,6 +130,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
       sistema_liberado: Boolean(sistema_liberado),
       horario_inicio: horario_inicio || '08:00',
       horario_fim: horario_fim || '18:00',
+      ...parametros_acesso,
     };
 
     if (!conexao_configurada) {
@@ -138,7 +157,15 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
       // Fallback resiliente: apenas se a coluna data_evento não existir fisicamente no banco
       if (erro_update && (erro_update.message?.includes('data_evento') || erro_update.code === 'PGRST204')) {
         console.warn('Coluna data_evento ausente no schema do banco, tentando salvar campos base...');
-        const { data_evento: _de, ...dadosSemData } = dados_atualizacao;
+        const {
+          data_evento: _de,
+          minutos_validade_pareamento: _mp,
+          minutos_validade_codigo_acesso: _mc,
+          tamanho_codigo: _tc,
+          max_tentativas_codigo: _mt,
+          metodos_vinculo: _mv,
+          ...dadosSemData
+        } = dados_atualizacao;
         const resFallback = await supabase
           .from('eventos')
           .update(dadosSemData)
@@ -148,9 +175,12 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
 
       if (erro_update) {
         console.error('Falha ao atualizar evento no Supabase:', erro_update.message);
+        const texto_erro = erro_update.code === '23514'
+          ? 'Algum parâmetro de acesso está fora dos limites permitidos pelo banco.'
+          : `Falha ao salvar configurações: ${erro_update.message}`;
         set_mensagem_feedback({
           tipo: 'erro',
-          texto: `Falha ao salvar configurações: ${erro_update.message}`,
+          texto: texto_erro,
         });
         alert(`Erro ao salvar configurações do evento: ${erro_update.message}`);
       } else {
@@ -356,6 +386,51 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
                 className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer"
               />
             </div>
+
+            {/* Acesso dos avaliadores: vínculo do celular */}
+            <fieldset className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+              <legend className="px-1 text-xs font-bold text-slate-800 dark:text-slate-200 uppercase">
+                Acesso dos avaliadores
+              </legend>
+              <div>
+                <label htmlFor="metodos_vinculo" className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                  Formas de vincular o celular:
+                </label>
+                <select
+                  id="metodos_vinculo"
+                  value={parametros_acesso.metodos_vinculo}
+                  onChange={(e) => set_parametros_acesso((anterior) => ({ ...anterior, metodos_vinculo: e.target.value as MetodoVinculo }))}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                >
+                  {METODOS_VINCULO.map((m) => (
+                    <option key={m.valor} value={m.valor}>{m.rotulo}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {(Object.keys(LIMITES_ACESSO) as (keyof typeof LIMITES_ACESSO)[]).map((campo) => {
+                  const limite = LIMITES_ACESSO[campo];
+                  return (
+                    <div key={campo}>
+                      <label htmlFor={campo} className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                        {limite.rotulo}{limite.unidade ? ` (${limite.unidade})` : ''}:
+                      </label>
+                      <input
+                        id={campo}
+                        type="number"
+                        min={limite.min}
+                        max={limite.max}
+                        step={1}
+                        value={parametros_acesso[campo]}
+                        onChange={(e) => set_parametros_acesso((anterior) => ({ ...anterior, [campo]: Number(e.target.value) }))}
+                        required
+                        className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </fieldset>
 
             {/* Gestão de Eventos: Eventos Anteriores e Criar novo evento */}
             <div className="pt-4 border-t border-slate-100 dark:border-slate-700 space-y-2">
