@@ -30,6 +30,9 @@ jobs:
         id: release
         uses: googleapis/release-please-action@v4
         with:
+          # Token próprio (fine-grained, só este repositório): PRs abertos com o GITHUB_TOKEN não disparam os
+          # checks obrigatórios. Sem o secret, funciona igual, mas o PR de release precisa ser fechado e reaberto.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 

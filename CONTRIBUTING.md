@@ -45,7 +45,8 @@ Guia completo: [configuração](docs/arquitetura/configuracao.md#desenvolvimento
    ```
 6. Abra o Pull Request para `main` e preencha o template. O CI precisa passar e o PR precisa de aprovação do code
    owner (`.github/CODEOWNERS`).
-7. Faça merge com **squash**. O **título do PR** vira o commit em `main` e define a próxima versão (`fix:` → patch,
+7. Faça merge com **squash** (ou marque o PR com `gh pr merge <n> --auto --squash --delete-branch` para mergear
+   sozinho quando os checks passarem; nunca use auto-merge no PR de release). O **título do PR** vira o commit em `main` e define a próxima versão (`fix:` → patch,
    `feat:` → minor), então ele precisa seguir o padrão.
 
 ## Publicar uma versão
