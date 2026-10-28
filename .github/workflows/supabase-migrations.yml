@@ -7,12 +7,10 @@ name: Migrações do Supabase (Produção)
 # Guia: docs/banco-de-dados/migrations.md
 
 on:
+  # Em todo PR: os checks são obrigatórios na proteção da main. Sem mudança no
+  # banco, o job de testes termina em segundos.
   pull_request:
     branches: [ "main" ]
-    paths:
-      - 'supabase/migrations/**'
-      - 'supabase/tests/**'
-      - 'supabase/config.toml'
   workflow_call:
   workflow_dispatch:
     inputs:
@@ -87,18 +85,33 @@ jobs:
     steps:
       - name: Checkout do Repositório
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verificar se o PR altera o banco
+        id: banco
+        run: |
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qE '^supabase/(migrations|tests)/|^supabase/config\.toml$'; then
+            echo "alterado=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "alterado=false" >> "$GITHUB_OUTPUT"
+            echo "PR sem mudanças no banco: testes pgTAP dispensados."
+          fi
 
       - name: Configurar CLI do Supabase
+        if: steps.banco.outputs.alterado == 'true'
         uses: supabase/setup-cli@v1
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
       - name: Subir Postgres local com todas as migrations
+        if: steps.banco.outputs.alterado == 'true'
         run: |
           supabase db start
           supabase migration up --local
 
       - name: Rodar testes pgTAP (supabase/tests)
+        if: steps.banco.outputs.alterado == 'true'
         run: supabase test db
 
   deploy-migrations:

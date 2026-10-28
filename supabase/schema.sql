@@ -500,6 +500,10 @@ DECLARE
   v_is_quarentena         boolean := false;
   v_id_avaliacao          uuid;
 BEGIN
+  -- Identidade real: o avaliador só age em nome de si mesmo (aparelho vinculado).
+  IF NOT public.is_admin() AND public.avaliador_atual() IS DISTINCT FROM p_id_usuario THEN
+    RAISE EXCEPTION 'Acesso negado: este aparelho não está vinculado a este avaliador.' USING ERRCODE = '42501';
+  END IF;
   -- 1. POSSE DE TRAVA: o avaliador só grava se detém a trava ativa deste projeto.
   SELECT EXISTS (
     SELECT 1 FROM public.locks_ativos
@@ -1603,6 +1607,10 @@ DECLARE
   v_minutos_lock INTEGER := 30;
   v_cota_padrao INTEGER := 3;
 BEGIN
+  -- Identidade real: o avaliador só age em nome de si mesmo (aparelho vinculado).
+  IF NOT public.is_admin() AND public.avaliador_atual() IS DISTINCT FROM p_id_usuario THEN
+    RAISE EXCEPTION 'Acesso negado: este aparelho não está vinculado a este avaliador.' USING ERRCODE = '42501';
+  END IF;
   -- 1. Limpa locks expirados do sistema
   DELETE FROM public.locks_ativos 
   WHERE expira_em < now();
@@ -2695,11 +2703,43 @@ ALTER TABLE "public"."questionarios" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."respostas_avaliacao" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "rls_amb_leitura" ON "public"."avaliador_modalidades_bloqueadas" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
+
+
+
+CREATE POLICY "rls_amb_staff_apaga" ON "public"."avaliador_modalidades_bloqueadas" FOR DELETE TO "authenticated" USING ("public"."is_staff"());
+
+
+
+CREATE POLICY "rls_amb_staff_atualiza" ON "public"."avaliador_modalidades_bloqueadas" FOR UPDATE TO "authenticated" USING ("public"."is_staff"()) WITH CHECK ("public"."is_staff"());
+
+
+
+CREATE POLICY "rls_amb_staff_insere" ON "public"."avaliador_modalidades_bloqueadas" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_staff"());
+
+
+
+CREATE POLICY "rls_areas_leitura" ON "public"."avaliador_areas" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
+
+
+
+CREATE POLICY "rls_areas_staff_apaga" ON "public"."avaliador_areas" FOR DELETE TO "authenticated" USING ("public"."is_staff"());
+
+
+
+CREATE POLICY "rls_areas_staff_atualiza" ON "public"."avaliador_areas" FOR UPDATE TO "authenticated" USING ("public"."is_staff"()) WITH CHECK ("public"."is_staff"());
+
+
+
+CREATE POLICY "rls_areas_staff_insere" ON "public"."avaliador_areas" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_staff"());
+
+
+
 CREATE POLICY "rls_areas_tematicas_admin" ON "public"."areas_tematicas" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
 
 
 
-CREATE POLICY "rls_areas_tematicas_select" ON "public"."areas_tematicas" FOR SELECT TO "authenticated", "anon" USING (true);
+CREATE POLICY "rls_areas_tematicas_leitura" ON "public"."areas_tematicas" FOR SELECT TO "authenticated", "anon" USING (true);
 
 
 
@@ -2707,11 +2747,11 @@ CREATE POLICY "rls_avaliacoes_admin" ON "public"."avaliacoes" TO "authenticated"
 
 
 
-CREATE POLICY "rls_avaliacoes_delete_pendentes" ON "public"."avaliacoes" FOR DELETE TO "authenticated", "anon" USING (("nota_final" IS NULL));
+CREATE POLICY "rls_avaliacoes_leitura" ON "public"."avaliacoes" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR ("id_usuario" = "public"."avaliador_atual"())));
 
 
 
-CREATE POLICY "rls_avaliacoes_select" ON "public"."avaliacoes" FOR SELECT TO "authenticated", "anon" USING (true);
+CREATE POLICY "rls_avaliacoes_staff_apaga_pendentes" ON "public"."avaliacoes" FOR DELETE TO "authenticated" USING (("public"."is_staff"() AND ("nota_final" IS NULL)));
 
 
 
@@ -2719,23 +2759,7 @@ CREATE POLICY "rls_avaliador_areas_admin" ON "public"."avaliador_areas" TO "auth
 
 
 
-CREATE POLICY "rls_avaliador_areas_operacional" ON "public"."avaliador_areas" TO "authenticated", "anon" USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "rls_avaliador_areas_select" ON "public"."avaliador_areas" FOR SELECT TO "authenticated", "anon" USING (true);
-
-
-
 CREATE POLICY "rls_avaliador_modalidades_bloqueadas_admin" ON "public"."avaliador_modalidades_bloqueadas" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
-
-
-
-CREATE POLICY "rls_avaliador_modalidades_bloqueadas_operacional" ON "public"."avaliador_modalidades_bloqueadas" TO "authenticated", "anon" USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "rls_avaliador_modalidades_bloqueadas_select" ON "public"."avaliador_modalidades_bloqueadas" FOR SELECT TO "authenticated", "anon" USING (true);
 
 
 
@@ -2743,15 +2767,15 @@ CREATE POLICY "rls_avaliadores_evento_admin" ON "public"."avaliadores_evento" TO
 
 
 
-CREATE POLICY "rls_avaliadores_evento_insert_operacional" ON "public"."avaliadores_evento" FOR INSERT TO "authenticated", "anon" WITH CHECK (true);
+CREATE POLICY "rls_avaliadores_evento_leitura" ON "public"."avaliadores_evento" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
 
 
 
-CREATE POLICY "rls_avaliadores_evento_select" ON "public"."avaliadores_evento" FOR SELECT TO "authenticated", "anon" USING (true);
+CREATE POLICY "rls_avaliadores_evento_staff_atualiza" ON "public"."avaliadores_evento" FOR UPDATE TO "authenticated" USING ("public"."is_staff"()) WITH CHECK ("public"."is_staff"());
 
 
 
-CREATE POLICY "rls_avaliadores_evento_update_operacional" ON "public"."avaliadores_evento" FOR UPDATE TO "authenticated", "anon" USING (true) WITH CHECK (true);
+CREATE POLICY "rls_avaliadores_evento_staff_insere" ON "public"."avaliadores_evento" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_staff"());
 
 
 
@@ -2759,7 +2783,7 @@ CREATE POLICY "rls_eventos_admin" ON "public"."eventos" TO "authenticated" USING
 
 
 
-CREATE POLICY "rls_eventos_select" ON "public"."eventos" FOR SELECT TO "authenticated", "anon" USING (true);
+CREATE POLICY "rls_eventos_leitura" ON "public"."eventos" FOR SELECT TO "authenticated", "anon" USING (true);
 
 
 
@@ -2767,11 +2791,15 @@ CREATE POLICY "rls_fila_atribuicoes_direcionadas_admin" ON "public"."fila_atribu
 
 
 
-CREATE POLICY "rls_fila_atribuicoes_direcionadas_select" ON "public"."fila_atribuicoes_direcionadas" FOR SELECT TO "authenticated", "anon" USING (true);
+CREATE POLICY "rls_fila_avaliador_atualiza" ON "public"."fila_atribuicoes_direcionadas" FOR UPDATE TO "authenticated" USING (("id_usuario" = "public"."avaliador_atual"())) WITH CHECK (("id_usuario" = "public"."avaliador_atual"()));
 
 
 
-CREATE POLICY "rls_fila_atribuicoes_operacional" ON "public"."fila_atribuicoes_direcionadas" TO "authenticated", "anon" USING (true) WITH CHECK (true);
+CREATE POLICY "rls_fila_leitura" ON "public"."fila_atribuicoes_direcionadas" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
+
+
+
+CREATE POLICY "rls_fila_staff_apaga" ON "public"."fila_atribuicoes_direcionadas" FOR DELETE TO "authenticated" USING ("public"."is_staff"());
 
 
 
@@ -2779,11 +2807,11 @@ CREATE POLICY "rls_historico_impedimentos_admin" ON "public"."historico_impedime
 
 
 
-CREATE POLICY "rls_historico_impedimentos_insert_operacional" ON "public"."historico_impedimentos" FOR INSERT TO "authenticated", "anon" WITH CHECK (true);
+CREATE POLICY "rls_historico_impedimentos_avaliador_insere" ON "public"."historico_impedimentos" FOR INSERT TO "authenticated" WITH CHECK (("id_usuario" = "public"."avaliador_atual"()));
 
 
 
-CREATE POLICY "rls_historico_impedimentos_select" ON "public"."historico_impedimentos" FOR SELECT TO "authenticated", "anon" USING (true);
+CREATE POLICY "rls_historico_impedimentos_leitura" ON "public"."historico_impedimentos" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR ("id_usuario" = "public"."avaliador_atual"())));
 
 
 
@@ -2791,7 +2819,7 @@ CREATE POLICY "rls_instituicao_aliases_admin" ON "public"."instituicao_aliases" 
 
 
 
-CREATE POLICY "rls_instituicao_aliases_select" ON "public"."instituicao_aliases" FOR SELECT TO "authenticated", "anon" USING (true);
+CREATE POLICY "rls_instituicao_aliases_leitura" ON "public"."instituicao_aliases" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"()));
 
 
 
@@ -2799,11 +2827,7 @@ CREATE POLICY "rls_instituicoes_admin" ON "public"."instituicoes" TO "authentica
 
 
 
-CREATE POLICY "rls_instituicoes_insert_operacional" ON "public"."instituicoes" FOR INSERT TO "authenticated", "anon" WITH CHECK (true);
-
-
-
-CREATE POLICY "rls_instituicoes_select" ON "public"."instituicoes" FOR SELECT TO "authenticated", "anon" USING (true);
+CREATE POLICY "rls_instituicoes_leitura" ON "public"."instituicoes" FOR SELECT TO "authenticated", "anon" USING (true);
 
 
 
@@ -2811,11 +2835,15 @@ CREATE POLICY "rls_locks_ativos_admin" ON "public"."locks_ativos" TO "authentica
 
 
 
-CREATE POLICY "rls_locks_ativos_operacional" ON "public"."locks_ativos" TO "authenticated", "anon" USING (true) WITH CHECK (true);
+CREATE POLICY "rls_locks_ativos_apaga" ON "public"."locks_ativos" FOR DELETE TO "authenticated" USING (("public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
 
 
 
-CREATE POLICY "rls_locks_ativos_select" ON "public"."locks_ativos" FOR SELECT TO "authenticated", "anon" USING (true);
+CREATE POLICY "rls_locks_ativos_avaliador_insere" ON "public"."locks_ativos" FOR INSERT TO "authenticated" WITH CHECK (("id_usuario" = "public"."avaliador_atual"()));
+
+
+
+CREATE POLICY "rls_locks_ativos_leitura" ON "public"."locks_ativos" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
 
 
 
@@ -2823,7 +2851,7 @@ CREATE POLICY "rls_modalidade_aliases_admin" ON "public"."modalidade_aliases" TO
 
 
 
-CREATE POLICY "rls_modalidade_aliases_select" ON "public"."modalidade_aliases" FOR SELECT TO "authenticated", "anon" USING (true);
+CREATE POLICY "rls_modalidade_aliases_leitura" ON "public"."modalidade_aliases" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"()));
 
 
 
@@ -2831,7 +2859,7 @@ CREATE POLICY "rls_modalidades_admin" ON "public"."modalidades" TO "authenticate
 
 
 
-CREATE POLICY "rls_modalidades_select" ON "public"."modalidades" FOR SELECT TO "authenticated", "anon" USING (true);
+CREATE POLICY "rls_modalidades_leitura" ON "public"."modalidades" FOR SELECT TO "authenticated", "anon" USING (true);
 
 
 
@@ -2839,7 +2867,7 @@ CREATE POLICY "rls_perguntas_questionario_admin" ON "public"."perguntas_question
 
 
 
-CREATE POLICY "rls_perguntas_questionario_select" ON "public"."perguntas_questionario" FOR SELECT TO "authenticated", "anon" USING (true);
+CREATE POLICY "rls_perguntas_questionario_leitura" ON "public"."perguntas_questionario" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("public"."avaliador_atual"() IS NOT NULL)));
 
 
 
@@ -2847,11 +2875,7 @@ CREATE POLICY "rls_projetos_admin" ON "public"."projetos" TO "authenticated" USI
 
 
 
-CREATE POLICY "rls_projetos_select" ON "public"."projetos" FOR SELECT TO "authenticated", "anon" USING (true);
-
-
-
-CREATE POLICY "rls_projetos_update_operacional" ON "public"."projetos" FOR UPDATE TO "authenticated", "anon" USING (true) WITH CHECK (true);
+CREATE POLICY "rls_projetos_leitura" ON "public"."projetos" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("public"."avaliador_atual"() IS NOT NULL)));
 
 
 
@@ -2859,7 +2883,7 @@ CREATE POLICY "rls_questionarios_admin" ON "public"."questionarios" TO "authenti
 
 
 
-CREATE POLICY "rls_questionarios_select" ON "public"."questionarios" FOR SELECT TO "authenticated", "anon" USING (true);
+CREATE POLICY "rls_questionarios_leitura" ON "public"."questionarios" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("public"."avaliador_atual"() IS NOT NULL)));
 
 
 
@@ -2867,23 +2891,15 @@ CREATE POLICY "rls_respostas_avaliacao_admin" ON "public"."respostas_avaliacao" 
 
 
 
-CREATE POLICY "rls_respostas_avaliacao_select" ON "public"."respostas_avaliacao" FOR SELECT TO "authenticated", "anon" USING (true);
-
-
-
 CREATE POLICY "rls_usuarios_admin" ON "public"."usuarios" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
 
 
 
-CREATE POLICY "rls_usuarios_insert_operacional" ON "public"."usuarios" FOR INSERT TO "authenticated", "anon" WITH CHECK (("upper"(COALESCE(("papel")::"text", 'AVALIADOR'::"text")) = 'AVALIADOR'::"text"));
+CREATE POLICY "rls_usuarios_leitura" ON "public"."usuarios" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR ("id_usuario" = "public"."avaliador_atual"()) OR ("id_auth" = "auth"."uid"()) OR ("public"."is_staff"() AND ("upper"(("papel")::"text") = 'AVALIADOR'::"text"))));
 
 
 
-CREATE POLICY "rls_usuarios_select" ON "public"."usuarios" FOR SELECT TO "authenticated", "anon" USING (true);
-
-
-
-CREATE POLICY "rls_usuarios_update_operacional" ON "public"."usuarios" FOR UPDATE TO "authenticated", "anon" USING (("upper"(COALESCE(("papel")::"text", 'AVALIADOR'::"text")) = 'AVALIADOR'::"text")) WITH CHECK (("upper"(COALESCE(("papel")::"text", 'AVALIADOR'::"text")) = 'AVALIADOR'::"text"));
+CREATE POLICY "rls_usuarios_staff_atualiza_avaliador" ON "public"."usuarios" FOR UPDATE TO "authenticated" USING (("public"."is_staff"() AND ("upper"(("papel")::"text") = 'AVALIADOR'::"text"))) WITH CHECK (("public"."is_staff"() AND ("upper"(("papel")::"text") = 'AVALIADOR'::"text")));
 
 
 
@@ -2978,7 +2994,6 @@ GRANT ALL ON FUNCTION "public"."fn_desvincular_dispositivo"("p_id_usuario" "uuid
 
 
 REVOKE ALL ON FUNCTION "public"."fn_enviar_avaliacao"("p_id_usuario" "uuid", "p_id_projeto" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_tempo_presenca" "text") FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."fn_enviar_avaliacao"("p_id_usuario" "uuid", "p_id_projeto" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_tempo_presenca" "text") TO "anon";
 GRANT ALL ON FUNCTION "public"."fn_enviar_avaliacao"("p_id_usuario" "uuid", "p_id_projeto" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_tempo_presenca" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_enviar_avaliacao"("p_id_usuario" "uuid", "p_id_projeto" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_tempo_presenca" "text") TO "service_role";
 
@@ -3117,13 +3132,13 @@ GRANT ALL ON FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid") TO
 
 
 
-GRANT ALL ON FUNCTION "public"."sortear_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "anon";
+REVOKE ALL ON FUNCTION "public"."sortear_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."sortear_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sortear_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "service_role";
 
 
 
-GRANT ALL ON FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "anon";
+REVOKE ALL ON FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "service_role";
 
@@ -3140,45 +3155,21 @@ GRANT ALL ON TABLE "public"."areas_tematicas" TO "service_role";
 
 
 
-GRANT INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."avaliacoes" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."avaliacoes" TO "authenticated";
 GRANT ALL ON TABLE "public"."avaliacoes" TO "service_role";
 
 
 
-GRANT SELECT("id_avaliacao") ON TABLE "public"."avaliacoes" TO "anon";
-
-
-
-GRANT SELECT("id_projeto") ON TABLE "public"."avaliacoes" TO "anon";
-
-
-
-GRANT SELECT("id_usuario") ON TABLE "public"."avaliacoes" TO "anon";
-
-
-
-GRANT SELECT("status") ON TABLE "public"."avaliacoes" TO "anon";
-
-
-
-GRANT SELECT("status_avaliacao") ON TABLE "public"."avaliacoes" TO "anon";
-
-
-
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."avaliador_areas" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."avaliador_areas" TO "authenticated";
 GRANT ALL ON TABLE "public"."avaliador_areas" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."avaliador_modalidades_bloqueadas" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."avaliador_modalidades_bloqueadas" TO "authenticated";
 GRANT ALL ON TABLE "public"."avaliador_modalidades_bloqueadas" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."avaliadores_evento" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."avaliadores_evento" TO "authenticated";
 GRANT ALL ON TABLE "public"."avaliadores_evento" TO "service_role";
 
@@ -3192,13 +3183,11 @@ GRANT ALL ON TABLE "public"."dispositivos_avaliador" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."fila_atribuicoes_direcionadas" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."fila_atribuicoes_direcionadas" TO "authenticated";
 GRANT ALL ON TABLE "public"."fila_atribuicoes_direcionadas" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."historico_impedimentos" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."historico_impedimentos" TO "authenticated";
 GRANT ALL ON TABLE "public"."historico_impedimentos" TO "service_role";
 
@@ -3216,7 +3205,6 @@ GRANT ALL ON TABLE "public"."instituicoes" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."locks_ativos" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."locks_ativos" TO "authenticated";
 GRANT ALL ON TABLE "public"."locks_ativos" TO "service_role";
 
@@ -3256,35 +3244,13 @@ GRANT ALL ON TABLE "public"."questionarios" TO "service_role";
 
 
 
-GRANT INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."respostas_avaliacao" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."respostas_avaliacao" TO "authenticated";
 GRANT ALL ON TABLE "public"."respostas_avaliacao" TO "service_role";
 
 
 
-GRANT INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."usuarios" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."usuarios" TO "authenticated";
 GRANT ALL ON TABLE "public"."usuarios" TO "service_role";
-
-
-
-GRANT SELECT("id_usuario") ON TABLE "public"."usuarios" TO "anon";
-
-
-
-GRANT SELECT("email") ON TABLE "public"."usuarios" TO "anon";
-
-
-
-GRANT SELECT("nome") ON TABLE "public"."usuarios" TO "anon";
-
-
-
-GRANT SELECT("papel") ON TABLE "public"."usuarios" TO "anon";
-
-
-
-GRANT SELECT("created_at") ON TABLE "public"."usuarios" TO "anon";
 
 
 

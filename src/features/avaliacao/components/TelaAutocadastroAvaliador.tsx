@@ -163,101 +163,19 @@ export const TelaAutocadastroAvaliador: React.FC<TelaAutocadastroAvaliadorProps>
     }
 
     try {
-      let finalInstituicaoId = instituicaoSelecionadaId;
-
-      // Se informou instituição avulsa, insere no banco para o evento
-      if (instituicaoSelecionadaId === 'outra' && outraInstituicao.trim()) {
-        const { data: novaInst, error: errInst } = await supabase
-          .from('instituicoes')
-          .insert({
-            nome_exibicao: outraInstituicao.trim(),
-            id_evento: idEventoAtivo || null,
-          })
-          .select('id_instituicao')
-          .single();
-
-        if (errInst) {
-          console.warn('Erro ao criar instituição customizada:', errInst.message);
-        } else if (novaInst?.id_instituicao) {
-          finalInstituicaoId = novaInst.id_instituicao;
-        }
-      }
-
-      // 1. Verifica se usuário já existe pelo e-mail
-      const { data: usuarioExistente } = await supabase
-        .from('usuarios')
-        .select('id_usuario, papel')
-        .ilike('email', emailLimpo)
-        .maybeSingle();
-
-      let usuarioId = usuarioExistente?.id_usuario;
-
-      if (!usuarioId) {
-        // Cria usuário
-        const { data: novoUsuario, error: errUsuario } = await supabase
-          .from('usuarios')
-          .insert({
-            nome: nomeLimpo,
-            email: emailLimpo,
-            papel: 'AVALIADOR',
-          })
-          .select('id_usuario')
-          .single();
-
-        if (errUsuario || !novoUsuario) {
-          throw new Error(`Falha ao registrar usuário: ${errUsuario?.message || 'Erro desconhecido'}`);
-        }
-        usuarioId = novoUsuario.id_usuario;
-      } else {
-        // Atualiza nome caso necessário
-        await supabase
-          .from('usuarios')
-          .update({ nome: nomeLimpo })
-          .eq('id_usuario', usuarioId);
-      }
-
-      // 2. Vincula à tabela avaliadores_evento do evento ativo com is_credenciado = false
-      if (idEventoAtivo && usuarioId) {
-        const { error: errAvaliadorEvento } = await supabase
-          .from('avaliadores_evento')
-          .upsert(
-            {
-              id_usuario: usuarioId,
-              id_evento: idEventoAtivo,
-              id_instituicao: finalInstituicaoId && finalInstituicaoId !== 'outra' ? finalInstituicaoId : null,
-              is_credenciado: false,
-            },
-            { onConflict: 'id_usuario,id_evento' }
-          );
-
-        if (errAvaliadorEvento) {
-          console.warn('Aviso ao vincular avaliador ao evento:', errAvaliadorEvento.message);
-        }
-
-        // 3. Salva áreas temáticas selecionadas
-        if (areasSelecionadas.length > 0) {
-          // Remove vínculos anteriores se houver
-          await supabase
-            .from('avaliador_areas')
-            .delete()
-            .eq('id_usuario', usuarioId)
-            .eq('id_evento', idEventoAtivo);
-
-          // Insere novos vínculos
-          const registrosAreas = areasSelecionadas.map((idArea) => ({
-            id_usuario: usuarioId,
-            id_evento: idEventoAtivo,
-            id_area: idArea,
-          }));
-
-          const { error: errAreas } = await supabase
-            .from('avaliador_areas')
-            .insert(registrosAreas);
-
-          if (errAreas) {
-            console.warn('Aviso ao salvar áreas do avaliador:', errAreas.message);
-          }
-        }
+      // Tudo no banco (fn_autocadastro_avaliador): cria só cadastros novos e nunca
+      // altera nome, áreas ou credenciamento de quem já existe.
+      const instituicaoExistente = instituicaoSelecionadaId && instituicaoSelecionadaId !== 'outra' ? instituicaoSelecionadaId : null;
+      const { error: errCadastro } = await supabase.rpc('fn_autocadastro_avaliador', {
+        p_id_evento: idEventoAtivo || null,
+        p_nome: nomeLimpo,
+        p_email: emailLimpo,
+        p_id_instituicao: instituicaoExistente,
+        p_nome_instituicao_nova: instituicaoSelecionadaId === 'outra' ? outraInstituicao.trim() : null,
+        p_ids_areas: areasSelecionadas.length > 0 ? areasSelecionadas : null,
+      });
+      if (errCadastro) {
+        throw new Error(errCadastro.message);
       }
 
       setCadastroSucesso(true);

@@ -30,7 +30,7 @@ auditoria e homologação dos resultados.
 ## Objetivos de negócio
 
 1. **Credenciamento sem fricção**: check-in rápido de projetos (estandes), avaliadores e staff, com busca insensível a
-   caixa e acentos (`.ilike()`), sem senha para avaliadores e staff.
+   caixa e acentos (`.ilike()`). O avaliador não usa senha: o celular é vinculado no balcão em segundos.
 2. **Distribuição automática de avaliações**: o sorteio considera cotas restantes, ausências, afinidade temática e
    bloqueia conflitos de interesse (avaliador não avalia projeto da própria instituição).
    Ver [sorteio e atribuição](../regras-de-negocio/sorteio-e-atribuicao.md).
@@ -56,9 +56,9 @@ auditoria e homologação dos resultados.
 
 | Perfil | Como entra | Papel no banco | O que faz |
 |---|---|---|---|
-| Administrador | E-mail e senha (Supabase Auth) | `authenticated` + `usuarios.papel = 'ADMIN'` | Toda a gestão do evento |
-| Staff | Login sem senha | `anon` | Check-in de projetos e credenciamento de avaliadores |
-| Avaliador | Login sem senha (e-mail) | `anon` | Recebe projetos e envia notas |
+| Administrador | E-mail e senha (Supabase Auth) | `authenticated` + `is_admin()` | Toda a gestão do evento |
+| Staff | E-mail e senha | `authenticated` + `is_staff()` | Check-in, credenciamento e vínculo dos celulares |
+| Avaliador | Celular vinculado no credenciamento | `authenticated` (anônimo) + `avaliador_atual()` | Recebe projetos e envia notas |
 | Telão | Acesso direto à tela | `anon` | Exibição pública do andamento e do ranking |
 
 ## Stack

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Award, UserCheck, Shield, Mail, Lock, Loader2, AlertTriangle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { VinculoAvaliador } from './VinculoAvaliador';
+import { obterPerfilSessao, salvarPerfilLocal, type PerfilSessao } from '../vinculoAparelho';
 
 export type AbaLogin = 'avaliador' | 'staff' | 'admin';
 
@@ -27,46 +29,32 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
     setMensagemSucesso(null);
   };
 
-  // FLUXO DE LOGIN ZERO-FRICÇÃO (Avaliador e Staff)
-  const fazerLoginZeroFriccao = async (emailLogado: string) => {
-    const emailLimpo = emailLogado.trim().toLowerCase();
+  // Avaliador: o celular foi vinculado (pareamento pelo Staff ou código de acesso)
+  const aoVincularAvaliador = (perfil: PerfilSessao) => {
+    salvarPerfilLocal(perfil);
+    if (aoAutenticarSucesso) aoAutenticarSucesso('avaliador');
+  };
 
-    const { data: usuarioDb, error: errDb } = await supabase
-      .from('usuarios')
-      .select('id_usuario, papel')
-      .ilike('email', emailLimpo)
-      .single();
-
-    if (errDb) {
-      alert(`Falha Técnica de Banco: ${errDb.message} (Detalhes: ${errDb.details || errDb.hint})`);
+  // Staff: e-mail e senha no Supabase Auth; o papel é confirmado pelo banco
+  const fazerLoginStaff = async () => {
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+    if (authError) {
+      setMensagemErro('Falha no login: ' + authError.message);
       return;
     }
-
-    if (!usuarioDb) {
-      alert("Acesso Negado: O e-mail digitado não consta na base de dados do evento.");
+    // Primeiro login: liga a conta do Auth ao perfil STAFF (idempotente)
+    await supabase.rpc('fn_vincular_conta_staff');
+    const perfil = await obterPerfilSessao();
+    if (perfil.papel !== 'staff') {
+      await supabase.auth.signOut().catch(() => {});
+      setMensagemErro('Acesso negado: esta conta não pertence à equipe Staff.');
       return;
     }
-
-    // Continua com o salvamento no localStorage:
-    localStorage.setItem('sessao_id_usuario', usuarioDb.id_usuario);
-    localStorage.setItem('sessao_papel', usuarioDb.papel);
-
-    const papelUsuario = (usuarioDb.papel || '').toLowerCase();
-    localStorage.setItem('sessao_email', emailLimpo);
-    localStorage.setItem('usuario_id', usuarioDb.id_usuario);
-    localStorage.setItem('usuario_email', emailLimpo);
-    localStorage.setItem('usuario_perfil', papelUsuario);
-
-    if (papelUsuario === 'staff') {
-      localStorage.setItem('staff_id_usuario', usuarioDb.id_usuario);
-    } else if (papelUsuario === 'avaliador') {
-      localStorage.setItem('avaliador_id_usuario', usuarioDb.id_usuario);
-      localStorage.setItem('avaliador_email', emailLimpo);
-    }
-
-    if (aoAutenticarSucesso) {
-      aoAutenticarSucesso(papelUsuario as 'avaliador' | 'staff' | 'admin');
-    }
+    salvarPerfilLocal(perfil);
+    if (aoAutenticarSucesso) aoAutenticarSucesso('staff');
   };
 
   // Submissão principal do formulário (Login)
@@ -84,16 +72,14 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
     setCarregando(true);
 
     try {
-      if (abaAtiva === 'avaliador' || abaAtiva === 'staff') {
-        // Fluxo Zero-Fricção apenas com E-mail
-        await fazerLoginZeroFriccao(emailLogado);
+      if (!password) {
+        setMensagemErro('Por favor, informe a senha de acesso.');
+        setCarregando(false);
+        return;
+      }
+      if (abaAtiva === 'staff') {
+        await fazerLoginStaff();
       } else {
-        // Aba ADMIN: Exibe E-mail e Senha e chama signInWithPassword
-        if (!password) {
-          setMensagemErro('Por favor, informe a senha de acesso.');
-          setCarregando(false);
-          return;
-        }
 
         // 1. Tenta logar no motor de Auth
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ 
@@ -286,14 +272,19 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
           </div>
         )}
 
-        {/* Formulário Dinâmico */}
+        {/* Avaliador: vínculo do celular, sem senha */}
+        {abaAtiva === 'avaliador' && <VinculoAvaliador aoVincular={aoVincularAvaliador} />}
+
+        {/* Staff e Admin: e-mail e senha */}
+        {abaAtiva !== 'avaliador' && (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+            <label htmlFor="email-login" className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
               E-mail de Acesso:
             </label>
             <div className="relative">
               <input
+                id="email-login"
                 type="email"
                 required
                 value={email}
@@ -305,14 +296,15 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
             </div>
           </div>
 
-          {/* Apenas a aba Admin exibe a senha */}
-          {abaAtiva === 'admin' && (
+          {/* Staff e Admin exibem a senha */}
+          {(
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+              <label htmlFor="senha-login" className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
                 Senha de Acesso:
               </label>
               <div className="relative">
                 <input
+                  id="senha-login"
                   type={mostrarSenha ? "text" : "password"}
                   required
                   value={password}
@@ -342,11 +334,7 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
             type="submit"
             disabled={carregando}
             className={`w-full py-3.5 text-white rounded-xl text-sm font-extrabold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 ${
-              abaAtiva === 'avaliador'
-                ? 'bg-emerald-600 hover:bg-emerald-700'
-                : abaAtiva === 'staff'
-                ? 'bg-blue-600 hover:bg-blue-700'
-                : 'bg-purple-600 hover:bg-purple-700'
+              abaAtiva === 'staff' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'
             }`}
           >
             {carregando ? (
@@ -356,28 +344,31 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
               </>
             ) : (
               <span>
-                {abaAtiva === 'avaliador' && 'Acessar Fila de Avaliação'}
                 {abaAtiva === 'staff' && 'Entrar'}
                 {abaAtiva === 'admin' && 'Entrar no Painel Admin'}
               </span>
             )}
           </button>
         </form>
+        )}
 
-        {/* FLUXO DA ABA ADMIN (Recuperação e OAuth) */}
+        {/* Recuperação de senha (Staff e Admin) */}
+        {abaAtiva !== 'avaliador' && (
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={handleEsqueciSenha}
+              disabled={carregando}
+              className="text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 text-xs font-semibold underline underline-offset-2 transition-colors disabled:opacity-50"
+            >
+              Esqueci minha senha
+            </button>
+          </div>
+        )}
+
+        {/* FLUXO DA ABA ADMIN (OAuth) */}
         {abaAtiva === 'admin' && (
           <div className="space-y-4 pt-1">
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={handleEsqueciSenha}
-                disabled={carregando}
-                className="text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 text-xs font-semibold underline underline-offset-2 transition-colors disabled:opacity-50"
-              >
-                Esqueci minha senha
-              </button>
-            </div>
-
             <div className="relative flex items-center justify-center my-4">
               <div className="border-t border-slate-200 dark:border-slate-700 w-full"></div>
               <span className="bg-white dark:bg-slate-800 px-3 text-xs font-bold text-slate-400 shrink-0">

@@ -18,6 +18,7 @@ import {
   ArrowUp,
   ArrowDown,
   Pencil,
+  Smartphone,
   Shield,
   ShieldOff,
   Database,
@@ -27,6 +28,7 @@ import {
   Save
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
+import { PainelAparelhoAvaliador } from './PainelAparelhoAvaliador';
 
 export interface ProjetoStaff {
   id: string;
@@ -203,6 +205,24 @@ export const TelaStaff: React.FC = () => {
   const [qr_copiado, set_qr_copiado] = useState<boolean>(false);
 
   const conexao_banco_configurada = verificar_conexao_configurada();
+
+  // Vínculo do celular de cada avaliador (pareamento / código de acesso)
+  const [aparelhos_vinculados, set_aparelhos_vinculados] = useState<Record<string, boolean>>({});
+  const [avaliador_aparelho, set_avaliador_aparelho] = useState<{ id_usuario: string; nome: string } | null>(null);
+
+  const carregar_situacao_aparelhos = async (id_evento: string) => {
+    if (!conexao_banco_configurada || !id_evento) return;
+    const { data, error } = await supabase.rpc('fn_situacao_vinculos', { p_id_evento: id_evento });
+    if (error || !Array.isArray(data)) return;
+    set_aparelhos_vinculados(
+      Object.fromEntries(data.map((linha: { id_usuario: string; aparelho_vinculado: boolean }) => [linha.id_usuario, linha.aparelho_vinculado])),
+    );
+  };
+
+  useEffect(() => {
+    carregar_situacao_aparelhos(evento_ativo_id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evento_ativo_id]);
 
   const exibir_notificacao = (texto: string) => {
     set_mensagem_notificacao(texto);
@@ -427,10 +447,11 @@ export const TelaStaff: React.FC = () => {
     }
 
     try {
-      const { error } = await supabase
-        .from('projetos')
-        .update({ is_check_in_realizado: novo_status })
-        .eq('id_projeto', id_projeto);
+      // Check-in pelo RPC: a RLS não permite ao Staff alterar outras colunas de projetos
+      const { error } = await supabase.rpc('fn_check_in_projeto', {
+        p_id_projeto: id_projeto,
+        p_check_in: novo_status,
+      });
 
       if (error) {
         throw error;
@@ -1603,10 +1624,27 @@ export const TelaStaff: React.FC = () => {
                                 <span>{usuario.is_credenciado ? 'Bloquear' : 'Credenciar'}</span>
                               </button>
 
+                              {/* Botão Aparelho (pareamento / código de acesso) */}
+                              <button
+                                type="button"
+                                onClick={() => set_avaliador_aparelho({ id_usuario: usuario.id_usuario, nome: usuario.nome })}
+                                aria-label={`Aparelho de ${usuario.nome}`}
+                                title={aparelhos_vinculados[usuario.id_usuario] ? 'Celular vinculado' : 'Parear celular'}
+                                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs inline-flex items-center gap-1 border cursor-pointer ${
+                                  aparelhos_vinculados[usuario.id_usuario]
+                                    ? 'bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800'
+                                    : 'bg-white text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600'
+                                }`}
+                              >
+                                <Smartphone aria-hidden="true" className="w-3.5 h-3.5" />
+                                <span>{aparelhos_vinculados[usuario.id_usuario] ? 'Vinculado' : 'Parear'}</span>
+                              </button>
+
                               {/* Botão Editar (Modal) */}
                               <button
                                 type="button"
                                 onClick={() => handle_abrir_edicao(usuario)}
+                                aria-label={`Editar ${usuario.nome}`}
                                 title="Editar Avaliador"
                                 className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
                               >
@@ -1626,6 +1664,15 @@ export const TelaStaff: React.FC = () => {
       )}
 
       {/* MODAL DE EDIÇÃO DE AVALIADOR (SEM BOTÃO DE EXCLUSÃO) */}
+      {avaliador_aparelho && (
+        <PainelAparelhoAvaliador
+          avaliador={avaliador_aparelho}
+          aparelhoVinculado={Boolean(aparelhos_vinculados[avaliador_aparelho.id_usuario])}
+          aoFechar={() => set_avaliador_aparelho(null)}
+          aoAlterarVinculo={() => carregar_situacao_aparelhos(evento_ativo_id)}
+        />
+      )}
+
       {modal_edicao_aberto && usuario_em_edicao && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 animate-in fade-in zoom-in duration-150">

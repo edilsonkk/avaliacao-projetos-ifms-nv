@@ -32,3 +32,4 @@ Correções de bug e ajustes visuais não precisam de ADR: o commit e a doc do d
 | [0008](0008-frontend-organizado-por-features.md) | Front-end organizado por features | Aceito |
 | [0009](0009-ambientes-e-releases.md) | Ambientes local e produção, com releases versionadas | Aceito |
 | [0010](0010-hospedagem-firebase.md) | Front-end no Firebase Hosting; backend continua no Supabase | Aceito |
+| [0011](0011-identidade-real-avaliador-e-staff.md) | Identidade real para Avaliador e Staff (vínculo do celular) | Aceito |

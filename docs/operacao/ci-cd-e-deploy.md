@@ -129,7 +129,8 @@ Feita uma vez, por quem administra o repositório:
 
 1. **Proteger a `main`** (*Settings → Branches → Add branch ruleset*, alvo `main`):
    - *Require a pull request before merging* (1 aprovação; *Require review from Code Owners*);
-   - *Require status checks to pass*: `Testes Automatizados (Vitest & Linter)` e `Validação Estática das Migrações SQL`;
+   - *Require status checks to pass*: `Testes Automatizados (Vitest & Linter)`, `Validação Estática das Migrações SQL`,
+     `Testes de Segurança do Banco (pgTAP)` e `SAST - Análise Estática de Código (CodeQL)` (todos rodam em todo PR);
    - *Block force pushes* e *Restrict deletions*;
    - Sendo o único mantenedor, adicione-se em *Bypass list* para poder aprovar os próprios PRs, ou aceite fazer
      merge sem aprovação de terceiros.
