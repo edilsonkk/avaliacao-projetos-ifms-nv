@@ -22,7 +22,8 @@ como uma nova migration. Nunca altere o banco só pelo painel do Supabase.
    ([segurança](../arquitetura/seguranca.md)).
 6. Ao mudar colunas usadas pelo PostgREST, recarregue o schema cache no fim do arquivo:
    `NOTIFY pgrst, 'reload schema';`.
-7. Atualize `supabase/schema.sql` e a documentação afetada (modelo de dados, funções, regras de negócio).
+7. Regenere o `supabase/schema.sql` ([como](#schemasql)), crie ou ajuste testes em `supabase/tests/` e atualize a
+   documentação afetada (modelo de dados, funções, regras de negócio).
 8. Se a migration exige mudança no front-end, descreva isso no cabeçalho e entregue as duas no mesmo PR.
 9. Garanta compatibilidade com a versão anterior do front-end ([expand/contract](#compatibilidade-com-a-versão-anterior-expandcontract)).
 10. Teste localmente com `npx supabase@2.122.0 db reset` antes de abrir o PR.
@@ -85,11 +86,20 @@ Com dados reais, **nunca** use `db reset --linked`. Corrija com uma nova migrati
 
 ## `schema.sql`
 
-`supabase/schema.sql` é o DDL consolidado **para leitura**: o estado final de todas as migrations num só arquivo. Ele
-**não é aplicado** no banco. Se divergir de uma migration, a migration prevalece.
+`supabase/schema.sql` é o DDL do schema `public` **gerado a partir do banco local**, ou seja, o estado final de todas
+as migrations. Serve para leitura e **não é aplicado** no banco. Não edite à mão: depois de criar uma migration,
+regenere:
 
-Ao criar uma migration, reflita o resultado final no `schema.sql`: altere o `CREATE TABLE`, substitua a função ou
-policy e remova o que foi apagado. Não acrescente a migration no fim do arquivo.
+```bash
+npx supabase@2.122.0 db reset
+npx supabase@2.122.0 db dump --local -s public -f /tmp/dump.sql
+# mantenha o cabeçalho de supabase/schema.sql e substitua o resto pelo conteúdo de /tmp/dump.sql
+```
+
+## Testes do banco
+
+Regras de acesso (RLS, `GRANT`, guards em funções) têm testes pgTAP em `supabase/tests/`. Ao mudar permissões, crie
+ou ajuste um teste e rode `npx supabase@2.122.0 test db` ([segurança](../arquitetura/seguranca.md#testes-de-segurança)).
 
 ## Rollback
 
@@ -122,3 +132,4 @@ de dados, restaure o backup gerado antes do `db push` ([restaurar backup](../ope
 | `20261026010000_rpc_enviar_avaliacao.sql` | `fn_enviar_avaliacao` |
 | `20261026020000_restringir_leitura_sensivel.sql` | Restrição de leitura por coluna |
 | `20261026030000_proteger_funcoes_admin.sql` | Funções admin só para `authenticated` |
+| `20261028200000_proteger_funcoes_admin_e_relatorios.sql` | Guard `is_admin()` em todas as `admin_*`; relatórios `SECURITY INVOKER` |

@@ -11,6 +11,7 @@ Migrations de referência:
 | `20261026010000_rpc_enviar_avaliacao.sql` | Gravação de notas só via `fn_enviar_avaliacao` (validação no servidor) |
 | `20261026020000_restringir_leitura_sensivel.sql` | Restringe leitura `anon` de colunas sensíveis |
 | `20261026030000_proteger_funcoes_admin.sql` | Funções administrativas executáveis só por `authenticated` |
+| `20261028200000_proteger_funcoes_admin_e_relatorios.sql` | Todas as `admin_*` exigem `is_admin()`; relatórios viram `SECURITY INVOKER`; `search_path` fixo |
 
 Decisões: [ADR 0006](../decisoes/0006-rls-escrita-restrita-a-admin.md) e
 [ADR 0007](../decisoes/0007-gravacao-de-notas-via-rpc.md).
@@ -62,7 +63,8 @@ explicitamente. `select('*')` falha.
 
 | Função | Quem executa |
 |---|---|
-| `admin_*`, `excluir_avaliacao`, `restaurar_avaliacao` | Só `authenticated`/`service_role`; `excluir`/`restaurar` também checam `is_admin()` |
+| `admin_*`, `excluir_avaliacao`, `restaurar_avaliacao` | Só `authenticated`/`service_role` **e** checagem `is_admin()` dentro da função. Sem ela, qualquer conta criada pelo cadastro público do Auth conseguia rodar `admin_reset_global` (corrigido em `20261028200000`) |
+| `fn_relatorio_*` | `SECURITY INVOKER` (respeitam a RLS de quem chama); não executáveis por `anon` |
 | `sortear_proximo_projeto`, `sortear_projeto` | `anon` (o avaliador precisa delas) |
 | `fn_enviar_avaliacao` | `anon` (valida trava, regras e faixa de nota no servidor) |
 
@@ -71,6 +73,19 @@ explicitamente. `select('*')` falha.
 - Antes de qualquer escrita administrativa: `await garantirSessaoAdmin()` (`src/lib/sessaoAdmin.ts`).
 - Ao receber erro: `tratarErroEscritaAdmin(erro)`. Erros de RLS (código `42501`) disparam o evento
   `sessao-admin-expirada`, e `App.tsx` leva o usuário de volta ao login.
+
+## Testes de segurança
+
+Cada regra de acesso tem teste automático em `supabase/tests/` (pgTAP), que simula `anon`, uma conta comum
+autenticada e um Admin:
+
+```bash
+npx supabase@2.122.0 db reset     # banco local com todas as migrations
+npx supabase@2.122.0 test db      # roda supabase/tests/*.sql
+```
+
+O CI roda os mesmos testes em todo PR que altera migrations ou testes. Toda falha de segurança corrigida ganha um
+teste que **precisa falhar** sem a correção.
 
 ## Limites conhecidos
 

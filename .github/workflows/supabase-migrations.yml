@@ -11,6 +11,7 @@ on:
     branches: [ "main" ]
     paths:
       - 'supabase/migrations/**'
+      - 'supabase/tests/**'
       - 'supabase/config.toml'
   workflow_call:
   workflow_dispatch:
@@ -77,6 +78,28 @@ jobs:
             exit 1
           fi
           echo "Validação estática concluída."
+
+  testes-banco:
+    name: Testes de Segurança do Banco (pgTAP)
+    if: github.event_name == 'pull_request'
+    needs: validate-migrations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar CLI do Supabase
+        uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Subir Postgres local com todas as migrations
+        run: |
+          supabase db start
+          supabase migration up --local
+
+      - name: Rodar testes pgTAP (supabase/tests)
+        run: supabase test db
 
   deploy-migrations:
     name: Backup e Aplicação (supabase db push)

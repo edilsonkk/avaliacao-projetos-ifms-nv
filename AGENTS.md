@@ -64,7 +64,7 @@ Antes de mudar uma regra de negócio, leia o arquivo correspondente em `docs/reg
 - `projetos` não tem colunas textuais `modalidade`, `area_conhecimento`, `nome_instituicao`: use os relacionamentos.
 - `sortear_proximo_projeto` e `sortear_projeto` precisam ficar em sincronia.
 - Migrations são aplicadas só por `supabase db push` (CI). Nunca sugira colar SQL no SQL Editor do painel.
-- `supabase/schema.sql` é referência de leitura; ao criar migration, atualize-o com o estado final.
+- `supabase/schema.sql` é **gerado** (`db dump --local`); não edite à mão. Mudou permissão? Rode `npx supabase@2.122.0 test db`.
 - Vários componentes são muito grandes (2–3 mil linhas). Leia por trechos e prefira extrair hooks/subcomponentes
   a aumentar o arquivo.
 
