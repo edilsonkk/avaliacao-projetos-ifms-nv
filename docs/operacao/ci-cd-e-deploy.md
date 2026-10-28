@@ -101,6 +101,12 @@ Ambiente **production** (*Settings → Environments → production*):
 | `FIREBASE_SERVICE_ACCOUNT` | Secret | JSON da service account que publica no Firebase Hosting |
 | `BACKUP_PASSPHRASE` | Secret | Senha de criptografia dos backups. **Guarde-a também fora do GitHub**: sem ela o backup é inútil |
 
+Secret do **repositório** (*Settings → Secrets and variables → Actions → Repository secrets*), fora do environment:
+
+| Nome | Uso |
+|---|---|
+| `RELEASE_PLEASE_TOKEN` | Token do release-please. Com ele, o PR de release já nasce com os checks rodando ([criar](#token-do-release-please)) |
+
 Variáveis do repositório (*Settings → Secrets and variables → Actions → Variables*):
 
 | Nome | Uso |
@@ -144,8 +150,9 @@ O front-end é publicado no projeto Firebase `avaliacao-projetos-ifms-nv` (`.fir
 `firebase.json`:
 - publica a pasta `dist/`;
 - redireciona todas as rotas para `index.html`, então `/admin` e `/staff` funcionam ao recarregar;
-- cache longo para `/assets/**` (nomes com hash) e `no-cache` para `index.html`, para que uma nova versão apareça na
-  hora.
+- `no-cache` para tudo (`**`), inclusive o `index.html` entregue em `/`, `/admin` etc., para que uma nova versão
+  apareça na hora; depois, cache de 1 ano para `/assets/**`, que têm hash no nome. A regra listada por último
+  prevalece (conferido no emulador do Hosting).
 
 ### Criar a service account (uma vez)
 
@@ -164,6 +171,26 @@ npm run build                      # com o .env de produção — só em emergê
 npx firebase-tools@15.34.0 deploy --only hosting --project avaliacao-projetos-ifms-nv
 ```
 Prefira sempre o workflow, que publica exatamente a tag versionada.
+
+## Token do release-please
+
+O GitHub não dispara workflows em eventos criados pelo `GITHUB_TOKEN`. Sem um token próprio, o PR de release nasce
+sem checks e fica bloqueado pela proteção da `main` até ser fechado e reaberto.
+
+Criar (uma vez, na conta `edilsonkk`):
+1. *Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token*.
+2. Nome `release-please-avaliacao`, validade de 1 ano (anote para renovar).
+3. *Repository access → Only select repositories →* `avaliacao-projetos-ifms-nv`.
+4. *Permissions → Repository permissions*: **Contents: Read and write**, **Pull requests: Read and write**,
+   **Issues: Read and write** (rótulos do PR de release). O resto fica sem acesso.
+5. Gere, copie e cadastre: `gh secret set RELEASE_PLEASE_TOKEN --repo edilsonkk/avaliacao-projetos-ifms-nv`
+   (secret do repositório, **sem** `--env`).
+
+## Merge automático
+
+O repositório tem *auto-merge* habilitado. PRs de código marcados com
+`gh pr merge <n> --auto --squash --delete-branch` são mergeados sozinhos quando os checks obrigatórios passam.
+**PRs de release não usam auto-merge**: publicar em produção é sempre uma decisão manual.
 
 ## Segurança
 
