@@ -5,7 +5,7 @@ Código: `src/features/avaliacao/components/TelaAvaliador.tsx`, `src/features/at
 
 ## Fluxo do avaliador
 
-1. Login sem senha pelo e-mail (aba Avaliador da `TelaLogin`).
+1. Celular vinculado no credenciamento (pareamento ou código de acesso; ver [credenciamento](credenciamento-e-pessoas.md#login)).
 2. A `TelaAvaliador` valida a [janela de avaliação](eventos.md#janela-de-avaliação). Fora da janela, mostra o estado
    correspondente e não sorteia.
 3. Consome primeiro a fila direcionada; se vazia, chama o [sorteio](sorteio-e-atribuicao.md).

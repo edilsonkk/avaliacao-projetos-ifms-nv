@@ -701,11 +701,8 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                   .select('cota_avaliacoes_customizada, id_evento')
                   .eq('id_projeto', itemFila.id_projeto)
                   .maybeSingle(),
-                supabase
-                  .from('avaliacoes')
-                  .select('id_avaliacao', { count: 'exact', head: true })
-                  .eq('id_projeto', itemFila.id_projeto)
-                  .neq('status', 'CANCELADA'),
+                // Só a contagem: o avaliador não lê avaliações de outros (RLS)
+                supabase.rpc('fn_avaliacoes_ativas_do_projeto', { p_id_projeto: itemFila.id_projeto }),
               ]);
 
               const cotaProjeto = resProj.data?.cota_avaliacoes_customizada;
@@ -721,7 +718,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                 }
               }
 
-              const totalFeitas = resCountAv.count || 0;
+              const totalFeitas = Number(resCountAv.data) || 0;
               if (totalFeitas >= cotaLimite) {
                 cotaAlcancada = true;
               }
@@ -794,27 +791,9 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
         let feiraFinalizada = false;
         try {
           if (id_evento_ativo) {
-            const [resProjEvt, resEvt] = await Promise.all([
-              supabase
-                .from('projetos')
-                .select('id_projeto, avaliacoes(id_avaliacao)')
-                .eq('id_evento', id_evento_ativo)
-                .eq('fora_da_competicao', false),
-              supabase
-                .from('eventos')
-                .select('cota_avaliacoes_padrao')
-                .eq('id_evento', id_evento_ativo)
-                .single(),
-            ]);
-
-            const cotaPadrao = resEvt.data?.cota_avaliacoes_padrao || 3;
-            const projs = resProjEvt.data || [];
-            if (projs.length > 0) {
-              feiraFinalizada = projs.every((p: any) => {
-                const qtd = Array.isArray(p.avaliacoes) ? p.avaliacoes.length : 0;
-                return qtd >= cotaPadrao;
-              });
-            }
+            // Calculado no banco: considera cota customizada e projetos fora da competição
+            const { data: concluida } = await supabase.rpc('fn_feira_concluida', { p_id_evento: id_evento_ativo });
+            feiraFinalizada = concluida === true;
           }
         } catch (_errFeira) {
           // Fallback silencioso
@@ -1206,10 +1185,10 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
         }
 
         if (!projetoAtual.id_questionario_fixado && idQuestionarioEscolhido) {
-          await supabase
-            .from('projetos')
-            .update({ id_questionario_fixado: idQuestionarioEscolhido })
-            .eq('id_projeto', projetoAtual.id_projeto || projetoAtual.id);
+          await supabase.rpc('fn_fixar_questionario', {
+            p_id_projeto: projetoAtual.id_projeto || projetoAtual.id,
+            p_id_questionario: idQuestionarioEscolhido,
+          });
         }
         await supabase.from('locks_ativos').delete().eq('id_usuario', avaliadorId);
         try {

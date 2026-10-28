@@ -73,6 +73,16 @@ O login do Admin exige uma conta no Supabase Auth **e** uma linha em `usuarios` 
    ON CONFLICT (id_usuario) DO UPDATE SET papel = 'ADMIN';
    ```
 
+## Criar um membro do Staff
+
+1. Admin: cadastre a pessoa no **Gestor de Staff** (papel `STAFF`), com o e-mail que ela vai usar.
+2. No painel do Supabase (*Authentication → Users → Add user*), crie a conta com **o mesmo e-mail** e uma senha
+   provisória, marcando "Auto confirm".
+3. A pessoa entra na aba **Staff** com e-mail e senha. No primeiro login a conta é ligada ao perfil automaticamente.
+   Ela pode trocar a senha por "Esqueci minha senha".
+
+No local, faça o mesmo pelo Studio (http://127.0.0.1:54323).
+
 ## Chaves do `localStorage`
 
 O navegador guarda sessão e dados de contingência nestas chaves:
@@ -95,5 +105,5 @@ O navegador guarda sessão e dados de contingência nestas chaves:
 
 Os pares com `/` são nomes legados equivalentes. Ao criar código novo, use as chaves `sessao_*`.
 
-> O `localStorage` não é fonte de verdade para permissões. Avaliador e Staff ainda são identificados pelo cliente
-> (ver [limites conhecidos](seguranca.md#limites-conhecidos)).
+> O `localStorage` é só atalho de tela, e não fonte de verdade para permissões: o banco identifica cada pessoa pela
+> sessão do Supabase Auth ([segurança](seguranca.md)). Ao abrir o app, o papel é conferido com `fn_meu_perfil()`.

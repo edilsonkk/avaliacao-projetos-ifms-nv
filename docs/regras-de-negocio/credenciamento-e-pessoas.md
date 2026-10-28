@@ -6,7 +6,17 @@ Código: `src/features/staff/` (`TelaStaff`, `GestorStaff`), `src/features/avali
 ## Login
 
 - Abas: Avaliador, Coordenação (Admin), Monitoramento e Expositor, sem subtítulos.
-- Admin: e-mail e senha no Supabase Auth. Avaliador e Staff: sem senha ([segurança](../arquitetura/seguranca.md)).
+- **Admin e Staff:** e-mail e senha no Supabase Auth. A conta do Staff é criada pelo Admin no painel do Supabase e
+  ligada ao perfil no primeiro login ([criar Staff](../arquitetura/configuracao.md#criar-um-membro-do-staff)).
+- **Avaliador:** sem senha. O celular é **vinculado** no credenciamento ([segurança](../arquitetura/seguranca.md#como-o-celular-do-avaliador-é-vinculado)):
+  1. o avaliador abre a aba Avaliador, e o celular mostra um código curto;
+  2. o Staff abre **Aparelho** na linha do avaliador, digita o código e clica em **Parear**. O avaliador é credenciado
+     junto, e a tela do celular abre sozinha;
+  3. alternativa sem o celular no balcão: o Staff clica em **Gerar código de acesso** e passa o código ao avaliador,
+     que digita e-mail e código no celular. O código aparece uma única vez, expira e tem tentativas limitadas.
+- Validade, tamanho dos códigos, tentativas e formas liberadas ficam nas Configurações do evento (engrenagem),
+  seção **Acesso dos avaliadores**.
+- Celular perdido ou trocado: **Aparelho → Desvincular aparelho** e parear o novo.
 - `App.tsx` decide a tela pelo caminho da URL e pelo papel em `localStorage` e impede o avaliador de abrir telas
   de Admin ou Staff.
 
@@ -36,7 +46,7 @@ com ordenação em todas as colunas. `Confirmar Check-in` / `Cancelar Check-in` 
 hora.
 
 **Credenciar Avaliadores**: mesma tabela do Gestor de Avaliadores, com estas diferenças:
-- Ações: `Credenciar` / `Bloquear` e `Editar` (lápis).
+- Ações: `Credenciar` / `Bloquear`, `Aparelho` (Parear/Vinculado) e `Editar` (lápis).
 - **Sem botão de excluir**: o Staff não pode apagar usuários.
 - Sem botão "+ Novo Avaliador": o cadastro na recepção é feito por autocadastro.
 

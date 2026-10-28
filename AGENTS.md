@@ -48,6 +48,8 @@ Antes de mudar uma regra de negócio, leia o arquivo correspondente em `docs/reg
 3. **Segurança no banco**: permissões e validações críticas ficam na RLS e em funções (ver
    [segurança](docs/arquitetura/seguranca.md)). Nunca confie só no front-end. Notas só via `fn_enviar_avaliacao`.
 4. **Escritas do Admin**: chame `garantirSessaoAdmin()` antes e trate erros com `tratarErroEscritaAdmin()`.
+   **Identidade**: papéis vêm do banco (`is_admin()`, `is_staff()`, `avaliador_atual()`); nunca confie em IDs do
+   `localStorage` nem libere tabelas para `anon`. Regra nova de acesso = policy + teste em `supabase/tests/`.
 5. **Escopo por evento**: toda leitura/escrita de dados do evento filtra por `id_evento`.
 6. **Nunca exiba UUIDs** na interface; use `codigo_projeto`.
 7. **SQL**: nunca use `DELETE` sem `WHERE` nem `TRUNCATE`. Migrations novas devem ser idempotentes, com timestamp

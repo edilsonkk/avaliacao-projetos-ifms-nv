@@ -29,20 +29,21 @@ interface MetricsTelaoState {
   tempo_decorrido_minutos: number;
 }
 
+// Estado inicial zerado: o Telão é público e não deve projetar números de exemplo.
 const metricas_telao_iniciais_fallback: MetricsTelaoState = {
-  total_projetos: 124,
-  avaliadores_credenciados: 36,
-  avaliacoes_em_andamento: 18,
-  avaliacoes_realizadas: 86,
+  total_projetos: 0,
+  avaliadores_credenciados: 0,
+  avaliacoes_em_andamento: 0,
+  avaliacoes_realizadas: 0,
   cota_padrao: 3,
-  meta_global: 372, // 124 * 3
-  porcentagem_conclusao: 68,
-  porcentagem_concluidas: 69.3,
-  porcentagem_em_andamento: 14.5,
-  porcentagem_fila: 13.7,
-  porcentagem_quarentena: 2.5,
-  tempo_decorrido_horas: 2,
-  tempo_decorrido_minutos: 45,
+  meta_global: 0,
+  porcentagem_conclusao: 0,
+  porcentagem_concluidas: 0,
+  porcentagem_em_andamento: 0,
+  porcentagem_fila: 0,
+  porcentagem_quarentena: 0,
+  tempo_decorrido_horas: 0,
+  tempo_decorrido_minutos: 0,
 };
 
 export const TelaoAoVivo: React.FC = () => {
@@ -62,45 +63,18 @@ export const TelaoAoVivo: React.FC = () => {
 
     try {
       // A) Total de Projetos cadastrados
-      let total_proj = 0;
-      const { count: count_projetos, error: erro_projetos } = await supabase
-        .from('projetos')
-        .select('*', { count: 'exact', head: true });
+      // Só agregados, sem nomes nem notas (fn_telao_resumo): o Telão é público
+      const { data: resumo, error: erro_resumo } = await supabase.rpc('fn_telao_resumo', {
+        p_id_evento: localStorage.getItem('evento_ativo_id') || null,
+      });
+      if (erro_resumo) throw erro_resumo;
 
-      if (erro_projetos) {
-        const { count: count_sing } = await supabase
-          .from('projeto')
-          .select('*', { count: 'exact', head: true });
-        total_proj = count_sing || 124;
-      } else {
-        total_proj = count_projetos || 124;
-      }
+      const total_proj = Number(resumo?.total_projetos) || 0;
+      const aval_cred = Number(resumo?.avaliadores_credenciados) || 0;
+      const em_andamento_cnt = Number(resumo?.avaliacoes_em_andamento) || 0;
+      const realizadas_cnt = Number(resumo?.avaliacoes_realizadas) || 0;
+      const cota_padrao = Number(resumo?.cota_padrao) || 3;
 
-      // B) Avaliadores credenciados
-      let aval_cred = 0;
-      const { count: count_avaliadores } = await supabase
-        .from('avaliadores_evento')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_credenciado', true);
-
-      aval_cred = count_avaliadores || 36;
-
-      // C) Avaliações em andamento (contagem na tabela locks_ativos)
-      const { count: count_locks } = await supabase
-        .from('locks_ativos')
-        .select('*', { count: 'exact', head: true });
-
-      const em_andamento_cnt = count_locks || 0;
-
-      // D) Avaliações realizadas (contagem em avaliacoes)
-      const { count: count_avaliacoes_feitas } = await supabase
-        .from('avaliacoes')
-        .select('*', { count: 'exact', head: true });
-
-      const realizadas_cnt = count_avaliacoes_feitas || 0;
-
-      // Cota padrão de 3 avaliações por projeto
-      const cota_padrao = 3;
       const meta_global_calculada = (total_proj || 1) * cota_padrao;
 
       // Cálculos dinâmicos com proteção contra NaN e divisão por zero
@@ -123,13 +97,13 @@ export const TelaoAoVivo: React.FC = () => {
 
       set_metricas_telao((anterior) => ({
         ...anterior,
-        total_projetos: total_proj || anterior.total_projetos,
-        avaliadores_credenciados: aval_cred || anterior.avaliadores_credenciados,
+        total_projetos: total_proj,
+        avaliadores_credenciados: aval_cred,
         avaliacoes_em_andamento: em_andamento_cnt,
         avaliacoes_realizadas: realizadas_cnt,
         cota_padrao,
         meta_global: meta_global_calculada,
-        porcentagem_conclusao: pct_conclusao_calculado || anterior.porcentagem_conclusao,
+        porcentagem_conclusao: pct_conclusao_calculado,
         porcentagem_concluidas: pct_concluidas || 0,
         porcentagem_em_andamento: pct_em_andamento || 0,
         porcentagem_fila: pct_fila || 0,

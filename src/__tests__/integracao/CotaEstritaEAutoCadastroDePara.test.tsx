@@ -197,7 +197,14 @@ describe('Regras de Negócio: Cota Estrita, Sorteio, Auto-cadastro e De-Para', (
       return criarQueryChain({ data: [], error: null });
     });
 
-    mockRpc.mockResolvedValue({ data: 'proj-sorteado-novo', error: null });
+    // A contagem para a cota vem da RPC (o avaliador não lê avaliações de outros pela RLS)
+    mockRpc.mockImplementation((nome: string) =>
+      Promise.resolve(
+        nome === 'fn_avaliacoes_ativas_do_projeto'
+          ? { data: 3, error: null }
+          : { data: 'proj-sorteado-novo', error: null },
+      ),
+    );
 
     const { unmount } = render(
       <TelaAvaliador

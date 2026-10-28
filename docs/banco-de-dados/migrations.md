@@ -134,3 +134,4 @@ de dados, restaure o backup gerado antes do `db push` ([restaurar backup](../ope
 | `20261026030000_proteger_funcoes_admin.sql` | Funções admin só para `authenticated` |
 | `20261028200000_proteger_funcoes_admin_e_relatorios.sql` | Guard `is_admin()` em todas as `admin_*`; relatórios `SECURITY INVOKER` |
 | `20261028210000_identidade_avaliador_staff.sql` | Vínculo do celular ao avaliador, códigos de acesso, Staff com conta, parâmetros por evento, RPCs de autocadastro e Telão |
+| `20261028220000_rls_por_papel.sql` | RLS por papel; sorteio e notas só em nome do avaliador do aparelho |

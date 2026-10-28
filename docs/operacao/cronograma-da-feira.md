@@ -28,14 +28,17 @@ SEGUNDA              TERÇA                QUARTA               QUINTA          
 - **11:00–12:00**: conferir duplicidades por `codigo_projeto`.
 - **13:00–15:30**: cadastrar os questionários oficiais (`GestorQuestionarios`): critérios, escala e pesos de cálculo e
   desempate.
-- **15:30–17:00**: importar avaliadores (instituição, áreas, modalidades bloqueadas) e equipe Staff.
+- **15:30–17:00**: importar avaliadores (instituição, áreas, modalidades bloqueadas) e equipe Staff. Criar a conta
+  de cada Staff no painel do Supabase ([como](../arquitetura/configuracao.md#criar-um-membro-do-staff)) e conferir a
+  seção **Acesso dos avaliadores** nas Configurações do evento.
 - **17:00–18:00**: simular um ciclo completo de avaliação em homologação. Configurar data, horários, cota e timeout
   do evento.
 
 ## Quarta-feira: feira, dia 1
 
-- **07:30–08:30**: credenciamento na `TelaStaff`: check-in de estandes e avaliadores; autocadastro por QR Code para
-  quem não estava cadastrado.
+- **07:30–08:30**: credenciamento na `TelaStaff`: check-in de estandes e **pareamento do celular de cada avaliador**
+  (o avaliador mostra o código, o Staff clica em Aparelho → Parear); autocadastro por QR Code para quem não estava
+  cadastrado.
 - **08:30–12:00**: **1ª rodada**. Avaliadores recebem projetos por sorteio na `TelaAvaliador`.
 - **12:00–13:30**: intervalo. Liberar travas abandonadas em **Projetos Bloqueados** (`admin_desbloquear_todos`).
 - **13:30–17:30**: **2ª rodada**. Usar **Atribuir Projeto** para bancas em projetos complexos.

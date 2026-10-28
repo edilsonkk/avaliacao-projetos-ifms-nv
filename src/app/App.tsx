@@ -13,6 +13,7 @@ import { TelaoAoVivo } from '@/features/relatorios';
 import { TelaAutocadastroAvaliador } from '@/features/avaliacao';
 import { supabase } from '@/lib/supabase';
 import { EVENTO_SESSAO_ADMIN_EXPIRADA, MENSAGEM_SESSAO_EXPIRADA } from '@/lib/sessaoAdmin';
+import { obterPerfilSessao } from '@/features/auth';
 
 export default function App() {
   // Inicialização com suporte a autocadastro via QR Code e rota raiz apontando para TelaLogin
@@ -59,6 +60,29 @@ export default function App() {
     set_tela_atual('login');
     set_aba_login('avaliador');
   };
+
+  // O papel salvo no navegador é só um atalho de tela: confere com a sessão real no banco.
+  // Se não bater (localStorage editado, aparelho desvinculado, sessão expirada), volta ao login.
+  useEffect(() => {
+    const perfil_local = (localStorage.getItem('usuario_perfil') || '').toLowerCase();
+    if (!['avaliador', 'staff', 'admin'].includes(perfil_local)) return;
+    let ativo = true;
+    obterPerfilSessao()
+      .then((perfil) => {
+        if (ativo && perfil.papel !== perfil_local) {
+          localStorage.clear();
+          set_usuario_logado(null);
+          set_aba_login(perfil_local as AbaLogin);
+          set_tela_atual('login');
+        }
+      })
+      .catch(() => {
+        // sem rede: mantém a tela; o banco continua barrando o que não for permitido
+      });
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   // Sessão do Supabase Auth inválida durante escrita administrativa: força novo login Admin
   useEffect(() => {
