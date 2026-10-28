@@ -39,6 +39,13 @@ A feira. Quase todas as tabelas são isoladas por `id_evento`.
 | `minutos_timeout_lock` | Duração da trava de avaliação (padrão 30) |
 | `cota_avaliacoes_padrao` | Avaliações por projeto (padrão 3) |
 | `limite_corte` | Numérico |
+| `minutos_validade_pareamento` | Validade do código de pareamento do celular (padrão 10; 1–60) |
+| `minutos_validade_codigo_acesso` | Validade do código de acesso gerado pelo Staff (padrão 15; 1–120) |
+| `tamanho_codigo` | Tamanho dos dois códigos (padrão 6; 6–10) |
+| `max_tentativas_codigo` | Tentativas por código de acesso antes de invalidá-lo (padrão 5; 1–10) |
+| `metodos_vinculo` | `ambos`, `pareamento` ou `codigo` |
+
+Os limites ficam em `CHECK` no banco e são editados nas Configurações do evento (engrenagem).
 
 ### `instituicoes`
 Instituições de ensino de projetos e avaliadores. Base do bloqueio de conflito de interesse.
@@ -68,6 +75,22 @@ Login e identidade de todos os perfis.
   Existe também o tipo enum `papel_usuario` (`ADMIN`, `STAFF`, `AVALIADOR`), não usado pela coluna.
 - A senha do Admin fica no Supabase Auth. A coluna `senha_hash` foi removida em
   `20261026020000_restringir_leitura_sensivel.sql`.
+
+### `usuarios.id_auth`
+Liga a conta do Supabase Auth (e-mail e senha) ao perfil do Staff, preenchido no primeiro login por
+`fn_vincular_conta_staff`. A PK `id_usuario` não muda.
+
+### `dispositivos_avaliador`
+Aparelho (sessão do Auth, `auth_uid`) vinculado a um avaliador. Um aparelho ativo por avaliador: um novo vínculo
+revoga o anterior (`revogado_em`). `metodo`: `pareamento` ou `codigo`. Sem acesso direto; só por funções.
+
+### `pareamentos_pendentes`
+Código que o celular mostra para o Staff parear. Não é credencial (só aponta o aparelho; quem decide é o Staff), por
+isso é gravado em texto. Expira conforme o evento.
+
+### `codigos_acesso`
+Código que o Staff gera para o avaliador digitar. É credencial: só o hash bcrypt é gravado, tem uso único e conta
+tentativas (`max_tentativas`). Gerar um novo invalida o anterior.
 
 ### `avaliadores_evento`
 Vínculo da pessoa com o evento. PK `(id_usuario, id_evento)`.
