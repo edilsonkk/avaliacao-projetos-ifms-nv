@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sun, Moon, Laptop, Shield, UserCheck, Award, Tv, LogOut } from 'lucide-react';
-import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
+import { ambiente_supabase, supabase } from '@/lib/supabase';
 
 export type TipoTelaNavegacao = 'avaliador' | 'staff' | 'admin' | 'telao';
 
@@ -22,7 +22,6 @@ export const Cabecalho: React.FC<PropriedadesCabecalho> = ({
     localStorage.getItem('tema_fecin') || 'sistema'
   );
 
-  const conexao_ativa = verificar_conexao_configurada();
   const papel = (
     propPapel ||
     localStorage.getItem('sessao_papel') ||
@@ -73,9 +72,27 @@ export const Cabecalho: React.FC<PropriedadesCabecalho> = ({
               <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight">
                 Sistema de Avaliação de Projetos IFMS
               </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                <span className={`inline-block w-2 h-2 rounded-full ${conexao_ativa ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                {conexao_ativa ? 'Supabase Conectado' : 'Supabase (Aguardando Chaves)'}
+              <p
+                role="status"
+                aria-label="Ambiente do banco de dados"
+                className={`text-xs flex items-center gap-1.5 ${
+                  ambiente_supabase === 'local'
+                    ? 'text-sky-700 dark:text-sky-300'
+                    : ambiente_supabase === 'producao'
+                      ? 'text-red-700 dark:text-red-400 font-semibold'
+                      : 'text-amber-700 dark:text-amber-400'
+                }`}
+              >
+                <span
+                  className={`inline-block w-2 h-2 rounded-full ${
+                    ambiente_supabase === 'local' ? 'bg-sky-500' : ambiente_supabase === 'producao' ? 'bg-red-500' : 'bg-amber-500'
+                  }`}
+                ></span>
+                {ambiente_supabase === 'local'
+                  ? 'Supabase LOCAL'
+                  : ambiente_supabase === 'producao'
+                    ? 'Supabase PRODUÇÃO'
+                    : 'Supabase não configurado'}
               </p>
             </div>
           </div>

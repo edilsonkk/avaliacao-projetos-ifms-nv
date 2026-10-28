@@ -152,3 +152,16 @@ Se persistir, confira se o usuário tem `usuarios.papel = 'ADMIN'` e conta no Su
 
 **Causa**: a `anon` não tem grant em todas as colunas ([segurança](../arquitetura/seguranca.md#regras-por-tabela)).
 **Solução**: listar explicitamente as colunas permitidas.
+
+---
+
+## `Port 3000 is already in use` ao rodar `npm run dev`
+
+**Causa**: já existe outro `npm run dev` rodando, às vezes esquecido em outra aba do terminal.
+**Solução**: feche o terminal antigo (Ctrl+C) ou encerre o processo:
+```bash
+lsof -nP -iTCP:3000 -sTCP:LISTEN     # mostra o PID
+kill <PID>
+```
+O script usa `--strictPort` de propósito: abrir em outra porta escondia servidores antigos usando outro `.env`
+(por exemplo, ainda apontando para produção).
