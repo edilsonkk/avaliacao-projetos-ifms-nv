@@ -25,7 +25,8 @@ manual ───────────► deploy-frontend.yml (rollback para u
 
 ## Como uma versão é publicada
 
-1. Cada PR é mergeado em `main` (squash) com título no padrão Conventional Commits. O título define a versão:
+1. Cada PR é mergeado em `main` (squash) com título no padrão Conventional Commits. O título define a versão (tags no
+   formato `vX.Y.Z`; a primeira, `sistema-avaliacao-projetos-ifms-v0.1.0`, saiu com o nome do pacote antes do ajuste):
 
    | Commit | Efeito na versão (enquanto `0.x`) | Exemplo |
    |---|---|---|
@@ -95,8 +96,7 @@ Ambiente **production** (*Settings → Environments → production*):
 |---|---|---|
 | `VITE_SUPABASE_URL` | Secret | URL do Supabase de produção no build |
 | `VITE_SUPABASE_ANON_KEY` | Secret | Chave pública de produção no build |
-| `SUPABASE_ACCESS_TOKEN` | Secret | CLI do Supabase (*Account → Access Tokens*) |
-| `SUPABASE_DB_PASSWORD` | Secret | Senha do Postgres de produção |
+| `SUPABASE_DB_PASSWORD` | Secret | Senha do Postgres de produção (a única credencial do banco usada no CI) |
 | `SUPABASE_PROJECT_REF` | Secret | ID do projeto Supabase |
 | `FIREBASE_SERVICE_ACCOUNT` | Secret | JSON da service account que publica no Firebase Hosting |
 | `BACKUP_PASSPHRASE` | Secret | Senha de criptografia dos backups. **Guarde-a também fora do GitHub**: sem ela o backup é inútil |
@@ -105,6 +105,7 @@ Variáveis do repositório (*Settings → Secrets and variables → Actions → 
 
 | Nome | Uso |
 |---|---|
+| `SUPABASE_DB_HOST` | Host do pooler do Supabase: `aws-0-us-east-1.pooler.supabase.com` |
 | `APP_URL` | URL pública da aplicação: `https://avaliacao-projetos-ifms-nv.web.app` |
 | `CONGELAMENTO_DEPLOY` | `true` bloqueia publicações (feira em andamento) |
 
@@ -177,8 +178,13 @@ CLI do Supabase fixada na versão `2.122.0` (`SUPABASE_CLI_VERSION`).
 
 1. **Validação** (sempre, inclusive em PR): nomes `AAAAMMDDHHMMSS_descricao.sql` com versões únicas; sem `DELETE`
    sem `WHERE`, `TRUNCATE` ou `CREATE INDEX CONCURRENTLY`.
-2. **Aplicação** (publicação de versão ou manual com `dry_run = false`): `link`, `migration list`, backup,
-   `db push`, `migration list`.
-3. Uma aplicação de cada vez, nunca cancelada no meio.
+2. **Aplicação** (publicação de versão ou manual com `dry_run = false`): `migration list`, backup, `db push`,
+   `migration list`.
+3. **Conexão**: direto no banco com `--db-url`, montado a partir de `SUPABASE_DB_HOST`, `SUPABASE_PROJECT_REF` e
+   `SUPABASE_DB_PASSWORD`. Não usa token de conta do Supabase, então o CI não depende de quem é dono da organização e
+   só tem acesso a este banco (menor privilégio). A conexão passa pelo **pooler em modo sessão (porta 5432)**, porque os
+   runners do GitHub só têm IPv4, e o endereço direto do banco (`db.<ref>.supabase.co`) é só IPv6 no plano gratuito.
+   O host do pooler aparece em *Project Settings → Database → Connection string → Session pooler*.
+4. Uma aplicação de cada vez, nunca cancelada no meio.
 
 Guia: [migrations](../banco-de-dados/migrations.md).
