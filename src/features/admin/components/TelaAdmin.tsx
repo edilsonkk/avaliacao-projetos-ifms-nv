@@ -236,44 +236,6 @@ export const TelaAdmin: React.FC = () => {
 
   const eventoAtivo = { id_evento: metricas_admin.evento_ativo_id };
 
-  // Intervenção Tática: Desbloquear Todos os Projetos
-  const [desbloqueando_todos_admin, set_desbloqueando_todos_admin] = useState<boolean>(false);
-
-  const executar_desbloquear_todos = async (e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    try {
-      set_desbloqueando_todos_admin(true);
-      // 1. Tenta via RPC oficial do Supabase
-      let { error } = await supabase.rpc('admin_desbloquear_todos');
-
-      // 2. Se a RPC falhar (ex: por causa da restrição "DELETE requires a WHERE clause" do safeupdate do PostgreSQL), aplica fallback com WHERE
-      if (error) {
-        console.warn('RPC admin_desbloquear_todos retornou erro, aplicando fallback com WHERE:', error.message);
-        const resFallback = await supabase
-          .from('locks_ativos')
-          .delete()
-          .neq('id_lock', '00000000-0000-0000-0000-000000000000');
-
-        if (resFallback.error) {
-          const resFallback2 = await supabase
-            .from('locks_ativos')
-            .delete()
-            .neq('id_projeto', '00000000-0000-0000-0000-000000000000');
-          if (resFallback2.error) throw error;
-        }
-      }
-
-      alert("Todos os projetos foram desbloqueados!");
-      await buscar_metricas_admin();
-    } catch (err: any) {
-      alert(`Erro ao desbloquear todos os projetos: ${err.message || err}`);
-    } finally {
-      set_desbloqueando_todos_admin(false);
-    }
-  };
-
-
-
   // Fetch obrigatório na view_relatorio_admin para o relatório em acordeão
   const buscar_view_relatorio_admin = async () => {
     set_carregando_relatorio_view(true);
@@ -494,10 +456,13 @@ export const TelaAdmin: React.FC = () => {
       const agoraIso = new Date().toISOString();
       let total_locks_count = 0;
       try {
-        const { count: count_locks } = await supabase
+        // Só travas de projetos do evento ativo (mesma regra da tela Projetos Bloqueados)
+        let consultaLocks: any = supabase
           .from('locks_ativos')
-          .select('*', { count: 'exact', head: true })
+          .select('id_lock, projetos!inner(id_evento)', { count: 'exact', head: true })
           .gt('expira_em', agoraIso);
+        if (idEventoAtivo && typeof consultaLocks.eq === 'function') consultaLocks = consultaLocks.eq('projetos.id_evento', idEventoAtivo);
+        const { count: count_locks } = await consultaLocks;
 
         total_locks_count = count_locks ?? 0;
       } catch (errLocks) {
@@ -1541,6 +1506,7 @@ export const TelaAdmin: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
           <div className="w-[98vw] max-w-[98vw] h-[95vh] max-h-[95vh] my-auto flex flex-col">
             <ProjetosBloqueados
+              id_evento_ativo={metricas_admin.evento_ativo_id}
               aoAtualizarMetricas={fetchDashboardData}
               aoFechar={() => {
                 set_mostrar_gestor_bloqueios(false);

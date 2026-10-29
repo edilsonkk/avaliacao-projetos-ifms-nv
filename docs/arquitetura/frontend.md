@@ -27,7 +27,7 @@ src/
 ├── components/             # Componentes compartilhados por mais de uma feature
 │   ├── importacao/         # Modal de mapeamento De-Para usado nas importações de planilhas
 │   ├── layout/             # Cabeçalho e navegação
-│   └── ui/                 # Peças de interface genéricas (ex.: `Dica`, ícone com explicação do campo)
+│   └── ui/                 # Peças de interface genéricas (`Dica`, `CabecalhoOrdenavel` para tabelas)
 ├── lib/                    # Código sem React: clientes, utilitários e regras puras
 │   ├── excel/              # Leitura/geração de planilhas (exceljs)
 │   ├── parsers/            # Parsers puros de planilhas e normalização de texto

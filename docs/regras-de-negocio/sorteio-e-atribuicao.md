@@ -99,7 +99,8 @@ Card **Atribuir Projeto** no Bloco 1 do painel Admin.
   novo.
 - Na inicialização, se a trava do avaliador aponta para projeto que ele já avaliou, a trava é removida e é feito
   novo sorteio.
-- O Admin libera travas no card **Projetos Bloqueados** (`admin_desbloquear_projeto` / `admin_desbloquear_todos`).
+- O Admin libera travas no card **Projetos Bloqueados**: uma por vez (`admin_desbloquear_trava`, só aquele
+  avaliador) ou todas (`admin_desbloquear_todos`), sempre com confirmação.
 
 Testes: `src/features/atribuicoes/__tests__/`, `src/__tests__/integracao/BloqueioModalidadesSorteioEAtribuicao.test.tsx`,
 `SorteioImpedirMesmoAvaliadorSoftDelete.test.tsx`, `CotaEstritaEAutoCadastroDePara.test.tsx`,
