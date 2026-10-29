@@ -117,8 +117,11 @@ BEGIN
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
-  UPDATE public.avaliacoes
-  SET is_quarentena = false
+  UPDATE public.avaliacoes SET is_quarentena = false WHERE id_projeto = p_id_projeto AND is_quarentena;
+  UPDATE public.projetos
+  SET quarentena_resolvida_em = now(),
+      quarentena_resolvida_por = (SELECT u.id_usuario FROM public.usuarios u
+                                  WHERE u.id_usuario = auth.uid() OR u.id_auth = auth.uid() LIMIT 1)
   WHERE id_projeto = p_id_projeto;
 END;
 $$;
@@ -127,17 +130,51 @@ $$;
 ALTER FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."admin_remover_quarentena_todos"() RETURNS "void"
+CREATE OR REPLACE FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid") RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
+DECLARE
+  v_projetos uuid[];
 BEGIN
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
-  UPDATE public.avaliacoes
-  SET is_quarentena = false
-  WHERE id_avaliacao IS NOT NULL;
+  SELECT coalesce(array_agg(id_projeto), '{}') INTO v_projetos
+  FROM public.view_projetos_quarentena WHERE id_evento = p_id_evento;
+
+  UPDATE public.avaliacoes SET is_quarentena = false WHERE id_projeto = ANY (v_projetos) AND is_quarentena;
+  UPDATE public.projetos
+  SET quarentena_resolvida_em = now(),
+      quarentena_resolvida_por = (SELECT u.id_usuario FROM public.usuarios u
+                                  WHERE u.id_usuario = auth.uid() OR u.id_auth = auth.uid() LIMIT 1)
+  WHERE id_projeto = ANY (v_projetos);
+  RETURN cardinality(v_projetos);
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_remover_quarentena_todos"() RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_projetos uuid[];
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  SELECT coalesce(array_agg(id_projeto), '{}') INTO v_projetos FROM public.view_projetos_quarentena;
+
+  UPDATE public.avaliacoes SET is_quarentena = false WHERE id_projeto = ANY (v_projetos) AND is_quarentena;
+  UPDATE public.projetos
+  SET quarentena_resolvida_em = now(),
+      quarentena_resolvida_por = (SELECT u.id_usuario FROM public.usuarios u
+                                  WHERE u.id_usuario = auth.uid() OR u.id_auth = auth.uid() LIMIT 1)
+  WHERE id_projeto = ANY (v_projetos);
 END;
 $$;
 
@@ -1992,11 +2029,21 @@ CREATE TABLE IF NOT EXISTS "public"."projetos" (
     "is_check_in_realizado" boolean DEFAULT false,
     "is_fora_da_competicao" boolean DEFAULT false,
     "forcar_topo_fila" boolean DEFAULT false,
-    "created_at" timestamp with time zone DEFAULT "now"()
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "quarentena_resolvida_em" timestamp with time zone,
+    "quarentena_resolvida_por" "uuid"
 );
 
 
 ALTER TABLE "public"."projetos" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."projetos"."quarentena_resolvida_em" IS 'Quando o Admin aceitou a divergência de notas. Avaliação nova depois disso reabre a quarentena.';
+
+
+
+COMMENT ON COLUMN "public"."projetos"."quarentena_resolvida_por" IS 'Admin (usuarios.id_usuario) que resolveu a quarentena.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."questionarios" (
@@ -2090,14 +2137,16 @@ CREATE OR REPLACE VIEW "public"."view_projetos_quarentena" WITH ("security_invok
     "round"("min"("a"."nota_final"), 2) AS "nota_minima",
     "round"("max"("a"."nota_final"), 2) AS "nota_maxima",
     "round"(("max"("a"."nota_final") - "min"("a"."nota_final")), 2) AS "diferenca_notas",
-    "bool_or"(COALESCE("a"."is_quarentena", false)) AS "tem_flag_quarentena"
+    "bool_or"(COALESCE("a"."is_quarentena", false)) AS "tem_flag_quarentena",
+    "p"."quarentena_resolvida_em",
+    "max"("a"."created_at") AS "ultima_avaliacao_em"
    FROM (((("public"."projetos" "p"
      LEFT JOIN "public"."modalidades" "m" ON (("m"."id_modalidade" = "p"."id_modalidade")))
      LEFT JOIN "public"."areas_tematicas" "ar" ON (("ar"."id_area" = "p"."id_area")))
      LEFT JOIN "public"."instituicoes" "inst" ON (("inst"."id_instituicao" = "p"."id_instituicao")))
      LEFT JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")))))
-  GROUP BY "p"."id_projeto", "p"."codigo_projeto", "p"."titulo", "p"."estande", "p"."corredor", "m"."nome_modalidade", "ar"."nome_area", "inst"."nome_exibicao", "p"."id_evento"
- HAVING (("bool_or"(COALESCE("a"."is_quarentena", false)) = true) OR (("count"("a"."id_avaliacao") >= 2) AND (("max"("a"."nota_final") - "min"("a"."nota_final")) > 2.5)));
+  GROUP BY "p"."id_projeto", "p"."codigo_projeto", "p"."titulo", "p"."estande", "p"."corredor", "m"."nome_modalidade", "ar"."nome_area", "inst"."nome_exibicao", "p"."id_evento", "p"."quarentena_resolvida_em"
+ HAVING ("bool_or"(COALESCE("a"."is_quarentena", false)) OR (("count"("a"."id_avaliacao") >= 2) AND (("max"("a"."nota_final") - "min"("a"."nota_final")) > 2.5) AND (("p"."quarentena_resolvida_em" IS NULL) OR ("max"("a"."created_at") > "p"."quarentena_resolvida_em"))));
 
 
 ALTER VIEW "public"."view_projetos_quarentena" OWNER TO "postgres";
@@ -2655,6 +2704,11 @@ ALTER TABLE ONLY "public"."projetos"
 
 
 
+ALTER TABLE ONLY "public"."projetos"
+    ADD CONSTRAINT "projetos_quarentena_resolvida_por_fkey" FOREIGN KEY ("quarentena_resolvida_por") REFERENCES "public"."usuarios"("id_usuario") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."questionarios"
     ADD CONSTRAINT "questionarios_id_evento_fkey" FOREIGN KEY ("id_evento") REFERENCES "public"."eventos"("id_evento") ON DELETE CASCADE;
 
@@ -2966,6 +3020,12 @@ GRANT ALL ON FUNCTION "public"."admin_desbloquear_trava"("p_id_lock" "uuid") TO 
 REVOKE ALL ON FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid") TO "service_role";
 
 
 
@@ -3304,7 +3364,6 @@ GRANT ALL ON TABLE "public"."view_projetos_pendentes_avaliacao" TO "service_role
 
 
 
-GRANT SELECT,MAINTAIN ON TABLE "public"."view_projetos_quarentena" TO "anon";
 GRANT SELECT,MAINTAIN ON TABLE "public"."view_projetos_quarentena" TO "authenticated";
 GRANT ALL ON TABLE "public"."view_projetos_quarentena" TO "service_role";
 

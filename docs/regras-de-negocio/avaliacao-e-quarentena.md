@@ -35,8 +35,18 @@ trava e sorteia outro projeto. Esse projeto não volta a ser sorteado para o mes
 - Um projeto entra em quarentena quando a diferença entre a **maior e a menor nota ativa** passa de **2,5 pontos**
   (com pelo menos 2 avaliações), ou quando `avaliacoes.is_quarentena = true`.
 - Aplicada automaticamente por `fn_enviar_avaliacao`; listada por `view_projetos_quarentena`.
-- A coordenação analisa no card **Projetos em Quarentena** e libera com `admin_remover_quarentena` (um) ou
-  `admin_remover_quarentena_todos`.
+- A coordenação analisa no card **Projetos em Quarentena**, que mostra só o **evento ativo**, começando pela maior
+  divergência, com a menor e a maior nota e o número de avaliações. **Ver notas** abre a nota de cada avaliador.
+- Para resolver, há dois caminhos:
+  1. **Descartar uma nota fora da curva**: card **Excluir uma avaliação** (soft delete). A divergência é recalculada
+     sem ela.
+  2. **Aceitar divergência**: `admin_remover_quarentena(p_id_projeto)` registra em `projetos.quarentena_resolvida_em`
+     / `quarentena_resolvida_por` que o Admin aceitou as notas atuais. O projeto sai da lista e do contador do painel
+     e **só volta se chegar uma avaliação nova** (com `created_at` depois da resolução).
+     **Resolver Todos** faz o mesmo para o evento ativo (`admin_remover_quarentena_evento(p_id_evento)`).
+- As duas ações de aceite pedem confirmação. O contador do painel conta projetos (não avaliações) do evento ativo.
+- Antes da migration `20261029220000`, "Tirar de Quarentena" só zerava `is_quarentena`: a divergência continuava e o
+  projeto voltava para a lista ao recarregar.
 
 ## Exclusão de avaliação (soft delete)
 
