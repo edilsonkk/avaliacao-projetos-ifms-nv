@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.0...v0.6.1) (2026-10-29)
+
+
+### Correções
+
+* **projetos:** importação por chave (id_evento, codigo_projeto) e revisão da tela de Projetos ([#22](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/22)) ([8611e08](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/8611e08b07b7141c9dd7474a60eef1a8b8c16178))
+
 ## [0.6.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.5.0...v0.6.0) (2026-10-29)
 
 
