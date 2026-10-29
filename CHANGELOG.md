@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.5.0...v0.6.0) (2026-10-29)
+
+
+### Funcionalidades
+
+* **sessao:** keep-alive da sessão ao retomar aparelho ocioso ([#20](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/20)) ([29dbfc6](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/29dbfc627f5ddbed89b74e7df24ed833c5af633a))
+
 ## [0.5.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.4.0...v0.5.0) (2026-10-29)
 
 
