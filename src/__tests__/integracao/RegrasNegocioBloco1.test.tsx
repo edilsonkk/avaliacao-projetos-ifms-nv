@@ -285,7 +285,7 @@ describe('Validação de Regras de Negócio Remodeladas do Bloco 1', () => {
 
     // 4. Clica em Excluir Avaliação e valida que abre o modal
     fireEvent.click(cardExcluir);
-    expect(await screen.findByText('Exclusão de Avaliações')).toBeDefined();
+    expect(await screen.findByRole('dialog', { name: 'Excluir uma avaliação' })).toBeDefined();
   });
 
   it('5. ATRIBUIÇÃO DE PROJETOS: valida conflito de mesma instituição e grava pela função do banco', async () => {
