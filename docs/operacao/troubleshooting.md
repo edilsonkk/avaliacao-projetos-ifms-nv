@@ -51,6 +51,17 @@ if (res.error && (res.error.message?.includes('schema cache') || res.error.code 
 
 ---
 
+## Erro "invalid input syntax for type numeric" ao cadastrar evento
+
+**Sintoma**: "Novo Evento" falhava com `invalid input syntax for type numeric: "AAAA-MM-DDT23:59:59+00:00"`, e o
+evento que estava ativo ficava desativado.
+**Causa**: o cadastro enviava a data em `limite_corte` (numérica) e desativava os outros eventos antes do insert.
+**Solução**: o payload não envia mais `limite_corte`, e os outros eventos só são desativados depois que o novo é
+gravado ([criação de evento](../regras-de-negocio/eventos.md#configurações-do-evento)).
+**Teste**: `src/features/admin/__tests__/GestaoNovoEvento.test.tsx`.
+
+---
+
 ## Data do evento não era salva
 
 **Sintoma**: alterar a data no `ModalConfiguracoesEvento` não tinha efeito.

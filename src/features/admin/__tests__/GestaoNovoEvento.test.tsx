@@ -64,7 +64,6 @@ describe('Rotina de Testes de Regressão: Gestão e Criação de Novo Evento', (
         is_ativo: true,
         cota_avaliacoes_padrao: 3,
         minutos_timeout_lock: 30,
-        limite_corte: '2026-10-22T23:59:59+00:00',
       },
       {
         id_evento: '99999999-8888-7777-6666-555555555555',
@@ -76,7 +75,6 @@ describe('Rotina de Testes de Regressão: Gestão e Criação de Novo Evento', (
         is_ativo: false,
         cota_avaliacoes_padrao: 3,
         minutos_timeout_lock: 30,
-        limite_corte: '2025-10-20T23:59:59+00:00',
       },
     ];
 
@@ -224,19 +222,21 @@ describe('Rotina de Testes de Regressão: Gestão e Criação de Novo Evento', (
     await waitFor(() => {
       // 1. Deve desativar os outros eventos
       expect(mockUpdate).toHaveBeenCalledWith({ is_ativo: false });
-      // 2. Deve inserir o novo evento com data_evento, horários, limite_corte e is_ativo: true
+      // 2. Deve inserir o novo evento com data_evento, horários e is_ativo: true
       expect(mockInsert).toHaveBeenCalledWith(
         expect.objectContaining({
           nome_evento: 'FETEC MS 2027',
           edicao: '18ª Edição',
           data_evento: '2027-10-25',
-          limite_corte: '2027-10-25T23:59:59+00:00',
           horario_inicio: '08:30',
           horario_fim: '19:00',
           is_ativo: true,
         })
       );
     });
+
+    // limite_corte é numérica (nota de corte): uma data ISO nela quebrava o cadastro no banco
+    expect(mockInsert.mock.calls[0][0]).not.toHaveProperty('limite_corte');
 
     // 3. O cabeçalho deve atualizar o nome do evento para o novo
     await waitFor(() => {
@@ -265,17 +265,17 @@ describe('Rotina de Testes de Regressão: Gestão e Criação de Novo Evento', (
 
     // O fallback deve ser acionado:
     // 1º tentativa com data_evento falhou (simulado PGRST204)
-    // 2º tentativa sem data_evento, mas COM limite_corte contendo a data do evento
+    // 2º tentativa só com os campos base, sem data_evento
     await waitFor(() => {
       expect(mockInsert).toHaveBeenCalledTimes(2);
       expect(mockInsert).toHaveBeenLastCalledWith(
         expect.objectContaining({
           nome_evento: 'FETEC MS 2028 RESILIENTE',
-          limite_corte: '2028-11-10T23:59:59+00:00',
           is_ativo: true,
         })
       );
     });
+    expect(mockInsert.mock.calls[1][0]).not.toHaveProperty('data_evento');
 
     // Não deve disparar alert de erro para o usuário
     expect(mockAlert).not.toHaveBeenCalledWith(
@@ -313,6 +313,37 @@ describe('Rotina de Testes de Regressão: Gestão e Criação de Novo Evento', (
 
     // Não deve ter desativado os outros eventos
     expect(mockUpdate).not.toHaveBeenCalledWith({ is_ativo: false });
+  });
+
+  it('5b. FALHA NO CADASTRO: mostra o erro e mantém o evento ativo atual', async () => {
+    // Arrange
+    const tabelaEventos = mockFrom.getMockImplementation()!;
+    mockFrom.mockImplementation((tabela: string) => {
+      const real = tabelaEventos(tabela);
+      if (tabela !== 'eventos') return real;
+      return {
+        ...real,
+        insert: vi.fn((payload: any) => {
+          mockInsert(payload);
+          return {
+            select: vi.fn(() => ({
+              single: vi.fn(() => Promise.resolve({ data: null, error: { code: '22P02', message: 'invalid input syntax' } })),
+            })),
+          };
+        }),
+      };
+    });
+    render(<TelaAdmin />);
+    fireEvent.click(await screen.findByRole('button', { name: /novo evento/i }));
+    fireEvent.change(screen.getByPlaceholderText('Ex: FETEC MS 2027'), { target: { value: 'Evento Com Erro' } });
+
+    // Act
+    fireEvent.click(screen.getByRole('button', { name: /cadastrar evento/i }));
+
+    // Assert
+    await waitFor(() => expect(mockAlert).toHaveBeenCalledWith(expect.stringContaining('Erro ao cadastrar novo evento')));
+    expect(mockUpdate).not.toHaveBeenCalledWith({ is_ativo: false });
+    expect(eventosRegistrados.find((e) => e.nome_evento === 'FETEC MS 2026')?.is_ativo).toBe(true);
   });
 
   it('6. HISTÓRICO DE EVENTOS: exibe edições anteriores e permite alternar o evento ativo', async () => {

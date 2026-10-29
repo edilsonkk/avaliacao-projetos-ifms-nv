@@ -187,15 +187,18 @@ export const TelaAdmin: React.FC = () => {
   const ativar_evento_historico = async (eventoAlvo: any) => {
     try {
       if (conexao_banco_configurada) {
-        await supabase
-          .from('eventos')
-          .update({ is_ativo: false })
-          .neq('id_evento', '00000000-0000-0000-0000-000000000000');
-
-        await supabase
+        // Ativa o alvo antes de desativar os outros, para nunca ficar sem evento ativo se algo falhar
+        const { error: erroAtivar } = await supabase
           .from('eventos')
           .update({ is_ativo: true })
           .eq('id_evento', eventoAlvo.id_evento);
+        if (erroAtivar) throw erroAtivar;
+
+        const { error: erroDesativar } = await supabase
+          .from('eventos')
+          .update({ is_ativo: false })
+          .neq('id_evento', eventoAlvo.id_evento);
+        if (erroDesativar) throw erroDesativar;
       }
 
       setNomeEvento(eventoAlvo.nome_evento);
@@ -717,18 +720,9 @@ export const TelaAdmin: React.FC = () => {
     try {
       set_salvando_novo_evento(true);
 
-      // Se definido como ativo imediatamente, desativa os outros no banco
-      if (novo_evento_is_ativo && conexao_banco_configurada) {
-        await supabase
-          .from('eventos')
-          .update({ is_ativo: false })
-          .neq('id_evento', '00000000-0000-0000-0000-000000000000');
-      }
-
       let idCriado = null;
       if (conexao_banco_configurada) {
         const dataFormatada = novo_evento_data || new Date().toISOString().split('T')[0];
-        const limiteCorteIso = `${dataFormatada}T23:59:59+00:00`;
 
         const payloadCompleto: any = {
           nome_evento: nomeLimpo,
@@ -742,7 +736,6 @@ export const TelaAdmin: React.FC = () => {
           is_ativo: novo_evento_is_ativo,
           sistema_liberado: true,
           intervalo_pausa_avaliador: 0,
-          limite_corte: limiteCorteIso,
         };
 
         let resInsert = await supabase
@@ -767,6 +760,15 @@ export const TelaAdmin: React.FC = () => {
           throw resInsert.error;
         }
         idCriado = resInsert.data?.id_evento;
+
+        // Só depois de gravar o novo evento desativa os outros: se o cadastro falhar, o evento ativo continua
+        if (novo_evento_is_ativo && idCriado) {
+          const { error: erroDesativar } = await supabase
+            .from('eventos')
+            .update({ is_ativo: false })
+            .neq('id_evento', idCriado);
+          if (erroDesativar) throw erroDesativar;
+        }
       }
 
       if (novo_evento_is_ativo) {
@@ -1831,8 +1833,8 @@ export const TelaAdmin: React.FC = () => {
                         </div>
                         <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-3 flex-wrap">
                           {evt.edicao && <span>{evt.edicao}</span>}
-                          {(evt.data_evento || evt.data_inicio || evt.limite_corte) && (
-                            <span>• Data: {evt.data_evento || evt.data_inicio || (evt.limite_corte ? evt.limite_corte.split('T')[0] : '')}</span>
+                          {(evt.data_evento || evt.data_inicio) && (
+                            <span>• Data: {evt.data_evento || evt.data_inicio}</span>
                           )}
                           {evt.horario_inicio && <span>• {evt.horario_inicio.slice(0, 5)} às {evt.horario_fim ? evt.horario_fim.slice(0, 5) : '18:00'}</span>}
                         </div>
