@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.3.1...v0.4.0) (2026-10-29)
+
+
+### Funcionalidades
+
+* **auth:** tela para redefinir a senha pelo link de recuperação ([#16](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/16)) ([2d46340](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/2d46340eedeab265b07835c4e8dd1df3a7ba50b4))
+
 ## [0.3.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.3.0...v0.3.1) (2026-10-29)
 
 
