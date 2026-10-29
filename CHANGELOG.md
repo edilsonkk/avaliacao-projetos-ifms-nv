@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.4.0...v0.5.0) (2026-10-29)
+
+
+### Funcionalidades
+
+* **admin:** configurações do evento em três colunas, sem rolagem, com dicas nos campos ([#18](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/18)) ([a3a378d](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/a3a378dee2d9c535039a03682373568c32256122))
+
 ## [0.4.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.3.1...v0.4.0) (2026-10-29)
 
 
