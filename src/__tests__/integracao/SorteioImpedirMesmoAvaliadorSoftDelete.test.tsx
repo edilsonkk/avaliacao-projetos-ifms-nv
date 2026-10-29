@@ -31,6 +31,7 @@ describe('Auditoria de Regressão: Impedir Reatribuição do Mesmo Projeto ao Me
       eq: vi.fn().mockReturnThis(),
       neq: vi.fn().mockReturnThis(),
       in: vi.fn().mockReturnThis(),
+      gt: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
       maybeSingle: vi.fn().mockResolvedValue(resultadoFinal),
@@ -189,8 +190,8 @@ describe('Auditoria de Regressão: Impedir Reatribuição do Mesmo Projeto ao Me
       if (tabela === 'avaliadores_evento') {
         return criarQueryChain({
           data: [
-            { id_usuario: usuarioAvaliadorId, id_instituicao: null, is_credenciado: true },
-            { id_usuario: outroAvaliadorId, id_instituicao: null, is_credenciado: true },
+            { id_usuario: usuarioAvaliadorId, id_instituicao: null, is_credenciado: true, usuarios: { nome: 'Avaliador Original', email: 'original@ifms.edu.br' } },
+            { id_usuario: outroAvaliadorId, id_instituicao: null, is_credenciado: true, usuarios: { nome: 'Outro Avaliador', email: 'outro@ifms.edu.br' } },
           ],
           error: null,
         });

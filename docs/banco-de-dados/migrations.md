@@ -138,3 +138,4 @@ de dados, restaure o backup gerado antes do `db push` ([restaurar backup](../ope
 | `20261029200000_chave_natural_projetos.sql` | `UNIQUE (id_evento, codigo_projeto)` para o upsert da importação de projetos |
 | `20261029210000_admin_desbloquear_trava.sql` | `admin_desbloquear_trava(p_id_lock)`: Admin libera a trava de um avaliador só |
 | `20261029220000_resolver_quarentena.sql` | `projetos.quarentena_resolvida_em/_por`; a view ignora divergência já aceita até chegar avaliação nova |
+| `20261029230000_atribuicao_forcada.sql` | Atribuição forçada validada no banco; `locks_ativos.atribuido_por` |

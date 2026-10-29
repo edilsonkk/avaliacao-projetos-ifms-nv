@@ -17,6 +17,7 @@ vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: mockFrom,
     rpc: mockRpc,
+    auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'jwt' } }, error: null }) },
   },
   verificar_conexao_configurada: vi.fn(() => true),
 }));
@@ -158,14 +159,14 @@ describe('Validação de Regras de Negócio Remodeladas do Bloco 1', () => {
               is_credenciado: true,
               id_instituicao: 'inst-1',
               instituicoes: { nome_exibicao: 'IFMS Câmpus CG' },
-              usuarios: { id_usuario: 'user-aval-1', papel: 'AVALIADOR' },
+              usuarios: { id_usuario: 'user-aval-1', nome: 'Prof. Carlos IFMS', email: 'carlos@ifms.edu.br', papel: 'AVALIADOR' },
             },
             {
               id_usuario: 'user-aval-2',
               is_credenciado: true,
               id_instituicao: 'inst-99',
               instituicoes: { nome_exibicao: 'Outra Instituição' },
-              usuarios: { id_usuario: 'user-aval-2', papel: 'AVALIADOR' },
+              usuarios: { id_usuario: 'user-aval-2', nome: 'Profa. Denise Outra', email: 'denise@outra.edu.br', papel: 'AVALIADOR' },
             },
           ],
           count: 15,
@@ -287,7 +288,7 @@ describe('Validação de Regras de Negócio Remodeladas do Bloco 1', () => {
     expect(await screen.findByText('Exclusão de Avaliações')).toBeDefined();
   });
 
-  it('5. ATRIBUIÇÃO DE PROJETOS: valida conflito de mesma instituição e exige expira_em futuro', async () => {
+  it('5. ATRIBUIÇÃO DE PROJETOS: valida conflito de mesma instituição e grava pela função do banco', async () => {
     render(
       <AtribuicaoForcada
         isOpen={true}
@@ -321,18 +322,10 @@ describe('Validação de Regras de Negócio Remodeladas do Bloco 1', () => {
     const btnAtribuir = screen.getByRole('button', { name: /Forçar Atribuição Elegível/i });
     fireEvent.click(btnAtribuir);
 
+    // A validação final e a gravação (tudo ou nada, validade de 2 h) ficam em admin_atribuir_banca
     await waitFor(() => {
-      expect(mockFrom).toHaveBeenCalledWith('locks_ativos');
-      expect(mockInsert).toHaveBeenCalledWith([
-        expect.objectContaining({
-          id_projeto: 'proj-1',
-          id_usuario: 'user-aval-2',
-          expira_em: expect.any(String),
-        }),
-      ]);
-
-      const payload = mockInsert.mock.calls[0][0][0];
-      expect(new Date(payload.expira_em).getTime()).toBeGreaterThan(Date.now());
+      expect(mockRpc).toHaveBeenCalledWith('admin_atribuir_banca', { p_id_projeto: 'proj-1', p_ids_usuarios: ['user-aval-2'] });
     });
+    expect(mockInsert).not.toHaveBeenCalled();
   });
 });
