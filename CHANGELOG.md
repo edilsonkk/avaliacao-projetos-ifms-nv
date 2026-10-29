@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.2.0...v0.3.0) (2026-10-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **seguranca:** identidade real para Avaliador e Staff com RLS por papel ([#13](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/13))
+
+### Funcionalidades
+
+* **seguranca:** identidade real para Avaliador e Staff com RLS por papel ([#13](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/13)) ([27aec6d](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/27aec6ddf6347fc3de577f3922b25ca013123d51))
+* **seguranca:** vínculo do celular ao avaliador, códigos de acesso e conta do Staff ([#12](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/12)) ([d0f1fa4](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/d0f1fa496ea244cc4a4b2c95e8dc55bc1614c5e7))
+
+
+### Correções
+
+* **security:** exigir is_admin() em todas as funções administrativas ([#10](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/10)) ([a02d335](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/a02d335397bfcbc660a0ec3d481b80ee421de619))
+
 ## [0.2.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.1.1...v0.2.0) (2026-10-28)
 
 
