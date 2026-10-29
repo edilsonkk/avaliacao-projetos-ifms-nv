@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.1...v0.6.2) (2026-10-29)
+
+
+### Correções
+
+* **atribuicoes:** Projetos Bloqueados libera só o avaliador escolhido e pede confirmação ([#24](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/24)) ([ddad9d5](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/ddad9d5c70cbc52b15fb0686c5eff99eae600b93))
+
 ## [0.6.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.0...v0.6.1) (2026-10-29)
 
 
