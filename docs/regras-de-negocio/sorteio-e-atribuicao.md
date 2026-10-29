@@ -76,7 +76,7 @@ Tabela `avaliador_areas (id_usuario, id_evento, id_area)`. Um avaliador pode ter
 
 ## Forçar topo da fila
 
-Botão `Topo da Fila` / `Normal` ao lado do Check-in em cada linha do Gestor de Projetos (âmbar quando ativo). Liga
+Botão `Priorizar` / `Topo da Fila` ao lado do Check-in em cada linha do Gestor de Projetos (âmbar quando ativo). Liga
 `projetos.forcar_topo_fila`, primeiro critério de ordenação do sorteio.
 
 ## Atribuição forçada (`AtribuicaoForcada`)

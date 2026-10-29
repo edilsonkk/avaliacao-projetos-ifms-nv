@@ -10,7 +10,6 @@
 
 
 
-
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -2333,6 +2332,15 @@ ALTER TABLE ONLY "public"."instituicao_aliases"
 
 ALTER TABLE ONLY "public"."modalidade_aliases"
     ADD CONSTRAINT "uq_modalidade_alias_normalizado" UNIQUE ("id_modalidade", "alias_normalizado");
+
+
+
+ALTER TABLE ONLY "public"."projetos"
+    ADD CONSTRAINT "uq_projetos_evento_codigo" UNIQUE ("id_evento", "codigo_projeto");
+
+
+
+COMMENT ON CONSTRAINT "uq_projetos_evento_codigo" ON "public"."projetos" IS 'Chave natural da importação: o código do projeto é único dentro do evento.';
 
 
 

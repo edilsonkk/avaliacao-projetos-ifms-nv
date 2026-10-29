@@ -6,12 +6,16 @@ Padrões que todo código novo deve seguir. Se um padrão precisar mudar, regist
 ## Padrões de dados e domínio
 
 ### Upsert por chave natural
-Chaves do domínio (`codigo_projeto`, `email`, `nome_normalizado`) são a âncora de idempotência. Importar a mesma
-planilha duas vezes atualiza os registros, sem duplicar.
+Chaves do domínio (`codigo_projeto` dentro do evento, `email`, `nome_normalizado`) são a âncora de idempotência.
+Importar a mesma planilha duas vezes atualiza os registros, sem duplicar.
 
 ```ts
-await supabase.from('projetos').upsert(listaProjetos, { onConflict: 'codigo_projeto' });
+await supabase.from('projetos').upsert(listaProjetos, { onConflict: 'id_evento,codigo_projeto' });
 ```
+
+O `onConflict` precisa bater **exatamente** com uma constraint `UNIQUE` (não parcial) do banco. Sem ela, o Postgres
+recusa com `there is no unique or exclusion constraint matching the ON CONFLICT specification`. Chave nova de upsert
+= migration com a constraint + teste em `supabase/tests/`.
 
 ### UUID nunca aparece na interface
 O UUID interno (`id_projeto` etc.) **nunca** é exibido. Use a chave natural (`codigo_projeto`, ex.: `FETEC-001`).

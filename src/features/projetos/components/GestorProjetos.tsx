@@ -67,6 +67,11 @@ export interface ModalidadeRef {
   nome_modalidade: string;
 }
 
+/** Chave natural do upsert da importação (constraint uq_projetos_evento_codigo). */
+export const CHAVE_NATURAL_PROJETOS = 'id_evento,codigo_projeto';
+
+const MENSAGEM_SEM_EVENTO_ATIVO = 'Nenhum evento ativo. Ative ou crie um evento nas Configurações antes de cadastrar projetos.';
+
 interface GestorProjetosProps {
   aoFechar?: () => void;
   idProjetoEditarInicial?: string | null;
@@ -127,7 +132,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
   const [salvando, set_salvando] = useState<boolean>(false);
 
   // Ordenação de colunas
-  const [colunaOrdenacao, setColunaOrdenacao] = useState<'codigo' | 'corredor' | 'estande' | 'presenca' | 'titulo' | 'topo'>('codigo');
+  const [colunaOrdenacao, setColunaOrdenacao] = useState<ColunaOrdenacao>('codigo');
   const [direcaoOrdenacao, setDirecaoOrdenacao] = useState<'asc' | 'desc'>('asc');
 
   const conexao_banco = verificar_conexao_configurada();
@@ -210,8 +215,9 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
 
       await carregar_dados_referencia();
 
-      // Consulta enriquecida com relações de FK
-      const { data, error } = await supabase
+      // Consulta enriquecida com relações de FK, sempre escopada pelo evento ativo
+      const filtrarEvento = (q: any) => (idEvt ? q.eq('id_evento', idEvt) : q);
+      const { data, error } = await filtrarEvento(supabase
         .from('projetos')
         .select(`
           id_projeto,
@@ -229,14 +235,14 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
           instituicoes ( id_instituicao, nome_exibicao, sigla ),
           areas_tematicas ( id_area, nome_area ),
           modalidades ( id_modalidade, nome_modalidade )
-        `)
+        `))
         .order('titulo', { ascending: true });
 
       if (error) {
         // Fallback de consulta simplificada se join falhar
-        const { data: dataSimples, error: erroSimples } = await supabase
+        const { data: dataSimples, error: erroSimples } = await filtrarEvento(supabase
           .from('projetos')
-          .select('id_projeto, codigo_projeto, titulo, estande, corredor, is_check_in_realizado, id_evento, id_instituicao, id_area, id_modalidade, is_fora_da_competicao, forcar_topo_fila')
+          .select('id_projeto, codigo_projeto, titulo, estande, corredor, is_check_in_realizado, id_evento, id_instituicao, id_area, id_modalidade, is_fora_da_competicao, forcar_topo_fila'))
           .order('titulo', { ascending: true });
 
         if (erroSimples) throw error;
@@ -279,24 +285,15 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
     }
 
     try {
-      let erro_retornado: any = null;
-      const { error: erro_projetos } = await supabase
+      if (!(await garantirSessaoAdmin())) return;
+      const { error: erro_retornado } = await supabase
         .from('projetos')
         .update({ is_check_in_realizado: novo_status_check_in })
         .eq('id_projeto', id_alvo);
 
-      if (erro_projetos) {
-        const { error: erro_singular } = await supabase
-          .from('projeto')
-          .update({ is_check_in_realizado: novo_status_check_in })
-          .eq('id', id_alvo);
-
-        erro_retornado = erro_singular;
-      }
-
       if (erro_retornado) {
         console.error('Erro no Supabase ao atualizar check-in do projeto:', erro_retornado.message);
-        set_mensagem_erro(`Falha ao atualizar check-in no banco: ${erro_retornado.message}`);
+        set_mensagem_erro(`Falha ao atualizar check-in no banco: ${tratarErroEscritaAdmin(erro_retornado)}`);
         return;
       }
 
@@ -344,6 +341,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
     }
 
     try {
+      if (!(await garantirSessaoAdmin())) return;
       const { error } = await supabase
         .from('projetos')
         .update({ forcar_topo_fila: novo_status })
@@ -365,7 +363,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
       if (aoAtualizarMetricas) aoAtualizarMetricas();
     } catch (err: any) {
       console.error('Erro ao alternar topo da fila do projeto:', err);
-      set_mensagem_erro(`Falha ao alterar prioridade: ${err?.message || 'Erro no banco'}`);
+      set_mensagem_erro(`Falha ao alterar prioridade: ${tratarErroEscritaAdmin(err)}`);
     } finally {
       set_processando_topo_fila_id(null);
     }
@@ -405,10 +403,14 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
       return;
     }
 
+    const idEvt = obterEventoAtivoId() || null;
+    if (conexao_banco && !idEvt) {
+      set_mensagem_erro(MENSAGEM_SEM_EVENTO_ATIVO);
+      return;
+    }
+
     set_salvando_novo(true);
     set_mensagem_erro(null);
-
-    const idEvt = obterEventoAtivoId() || null;
 
     const payload: any = {
       codigo_projeto: novo_codigo.trim() || null,
@@ -445,6 +447,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
     }
 
     try {
+      if (!(await garantirSessaoAdmin())) return;
       const { error } = await supabase
         .from('projetos')
         .insert([payload]);
@@ -457,7 +460,11 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
       if (aoAtualizarMetricas) aoAtualizarMetricas();
     } catch (err: any) {
       console.error('Erro ao cadastrar projeto:', err);
-      set_mensagem_erro(`Falha ao cadastrar projeto: ${err?.message || 'Erro no banco'}`);
+      set_mensagem_erro(
+        err?.code === '23505'
+          ? `Já existe um projeto com o código "${payload.codigo_projeto}" neste evento.`
+          : `Falha ao cadastrar projeto: ${tratarErroEscritaAdmin(err)}`
+      );
     } finally {
       set_salvando_novo(false);
     }
@@ -529,345 +536,236 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
       .replace(/[\u0300-\u036f]/g, '')
       .trim();
 
-  // Gravação final de projetos após De-Para ou casamento exato direto
+  // Gravação final de projetos após De-Para ou casamento exato direto.
+  // Referências novas (instituições, áreas, modalidades) vão num único insert por tabela
+  // e os projetos num único upsert pela chave natural (id_evento, codigo_projeto).
   const executarGravacaoFinalProjetos = async (
     linhasParseadas: any[],
     decisoes: Map<string, DecisaoMapeamento>
   ) => {
-    if (conexao_banco && !(await garantirSessaoAdmin())) return;
+    const idEvt = obterEventoAtivoId() || null;
+    if (conexao_banco && !idEvt) {
+      adicionarLog('error', MENSAGEM_SEM_EVENTO_ATIVO);
+      set_mensagem_erro(MENSAGEM_SEM_EVENTO_ATIVO);
+      set_processando_arquivo(false);
+      return;
+    }
+    if (conexao_banco && !(await garantirSessaoAdmin())) {
+      set_processando_arquivo(false);
+      return;
+    }
     set_processando_arquivo(true);
     try {
-      const idEvt = obterEventoAtivoId() || null;
-      adicionarLog('info', `Gravando projetos vinculados ao Evento Ativo: ${idEvt || 'Nenhum evento ativo selecionado'}`);
-
-      // Caches de casamento inteligente
+      // Caches de casamento: nome/sigla normalizados -> id
       const mapaInst = new Map<string, string>();
       lista_instituicoes.forEach((inst) => {
         if (inst.nome_exibicao) mapaInst.set(normalizarTexto(inst.nome_exibicao), inst.id_instituicao);
         if (inst.sigla) mapaInst.set(normalizarTexto(inst.sigla), inst.id_instituicao);
       });
-
       const mapaAreas = new Map<string, string>();
       lista_areas.forEach((a) => {
         if (a.nome_area) mapaAreas.set(normalizarTexto(a.nome_area), a.id_area);
       });
-
       const mapaModalidades = new Map<string, string>();
       lista_modalidades.forEach((m) => {
         if (m.nome_modalidade) mapaModalidades.set(normalizarTexto(m.nome_modalidade), m.id_modalidade);
       });
 
-      // Aplica decisões de De-Para (vincular a existente ou cadastrar novo)
-      for (const [termo, decisao] of decisoes.entries()) {
-        if (decisao.tipo === 'instituicao') {
-          if (decisao.acao === 'associar_existente' && decisao.id_destino) {
-            mapaInst.set(normalizarTexto(termo), decisao.id_destino);
-          } else if (decisao.acao === 'cadastrar_novo' || (decisao.acao as any) === 'criar_novo') {
-            const nomeCriar = decisao.novo_nome?.trim() || termo.trim();
-            const kCriar = normalizarTexto(nomeCriar);
-            if (!mapaInst.has(kCriar)) {
-              if (conexao_banco) {
-                try {
-                  const siglaCriar = nomeCriar.length <= 10 ? nomeCriar.toUpperCase() : null;
-                  const payloadInst: any = {
-                    nome_exibicao: nomeCriar,
-                    nome_normalizado: kCriar,
-                    sigla: siglaCriar,
-                  };
-                  if (idEvt) payloadInst.id_evento = idEvt;
+      // 1. Levanta as referências que faltam (uma por nome normalizado), sem gravar nada ainda
+      const instNovas = new Map<string, { nome: string; sigla: string | null; termos: Set<string> }>();
+      const modNovas = new Map<string, { nome: string; termos: Set<string> }>();
+      const areasNovas = new Map<string, { nome: string; termos: Set<string> }>();
+      const instCobertas = new Set<string>(); // nomes/siglas que já terão uma instituição nova
 
-                  let { data: novaInst, error: errInst } = await supabase
-                    .from('instituicoes')
-                    .insert([payloadInst])
-                    .select('id_instituicao, nome_exibicao, sigla')
-                    .single();
-
-                  // Fallback seguro caso o banco remoto ainda não tenha a coluna id_evento aplicada
-                  if (errInst && errInst.message && errInst.message.includes('id_evento')) {
-                    delete payloadInst.id_evento;
-                    const retry = await supabase
-                      .from('instituicoes')
-                      .insert([payloadInst])
-                      .select('id_instituicao, nome_exibicao, sigla')
-                      .single();
-                    novaInst = retry.data;
-                    errInst = retry.error;
-                  }
-
-                  if (!errInst && novaInst) {
-                    mapaInst.set(kCriar, novaInst.id_instituicao);
-                    mapaInst.set(normalizarTexto(termo), novaInst.id_instituicao);
-                    set_lista_instituicoes((prev) => [...prev, novaInst]);
-                    adicionarLog('info', `Instituição cadastrada via De-Para: "${nomeCriar}".`);
-                  } else if (errInst) {
-                    console.error('Falha ao cadastrar instituição via De-Para no banco:', errInst);
-                  }
-                } catch (eInst) {
-                  console.warn('Erro ao criar instituição via De-Para:', eInst);
-                }
-              } else {
-                const fakeId = crypto.randomUUID();
-                mapaInst.set(kCriar, fakeId);
-                mapaInst.set(normalizarTexto(termo), fakeId);
-                set_lista_instituicoes((prev) => [...prev, { id_instituicao: fakeId, nome_exibicao: nomeCriar, sigla: nomeCriar.substring(0, 10).toUpperCase(), id_evento: idEvt }]);
-              }
-            }
-          }
-        } else if (decisao.tipo === 'modalidade') {
-          if (decisao.acao === 'associar_existente' && decisao.id_destino) {
-            mapaModalidades.set(normalizarTexto(termo), decisao.id_destino);
-          } else if (decisao.acao === 'cadastrar_novo' || (decisao.acao as any) === 'criar_novo') {
-            const nomeCriar = decisao.novo_nome?.trim() || termo.trim();
-            const kCriar = normalizarTexto(nomeCriar);
-            if (!mapaModalidades.has(kCriar)) {
-              if (conexao_banco) {
-                try {
-                  const payloadMod: any = { 
-                    nome_modalidade: nomeCriar,
-                  };
-                  if (idEvt) payloadMod.id_evento = idEvt;
-
-                  let { data: novaMod, error: errMod } = await supabase
-                    .from('modalidades')
-                    .insert([payloadMod])
-                    .select('id_modalidade, nome_modalidade')
-                    .single();
-
-                  // Fallback seguro caso o banco remoto ainda não tenha a coluna id_evento aplicada
-                  if (errMod && errMod.message && errMod.message.includes('id_evento')) {
-                    delete payloadMod.id_evento;
-                    const retry = await supabase
-                      .from('modalidades')
-                      .insert([payloadMod])
-                      .select('id_modalidade, nome_modalidade')
-                      .single();
-                    novaMod = retry.data;
-                    errMod = retry.error;
-                  }
-
-                  if (!errMod && novaMod) {
-                    mapaModalidades.set(kCriar, novaMod.id_modalidade);
-                    mapaModalidades.set(normalizarTexto(termo), novaMod.id_modalidade);
-                    set_lista_modalidades((prev) => [...prev, novaMod]);
-                    adicionarLog('info', `Modalidade cadastrada via De-Para: "${nomeCriar}".`);
-                  } else if (errMod) {
-                    console.error('Falha ao cadastrar modalidade via De-Para no banco:', errMod);
-                  }
-                } catch (eMod) {
-                  console.warn('Erro ao criar modalidade via De-Para:', eMod);
-                }
-              } else {
-                const fakeId = crypto.randomUUID();
-                mapaModalidades.set(kCriar, fakeId);
-                mapaModalidades.set(normalizarTexto(termo), fakeId);
-                set_lista_modalidades((prev) => [...prev, { id_modalidade: fakeId, nome_modalidade: nomeCriar, id_evento: idEvt }]);
-              }
-            }
+      for (const decisao of decisoes.values()) {
+        if (decisao.tipo !== 'instituicao' && decisao.tipo !== 'modalidade') continue;
+        const termo = decisao.termo_original;
+        const kTermo = normalizarTexto(termo);
+        const criarNovo = decisao.acao === 'cadastrar_novo' || (decisao.acao as any) === 'criar_novo';
+        const mapa = decisao.tipo === 'instituicao' ? mapaInst : mapaModalidades;
+        if (decisao.acao === 'associar_existente' && decisao.id_destino) {
+          mapa.set(kTermo, decisao.id_destino);
+        } else if (criarNovo) {
+          const nome = decisao.novo_nome?.trim() || termo.trim();
+          const k = normalizarTexto(nome);
+          if (mapa.has(k)) {
+            mapa.set(kTermo, mapa.get(k)!);
+          } else if (decisao.tipo === 'instituicao') {
+            const item = instNovas.get(k) || { nome, sigla: nome.length <= 10 ? nome.toUpperCase() : null, termos: new Set<string>() };
+            item.termos.add(kTermo);
+            instNovas.set(k, item);
+            instCobertas.add(k).add(kTermo);
+          } else {
+            const item = modNovas.get(k) || { nome, termos: new Set<string>() };
+            item.termos.add(kTermo);
+            modNovas.set(k, item);
           }
         }
       }
 
+      for (const linha of linhasParseadas) {
+        const nomeInst = (linha.instituicao || '').trim();
+        const siglaInst = (linha.sigla_instituicao || '').trim();
+        const kNome = normalizarTexto(nomeInst);
+        const kSigla = normalizarTexto(siglaInst);
+        const jaResolvida = mapaInst.has(kNome) || (kSigla && mapaInst.has(kSigla)) || instCobertas.has(kNome) || (kSigla && instCobertas.has(kSigla));
+        if (nomeInst && !jaResolvida) {
+          instNovas.set(kNome, { nome: nomeInst, sigla: siglaInst ? siglaInst.toUpperCase() : null, termos: new Set(kSigla ? [kSigla] : []) });
+          instCobertas.add(kNome);
+          if (kSigla) instCobertas.add(kSigla);
+        }
+        if (linha.area_tematica) {
+          const nomeArea = normalizarAreaTematica(linha.area_tematica);
+          const kArea = normalizarTexto(nomeArea);
+          const kOrig = normalizarTexto(linha.area_tematica);
+          if (!mapaAreas.has(kArea) && !mapaAreas.has(kOrig)) {
+            const item = areasNovas.get(kArea) || { nome: nomeArea, termos: new Set<string>() };
+            item.termos.add(kOrig);
+            areasNovas.set(kArea, item);
+          }
+        }
+      }
+
+      // 2. Um único insert por tabela de referência
+      const cadastrarEmLote = async <T extends Record<string, any>>(
+        tabela: string,
+        payloads: Record<string, any>[],
+        colunas: string,
+        campoId: string
+      ): Promise<T[]> => {
+        if (payloads.length === 0) return [];
+        if (!conexao_banco) return payloads.map((p) => ({ ...p, [campoId]: crypto.randomUUID() }) as unknown as T);
+        const { data, error } = await supabase.from(tabela).insert(payloads).select(colunas);
+        if (error) throw Object.assign(error, { tabela });
+        return (data || []) as unknown as T[];
+      };
+
+      const instCriadas = await cadastrarEmLote<InstituicaoRef & { nome_normalizado: string }>(
+        'instituicoes',
+        [...instNovas.entries()].map(([k, i]) => ({ nome_exibicao: i.nome, nome_normalizado: k, sigla: i.sigla, id_evento: idEvt })),
+        'id_instituicao, nome_exibicao, sigla, nome_normalizado',
+        'id_instituicao'
+      );
+      instCriadas.forEach((inst) => {
+        const k = inst.nome_normalizado || normalizarTexto(inst.nome_exibicao);
+        mapaInst.set(k, inst.id_instituicao);
+        if (inst.sigla) mapaInst.set(normalizarTexto(inst.sigla), inst.id_instituicao);
+        instNovas.get(k)?.termos.forEach((t) => mapaInst.set(t, inst.id_instituicao));
+      });
+
+      const areasCriadas = await cadastrarEmLote<AreaRef>(
+        'areas_tematicas',
+        [...areasNovas.values()].map((a) => ({ nome_area: a.nome, id_evento: idEvt })),
+        'id_area, nome_area',
+        'id_area'
+      );
+      areasCriadas.forEach((area) => {
+        const k = normalizarTexto(area.nome_area);
+        mapaAreas.set(k, area.id_area);
+        areasNovas.get(k)?.termos.forEach((t) => mapaAreas.set(t, area.id_area));
+      });
+
+      const modsCriadas = await cadastrarEmLote<ModalidadeRef>(
+        'modalidades',
+        [...modNovas.values()].map((m) => ({ nome_modalidade: m.nome, id_evento: idEvt })),
+        'id_modalidade, nome_modalidade',
+        'id_modalidade'
+      );
+      modsCriadas.forEach((mod) => {
+        const k = normalizarTexto(mod.nome_modalidade);
+        mapaModalidades.set(k, mod.id_modalidade);
+        modNovas.get(k)?.termos.forEach((t) => mapaModalidades.set(t, mod.id_modalidade));
+      });
+
+      if (instCriadas.length) {
+        set_lista_instituicoes((prev) => [...prev, ...instCriadas]);
+        adicionarLog('info', `${instCriadas.length} instituição(ões) nova(s) cadastrada(s): ${instCriadas.map((i) => i.nome_exibicao).join(', ')}.`);
+      }
+      if (areasCriadas.length) {
+        set_lista_areas((prev) => [...prev, ...areasCriadas]);
+        adicionarLog('info', `${areasCriadas.length} área(s) temática(s) nova(s) cadastrada(s): ${areasCriadas.map((a) => a.nome_area).join(', ')}.`);
+      }
+      if (modsCriadas.length) {
+        set_lista_modalidades((prev) => [...prev, ...modsCriadas]);
+        adicionarLog('info', `${modsCriadas.length} modalidade(s) nova(s) cadastrada(s): ${modsCriadas.map((m) => m.nome_modalidade).join(', ')}.`);
+      }
+
+      // 3. Monta os projetos (código repetido na planilha: vale a última linha)
       const mapaProjetos = new Map<string, any>();
-      const projetosSemCodigo: Array<any> = [];
+      const projetosSemCodigo: any[] = [];
 
       for (const linha of linhasParseadas) {
         const numLinha = linha.linha_original;
-        const codigo_extraido = linha.codigo_projeto || '';
-        const titulo_extraido = linha.titulo;
-        const estande_extraido = linha.estande || '';
-        const corredor_extraido = linha.corredor || '';
-        const instituicao_extraida = linha.instituicao || '';
-        const sigla_extraida = linha.sigla_instituicao || '';
-        const area_extraida = linha.area_tematica || '';
-        const modalidade_extraida = linha.modalidade || '';
-        const isFora = linha.fora_da_competicao;
+        const kNome = normalizarTexto(linha.instituicao || '');
+        const kSigla = normalizarTexto(linha.sigla_instituicao || '');
+        const id_inst_resolvido = (kNome && mapaInst.get(kNome)) || (kSigla && mapaInst.get(kSigla)) || null;
 
-        // 1. Resolução de Instituição (mapa ou auto-cadastro único sem duplicar)
-        let id_inst_resolvido: string | null = null;
-        if (instituicao_extraida || sigla_extraida) {
-          const kNome = normalizarTexto(instituicao_extraida);
-          const kSigla = normalizarTexto(sigla_extraida);
-          if (kNome && mapaInst.has(kNome)) {
-            id_inst_resolvido = mapaInst.get(kNome)!;
-          } else if (kSigla && mapaInst.has(kSigla)) {
-            id_inst_resolvido = mapaInst.get(kSigla)!;
-          } else if (instituicao_extraida.trim()) {
-            // Auto-cadastro seguro da instituição: cadastra uma única vez no lote
-            const nomeCriar = instituicao_extraida.trim();
-            const chaveCriar = normalizarTexto(nomeCriar);
-            if (mapaInst.has(chaveCriar)) {
-              id_inst_resolvido = mapaInst.get(chaveCriar)!;
-            } else if (conexao_banco) {
-              try {
-                const siglaCriar = sigla_extraida ? sigla_extraida.trim().toUpperCase() : null;
-                const payloadInst: any = {
-                  nome_exibicao: nomeCriar,
-                  nome_normalizado: chaveCriar,
-                  sigla: siglaCriar,
-                };
-                if (idEvt) payloadInst.id_evento = idEvt;
-
-                let { data: novaInst, error: errInst } = await supabase
-                  .from('instituicoes')
-                  .insert([payloadInst])
-                  .select('id_instituicao, nome_exibicao, sigla')
-                  .single();
-
-                // Fallback caso o banco remoto ainda não tenha a coluna id_evento aplicada
-                if (errInst && errInst.message && errInst.message.includes('id_evento')) {
-                  delete payloadInst.id_evento;
-                  const retry = await supabase
-                    .from('instituicoes')
-                    .insert([payloadInst])
-                    .select('id_instituicao, nome_exibicao, sigla')
-                    .single();
-                  novaInst = retry.data;
-                  errInst = retry.error;
-                }
-
-                if (!errInst && novaInst) {
-                  id_inst_resolvido = novaInst.id_instituicao;
-                  mapaInst.set(chaveCriar, novaInst.id_instituicao);
-                  if (siglaCriar) mapaInst.set(normalizarTexto(siglaCriar), novaInst.id_instituicao);
-                  set_lista_instituicoes((prev) => [...prev, novaInst]);
-                  adicionarLog('info', `Linha ${numLinha}: Instituição auto-cadastrada no evento: "${nomeCriar}".`);
-                }
-              } catch (eInst) {
-                console.warn('Erro ao auto-cadastrar instituição:', eInst);
-              }
-            } else {
-              const fakeId = crypto.randomUUID();
-              id_inst_resolvido = fakeId;
-              mapaInst.set(chaveCriar, fakeId);
-              if (sigla_extraida) mapaInst.set(normalizarTexto(sigla_extraida), fakeId);
-              set_lista_instituicoes((prev) => [...prev, { id_instituicao: fakeId, nome_exibicao: nomeCriar, sigla: sigla_extraida || null, id_evento: idEvt }]);
-            }
-          }
-        }
-
-        // 2. Resolução de Área Temática com padronização CNPq / Maiúsculo
         let id_area_resolvida: string | null = null;
-        if (area_extraida) {
-          const nomeAreaPadronizada = normalizarAreaTematica(area_extraida);
-          const kArea = normalizarTexto(nomeAreaPadronizada);
-          const kAreaOrig = normalizarTexto(area_extraida);
-
-          if (mapaAreas.has(kArea)) {
-            id_area_resolvida = mapaAreas.get(kArea)!;
-          } else if (mapaAreas.has(kAreaOrig)) {
-            id_area_resolvida = mapaAreas.get(kAreaOrig)!;
-          } else if (conexao_banco) {
-            try {
-              const payloadArea: any = { nome_area: nomeAreaPadronizada };
-              if (idEvt) payloadArea.id_evento = idEvt;
-
-              let { data: novaArea, error: errArea } = await supabase
-                .from('areas_tematicas')
-                .insert([payloadArea])
-                .select('id_area, nome_area')
-                .single();
-
-              if (errArea && errArea.message && errArea.message.includes('id_evento')) {
-                delete payloadArea.id_evento;
-                const retry = await supabase
-                  .from('areas_tematicas')
-                  .insert([payloadArea])
-                  .select('id_area, nome_area')
-                  .single();
-                novaArea = retry.data;
-                errArea = retry.error;
-              }
-
-              if (!errArea && novaArea) {
-                id_area_resolvida = novaArea.id_area;
-                mapaAreas.set(kArea, novaArea.id_area);
-                mapaAreas.set(kAreaOrig, novaArea.id_area);
-                set_lista_areas((prev) => [...prev, novaArea]);
-                adicionarLog('info', `Linha ${numLinha}: Área Temática padronizada e cadastrada no evento: "${nomeAreaPadronizada}".`);
-              } else if (errArea) {
-                console.warn('Erro ao cadastrar área temática:', errArea);
-              }
-            } catch (eArea) {
-              console.warn('Erro ao auto-cadastrar área temática:', eArea);
-            }
-          } else {
-            const fakeId = crypto.randomUUID();
-            id_area_resolvida = fakeId;
-            mapaAreas.set(kArea, fakeId);
-            mapaAreas.set(kAreaOrig, fakeId);
-            set_lista_areas((prev) => [...prev, { id_area: fakeId, nome_area: nomeAreaPadronizada, id_evento: idEvt }]);
-          }
+        if (linha.area_tematica) {
+          id_area_resolvida =
+            mapaAreas.get(normalizarTexto(normalizarAreaTematica(linha.area_tematica))) ||
+            mapaAreas.get(normalizarTexto(linha.area_tematica)) ||
+            null;
         }
 
-        // 3. Resolução de Modalidade
-        let id_mod_resolvida: string | null = null;
-        if (modalidade_extraida) {
-          const kMod = normalizarTexto(modalidade_extraida);
-          if (mapaModalidades.has(kMod)) {
-            id_mod_resolvida = mapaModalidades.get(kMod)!;
-          }
+        const modalidade_extraida = (linha.modalidade || '').trim();
+        const id_mod_resolvida = modalidade_extraida ? mapaModalidades.get(normalizarTexto(modalidade_extraida)) || null : null;
+        if (modalidade_extraida && !id_mod_resolvida) {
+          adicionarLog('error', `Linha ${numLinha}: modalidade "${modalidade_extraida}" não encontrada; o projeto fica sem modalidade.`);
         }
 
+        // forcar_topo_fila e is_check_in_realizado ficam de fora: reimportar não desfaz o que a equipe marcou
         const payload = {
-          codigo_projeto: codigo_extraido || null,
-          titulo: titulo_extraido || 'Projeto Sem Título',
-          estande: estande_extraido || null,
-          corredor: corredor_extraido || null,
+          codigo_projeto: String(linha.codigo_projeto || '').trim() || null,
+          titulo: linha.titulo || 'Projeto Sem Título',
+          estande: linha.estande || null,
+          corredor: linha.corredor || null,
           id_evento: idEvt,
           id_instituicao: id_inst_resolvido,
           id_area: id_area_resolvida,
           id_modalidade: id_mod_resolvida,
-          is_fora_da_competicao: isFora,
-          forcar_topo_fila: false,
+          is_fora_da_competicao: Boolean(linha.fora_da_competicao),
         };
 
         if (payload.codigo_projeto) {
+          if (mapaProjetos.has(payload.codigo_projeto)) {
+            adicionarLog('error', `Linha ${numLinha}: código "${payload.codigo_projeto}" repetido na planilha; vale esta última linha.`);
+          }
           mapaProjetos.set(payload.codigo_projeto, payload);
         } else {
           projetosSemCodigo.push(payload);
         }
-
-        adicionarLog(
-          'info',
-          `Linha ${numLinha}: "${payload.titulo}" (${payload.codigo_projeto || 'Sem Cód.'}) | Evento: ${idEvt ? 'OK' : 'N/A'} | Inst: ${id_inst_resolvido ? 'OK' : '-'} | Área: ${id_area_resolvida ? 'OK' : '-'} | Mod: ${id_mod_resolvida ? 'OK' : '-'} | Fora: ${isFora ? 'Sim' : 'Não'}`
-        );
       }
 
-      const projetosFormatados: any[] = [];
-      mapaProjetos.forEach((p) => projetosFormatados.push(p));
-      projetosSemCodigo.forEach((p) => projetosFormatados.push(p));
+      const projetosFormatados: any[] = [...mapaProjetos.values(), ...projetosSemCodigo];
 
       if (projetosFormatados.length === 0) {
         adicionarLog('error', 'Nenhum projeto válido encontrado para importação.');
         set_mensagem_erro('Nenhum projeto válido encontrado para importação.');
-        set_processando_arquivo(false);
         return;
       }
+      if (projetosSemCodigo.length > 0) {
+        adicionarLog('error', `${projetosSemCodigo.length} projeto(s) sem código: serão criados de novo a cada reimportação.`);
+      }
 
-      adicionarLog('info', `Consolidando ${projetosFormatados.length} projetos para envio via UPSERT...`);
+      adicionarLog('info', `Enviando ${projetosFormatados.length} projetos em um único lote...`);
 
       if (conexao_banco) {
-        try {
-          const { error } = await supabase
-            .from('projetos')
-            .upsert(projetosFormatados, { onConflict: 'codigo_projeto' });
+        const { error } = await supabase
+          .from('projetos')
+          .upsert(projetosFormatados, { onConflict: CHAVE_NATURAL_PROJETOS });
 
-          if (error) {
-            console.error('Erro no upsert de projetos:', error);
-            const msgErro = tratarErroEscritaAdmin(error);
-            adicionarLog('error', `Erro no banco ao realizar UPSERT: ${msgErro}`);
-            set_mensagem_erro(`Erro ao importar projetos: ${msgErro}`);
-          } else {
-            adicionarLog('success', `UPSERT concluído com sucesso! ${projetosFormatados.length} projetos cadastrados/atualizados com evento e referências.`);
-            exibir_sucesso(`Importação concluída: ${projetosFormatados.length} projetos cadastrados/atualizados com sucesso!`);
-            await carregar_projetos();
-            if (aoAtualizarMetricas) aoAtualizarMetricas();
-          }
-        } catch (errUpsert: any) {
-          console.error('Exceção no upsert de projetos:', errUpsert);
-          adicionarLog('error', `Erro inesperado no upsert: ${errUpsert?.message || errUpsert}`);
-          set_mensagem_erro(`Erro inesperado: ${errUpsert?.message || errUpsert}`);
+        if (error) {
+          console.error('Erro no upsert de projetos:', error);
+          const msgErro = tratarErroEscritaAdmin(error);
+          adicionarLog('error', `Erro no banco ao gravar os projetos: ${msgErro}`);
+          set_mensagem_erro(`Erro ao importar projetos: ${msgErro}`);
+          return;
         }
+        adicionarLog('success', `Importação concluída: ${projetosFormatados.length} projetos cadastrados ou atualizados.`);
+        exibir_sucesso(`Importação concluída: ${projetosFormatados.length} projetos cadastrados ou atualizados.`);
+        await carregar_projetos();
+        if (aoAtualizarMetricas) aoAtualizarMetricas();
       } else {
         const novosItens: ProjetoItem[] = projetosFormatados.map((p) => ({
           id_projeto: crypto.randomUUID(),
@@ -876,27 +774,21 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
           areas_tematicas: lista_areas.find((a) => a.id_area === p.id_area) || null,
           modalidades: lista_modalidades.find((m) => m.id_modalidade === p.id_modalidade) || null,
         }));
-
         set_projetos((prev) => {
           const mapa = new Map<string, ProjetoItem>();
-          prev.forEach((p) => {
-            if (p.codigo_projeto) mapa.set(p.codigo_projeto, p);
-            else mapa.set(p.id_projeto, p);
-          });
-          novosItens.forEach((p) => {
-            if (p.codigo_projeto) mapa.set(p.codigo_projeto, p);
-            else mapa.set(p.id_projeto, p);
-          });
+          [...prev, ...novosItens].forEach((p) => mapa.set(p.codigo_projeto || p.id_projeto, p));
           return Array.from(mapa.values());
         });
-
         adicionarLog('success', `[Modo Contingência] ${projetosFormatados.length} projetos inseridos/atualizados.`);
         exibir_sucesso(`Importação concluída: ${projetosFormatados.length} projetos processados!`);
         if (aoAtualizarMetricas) aoAtualizarMetricas();
       }
     } catch (errGeral: any) {
       console.error('Erro geral ao gravar projetos:', errGeral);
-      set_mensagem_erro('Erro ao gravar projetos no sistema.');
+      const onde = errGeral?.tabela ? ` (cadastro em ${errGeral.tabela})` : '';
+      const msg = `Erro ao importar projetos${onde}: ${tratarErroEscritaAdmin(errGeral)}`;
+      adicionarLog('error', msg);
+      set_mensagem_erro(msg);
     } finally {
       set_processando_arquivo(false);
     }
@@ -938,8 +830,12 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
           avisos.forEach((aviso) => adicionarLog('info', aviso));
           adicionarLog('info', `Planilha lida com sucesso! ${total_lido} linhas para processamento.`);
 
-          const idEvt = obterEventoAtivoId() || null;
-          adicionarLog('info', `Vinculando projetos ao Evento Ativo: ${idEvt || 'Nenhum evento ativo selecionado'}`);
+          if (conexao_banco && !obterEventoAtivoId()) {
+            adicionarLog('error', MENSAGEM_SEM_EVENTO_ATIVO);
+            set_mensagem_erro(MENSAGEM_SEM_EVENTO_ATIVO);
+            set_processando_arquivo(false);
+            return;
+          }
 
           // 1. Prepara candidatos com seus aliases
           let candidatosInst: CandidatoMatch[] = lista_instituicoes.map((i) => ({
@@ -1116,6 +1012,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
 
     try {
       if (conexao_banco && idProjetoEditado) {
+        if (!(await garantirSessaoAdmin())) return;
         const { error } = await supabase
           .from('projetos')
           .update(dadosAtualizacao)
@@ -1149,7 +1046,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
       if (aoAtualizarMetricas) aoAtualizarMetricas();
     } catch (err: any) {
       console.error('Erro ao atualizar projeto:', err);
-      set_mensagem_erro(`Erro ao salvar alterações: ${err.message || err}`);
+      set_mensagem_erro(`Erro ao salvar alterações: ${tratarErroEscritaAdmin(err)}`);
     } finally {
       set_salvando(false);
     }
@@ -1170,6 +1067,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
 
     try {
       if (conexao_banco && idDoProjeto) {
+        if (!(await garantirSessaoAdmin())) return;
         const { error } = await supabase
           .from('projetos')
           .delete()
@@ -1189,7 +1087,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
             set_mensagem_erro(msgFk);
             return;
           } else {
-            const msgErr = `Erro do Supabase ao excluir: ${error.message}`;
+            const msgErr = `Erro do Supabase ao excluir: ${tratarErroEscritaAdmin(error)}`;
             alert(msgErr);
             set_mensagem_erro(msgErr);
             return;
@@ -1209,7 +1107,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
     }
   };
 
-  const alternarOrdenacao = (coluna: 'codigo' | 'corredor' | 'estande' | 'presenca' | 'titulo' | 'topo') => {
+  const alternarOrdenacao = (coluna: ColunaOrdenacao) => {
     if (colunaOrdenacao === coluna) {
       setDirecaoOrdenacao((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -1265,9 +1163,8 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoOrdenacao === 'asc' ? valA - valB : valB - valA;
       }
-      return direcaoOrdenacao === 'asc'
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+      const comparacao = String(valA).localeCompare(String(valB), 'pt-BR', { numeric: true, sensitivity: 'base' });
+      return direcaoOrdenacao === 'asc' ? comparacao : -comparacao;
     });
   }, [projetos_filtrados, colunaOrdenacao, direcaoOrdenacao]);
 
@@ -1368,7 +1265,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
 
       {/* Console de Logs da Importação Direta (retrátil) */}
       {(logs_importacao.length > 0 || processando_arquivo) && (
-        <div className="bg-gray-900 text-green-400 p-4 rounded-xl max-h-48 overflow-y-auto font-mono text-xs space-y-1.5 border border-slate-800 shadow-inner">
+        <div role="log" aria-label="Console de logs da importação" className="bg-gray-900 text-green-400 p-4 rounded-xl max-h-48 overflow-y-auto font-mono text-xs space-y-1.5 border border-slate-800 shadow-inner">
           <div className="flex items-center justify-between pb-1 border-b border-gray-800 mb-2">
             <div className="flex items-center gap-2 text-slate-400 font-sans text-[10px] font-bold uppercase tracking-wider">
               <Terminal className="w-3.5 h-3.5 text-emerald-400" />
@@ -1566,7 +1463,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
 
       {/* Alertas */}
       {mensagem_erro && (
-        <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 text-xs flex items-center justify-between gap-2">
+        <div role="alert" className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 text-xs flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
             <span className="font-semibold">{mensagem_erro}</span>
@@ -1582,7 +1479,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
       )}
 
       {mensagem_sucesso && (
-        <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs flex items-center gap-2">
+        <div role="status" className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
           <span className="font-semibold">{mensagem_sucesso}</span>
         </div>
@@ -1596,6 +1493,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
             type="text"
             value={termo_busca}
             onChange={(e) => set_termo_busca(e.target.value)}
+            aria-label="Buscar projetos"
             placeholder="Buscar por código, título, estande, instituição ou área..."
             className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
@@ -1608,15 +1506,19 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
               {totalTopoFila} no Topo da Fila
             </span>
           )}
-          <span>
-            Total: <strong className="text-slate-800 dark:text-slate-200">{projetos_filtrados.length}</strong> projetos (
-            <span className="text-emerald-600 dark:text-emerald-400 font-bold">{totalProjetosCredenciados} credenciados</span>)
+          <span role="status">
+            {termo_busca.trim() ? (
+              <>Mostrando <strong className="text-slate-800 dark:text-slate-200">{projetos_filtrados.length}</strong> de {totalProjetosCadastrados} projetos</>
+            ) : (
+              <><strong className="text-slate-800 dark:text-slate-200">{totalProjetosCadastrados}</strong> projetos</>
+            )}{' '}
+            (<span className="text-emerald-600 dark:text-emerald-400 font-bold">{totalProjetosCredenciados} com check-in</span>)
           </span>
         </div>
       </div>
 
       {/* Tabela de Projetos: Exibe CÓDIGO (codigo_projeto), Corredor, Estande, Título com Metadados e Ações */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div>
         {carregando ? (
           <div className="p-12 text-center space-y-3">
             <Loader2 className="w-8 h-8 text-emerald-600 animate-spin mx-auto" />
@@ -1631,80 +1533,21 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
               Nenhum projeto localizado.
             </p>
             <p className="text-[11px] text-slate-400">
-              {termo_busca ? 'Tente ajustar os termos de pesquisa.' : 'Nenhum registro encontrado na tabela projetos do banco.'}
+              {termo_busca ? 'Tente ajustar os termos de pesquisa.' : 'Nenhum projeto neste evento. Importe uma planilha ou use "Novo Projeto".'}
             </p>
           </div>
         ) : (
-          <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs">
-            <table className="w-full text-left text-xs">
+          <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-x-auto shadow-xs">
+            <table className="w-full min-w-[760px] text-left text-xs">
+              <caption className="sr-only">Projetos do evento ativo</caption>
               <thead className="bg-slate-100 dark:bg-slate-800 uppercase font-black text-[10px] text-slate-600 dark:text-slate-400 tracking-wider">
                 <tr>
-                  <th
-                    onClick={() => alternarOrdenacao('codigo')}
-                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>CÓDIGO</span>
-                      {colunaOrdenacao === 'codigo' ? (
-                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-emerald-600" /> : <ArrowDown className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      )}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => alternarOrdenacao('corredor')}
-                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Corredor</span>
-                      {colunaOrdenacao === 'corredor' ? (
-                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-emerald-600" /> : <ArrowDown className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      )}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => alternarOrdenacao('estande')}
-                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Estande</span>
-                      {colunaOrdenacao === 'estande' ? (
-                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-emerald-600" /> : <ArrowDown className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      )}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => alternarOrdenacao('presenca')}
-                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Presença</span>
-                      {colunaOrdenacao === 'presenca' ? (
-                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-emerald-600" /> : <ArrowDown className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      )}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => alternarOrdenacao('titulo')}
-                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Título & Metadados</span>
-                      {colunaOrdenacao === 'titulo' ? (
-                        direcaoOrdenacao === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-emerald-600" /> : <ArrowDown className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      )}
-                    </div>
-                  </th>
-                  <th className="px-4 py-3 text-right">Ações (Check-in, Topo da Fila & CRUD)</th>
+                  <CabecalhoOrdenavel coluna="codigo" rotulo="Código" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
+                  <CabecalhoOrdenavel coluna="corredor" rotulo="Corredor" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
+                  <CabecalhoOrdenavel coluna="estande" rotulo="Estande" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
+                  <CabecalhoOrdenavel coluna="presenca" rotulo="Presença" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
+                  <CabecalhoOrdenavel coluna="titulo" rotulo="Título e detalhes" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
+                  <th scope="col" className="px-4 py-3 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
@@ -1760,7 +1603,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
                           )}
                         </span>
                       </td>
-                      <td className="px-4 py-3 max-w-md">
+                      <td className="px-4 py-3 min-w-[16rem] max-w-md">
                         <div className="font-bold text-slate-900 dark:text-white leading-snug">
                           {tituloProj}
                         </div>
@@ -1798,7 +1641,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
                             </span>
                           )}
                           {isTopoFila && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-950 px-2 py-0.5 rounded-md border border-amber-300 dark:border-amber-700 animate-pulse">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-950 px-2 py-0.5 rounded-md border border-amber-300 dark:border-amber-700">
                               <Zap className="w-2.5 h-2.5 text-amber-600 fill-amber-600" />
                               Topo da Fila
                             </span>
@@ -1812,20 +1655,21 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
                           onClick={() => alternar_check_in_projeto(idProj, isCheckin)}
                           disabled={isProcessingThis}
                           title={isCheckin ? 'Desmarcar presença do projeto' : 'Confirmar check-in presencial'}
-                          className={`px-3 py-1.5 rounded-lg font-bold text-xs border transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                          aria-label={`${isCheckin ? 'Desmarcar presença' : 'Check-in'} do projeto ${codigoProj}`}
+                          className={`px-3 py-1.5 xl:w-44 justify-center rounded-lg font-bold text-xs border transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
                             isCheckin
                               ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
                               : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs'
                           }`}
                         >
                           {isProcessingThis ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <Loader2 aria-hidden="true" className="shrink-0 w-3.5 h-3.5 animate-spin" />
                           ) : isCheckin ? (
-                            <XCircle className="w-3.5 h-3.5 text-amber-700 dark:text-amber-300" />
+                            <XCircle aria-hidden="true" className="shrink-0 w-3.5 h-3.5 text-amber-700 dark:text-amber-300" />
                           ) : (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                            <CheckCircle2 aria-hidden="true" className="shrink-0 w-3.5 h-3.5 text-white" />
                           )}
-                          <span>{isCheckin ? 'Desmarcar Presença' : 'Check-in'}</span>
+                          <span className="hidden xl:inline">{isCheckin ? 'Desmarcar Presença' : 'Check-in'}</span>
                         </button>
 
                         {/* Botão Forçar Topo da Fila (Ao lado de Check-in) */}
@@ -1833,23 +1677,25 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
                           type="button"
                           onClick={() => alternar_forcar_topo_fila(idProj, isTopoFila)}
                           disabled={isProcessingTopo}
+                          aria-pressed={isTopoFila}
+                          aria-label={`Prioridade no sorteio do projeto ${codigoProj}`}
                           title={
                             isTopoFila
                               ? 'Remover do Topo da Fila (voltar à fila comum de sorteio)'
                               : 'Forçar este projeto para o Topo da Fila de sorteio dos avaliadores'
                           }
-                          className={`px-3 py-1.5 rounded-lg font-bold text-xs border transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                          className={`px-3 py-1.5 xl:w-32 justify-center rounded-lg font-bold text-xs border transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
                             isTopoFila
                               ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-sm'
                               : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
                           }`}
                         >
                           {isProcessingTopo ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <Loader2 aria-hidden="true" className="shrink-0 w-3.5 h-3.5 animate-spin" />
                           ) : (
                             <Zap className={`w-3.5 h-3.5 ${isTopoFila ? 'text-white fill-white' : 'text-amber-500'}`} />
                           )}
-                          <span>{isTopoFila ? 'Topo da Fila' : 'Normal'}</span>
+                          <span className="hidden xl:inline">{isTopoFila ? 'Topo da Fila' : 'Priorizar'}</span>
                         </button>
 
                         {/* Botão Editar (Ícone compacto) */}
@@ -1857,7 +1703,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
                           type="button"
                           onClick={() => abrir_edicao(p)}
                           title="Editar Projeto"
-                          aria-label="Editar Projeto"
+                          aria-label={`Editar projeto ${codigoProj}`}
                           className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -1868,7 +1714,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
                           type="button"
                           onClick={() => excluir_projeto(p)}
                           title="Excluir Projeto"
-                          aria-label="Excluir Projeto"
+                          aria-label={`Excluir projeto ${codigoProj}`}
                           className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 text-red-600 dark:text-red-400 transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1886,9 +1732,9 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
       {/* Modal / Formulário de Edição */}
       {projeto_em_edicao && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150">
+          <div role="dialog" aria-modal="true" aria-labelledby="titulo-editar-projeto" className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-lg w-full max-h-[calc(100dvh-2rem)] overflow-y-auto border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <h3 id="titulo-editar-projeto" className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
                 <Edit2 className="w-4 h-4 text-blue-600" /> Editar Projeto
               </h3>
               <button
@@ -2072,5 +1918,31 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
         />
       )}
     </div>
+  );
+};
+
+type ColunaOrdenacao = 'codigo' | 'corredor' | 'estande' | 'presenca' | 'titulo' | 'topo';
+
+/** Cabeçalho de coluna clicável e acessível por teclado, com o estado de ordenação anunciado (aria-sort). */
+const CabecalhoOrdenavel: React.FC<{
+  coluna: ColunaOrdenacao;
+  rotulo: string;
+  ativa: ColunaOrdenacao;
+  direcao: 'asc' | 'desc';
+  aoOrdenar: (coluna: ColunaOrdenacao) => void;
+}> = ({ coluna, rotulo, ativa, direcao, aoOrdenar }) => {
+  const ordenada = ativa === coluna;
+  const Icone = !ordenada ? ArrowUpDown : direcao === 'asc' ? ArrowUp : ArrowDown;
+  return (
+    <th scope="col" aria-sort={ordenada ? (direcao === 'asc' ? 'ascending' : 'descending') : 'none'} className="p-0">
+      <button
+        type="button"
+        onClick={() => aoOrdenar(coluna)}
+        className="w-full px-4 py-3 flex items-center gap-1.5 uppercase font-black tracking-wider hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500"
+      >
+        <span>{rotulo}</span>
+        <Icone aria-hidden="true" className={`w-3.5 h-3.5 ${ordenada ? 'text-emerald-600' : 'text-slate-400'}`} />
+      </button>
+    </th>
   );
 };

@@ -108,7 +108,7 @@ Modalidades que o avaliador não pode avaliar. PK `(id_usuario, id_evento, id_mo
 | Coluna | Descrição |
 |---|---|
 | `id_projeto` | PK (nunca exibida na interface) |
-| `codigo_projeto` | **Chave natural**, única (ex.: `FETEC-001`) |
+| `codigo_projeto` | **Chave natural**, única por evento: `UNIQUE (id_evento, codigo_projeto)` (ex.: `FETEC-001`) |
 | `id_evento`, `id_instituicao`, `id_area`, `id_modalidade` | FKs. Projeto sem `id_evento` nunca é sorteado |
 | `id_questionario_fixado` | Questionário usado nas avaliações do projeto |
 | `titulo`, `expositores`, `estande`, `corredor` | Dados de exibição |
