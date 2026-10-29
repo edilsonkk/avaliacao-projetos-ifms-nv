@@ -79,7 +79,28 @@ O login do Admin exige uma conta no Supabase Auth **e** uma linha em `usuarios` 
 2. No painel do Supabase (*Authentication → Users → Add user*), crie a conta com **o mesmo e-mail** e uma senha
    provisória, marcando "Auto confirm".
 3. A pessoa entra na aba **Staff** com e-mail e senha. No primeiro login a conta é ligada ao perfil automaticamente.
-   Ela pode trocar a senha por "Esqueci minha senha".
+   Ela pode trocar a senha por "Esqueci minha senha" (ver [Trocar a senha](#trocar-a-senha)).
+
+## Trocar a senha
+
+Vale para Admin e Staff:
+
+1. Na aba **Admin** ou **Staff**, digite o e-mail e clique em **Esqueci minha senha**.
+2. O e-mail traz um link para `/redefinir-senha` (`TelaRedefinirSenha`), no mesmo endereço em que o app foi aberto.
+3. A pessoa digita a nova senha duas vezes (mínimo 8 caracteres). O app grava com `supabase.auth.updateUser`,
+   encerra a sessão do link e volta ao login.
+
+Link expirado ou já usado mostra o aviso para pedir outro. O endereço precisa estar nas *Redirect URLs* do Auth
+(produção: `https://avaliacao-projetos-ifms-nv.web.app/**`; local: `http://localhost:3000/**` e
+`http://127.0.0.1:3000/**` em `supabase/config.toml`). Fora da lista, o Supabase ignora o destino e usa o *Site URL*;
+o app também reconhece o evento `PASSWORD_RECOVERY` e abre a tela.
+
+No local, os e-mails não saem da máquina: abra o **Mailpit** em http://127.0.0.1:54324.
+
+> **Produção:** o envio de e-mail padrão do Supabase só entrega para e-mails da equipe do projeto no painel e tem
+> limite de poucos e-mails por hora. Para o Staff receber o link no próprio e-mail, configure um SMTP próprio em
+> *Authentication → Emails → SMTP Settings*. Sem isso, o Admin recria a conta do Staff no painel (*Delete user* e
+> *Add user* com a nova senha): o perfil em `usuarios` continua e é religado no primeiro login.
 
 No local, faça o mesmo pelo Studio (http://127.0.0.1:54323).
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Award, UserCheck, Shield, Mail, Lock, Loader2, AlertTriangle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { VinculoAvaliador } from './VinculoAvaliador';
+import { urlRedefinirSenha } from './TelaRedefinirSenha';
 import { obterPerfilSessao, salvarPerfilLocal, type PerfilSessao } from '../vinculoAparelho';
 
 export type AbaLogin = 'avaliador' | 'staff' | 'admin';
@@ -168,7 +169,7 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
     setCarregando(true);
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(emailLimpo);
+      const { error } = await supabase.auth.resetPasswordForEmail(emailLimpo, { redirectTo: urlRedefinirSenha() });
       if (error) {
         setMensagemErro(`Erro ao solicitar recuperação: ${error.message}`);
       } else {

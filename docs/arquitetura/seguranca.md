@@ -101,6 +101,10 @@ O cadastro público aberto **não dá acesso**. A conta criada não tem papel: n
 de Admin, e só vira Staff se o **e-mail confirmado** for igual ao de um Staff cadastrado pelo Admin. Isso é coberto por
 testes. Não desligue o provedor de e-mail: no Supabase, isso bloqueia também o login com senha de Admin e Staff.
 
+Troca de senha: o link de "Esqueci minha senha" cria uma sessão temporária só para `updateUser`. Depois de gravar, a
+tela encerra a sessão, e o login seguinte passa de novo pela checagem de papel. Destinos fora das *Redirect URLs* são
+ignorados pelo Auth. Fluxo em [configuração](configuracao.md#trocar-a-senha).
+
 ## No front-end
 
 - Escritas administrativas: `await garantirSessaoAdmin()` antes e `tratarErroEscritaAdmin(erro)` no erro

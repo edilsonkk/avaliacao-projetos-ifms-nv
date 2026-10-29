@@ -95,4 +95,21 @@ describe('TelaLogin', () => {
     expect(await screen.findByText(/invalid login credentials/i)).toBeInTheDocument();
     expect(supabase.rpc).not.toHaveBeenCalledWith('fn_vincular_conta_staff');
   });
+
+  it('deve enviar o link de "Esqueci minha senha" para a tela de redefinição', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    vi.mocked(supabase.auth.resetPasswordForEmail).mockResolvedValue({ data: {}, error: null } as never);
+    render(<TelaLogin abaInicial="staff" />);
+
+    // Act
+    await user.type(screen.getByLabelText(/e-mail de acesso/i), 'Staff@IFMS.edu.br');
+    await user.click(screen.getByRole('button', { name: /esqueci minha senha/i }));
+
+    // Assert
+    expect(supabase.auth.resetPasswordForEmail).toHaveBeenCalledWith('staff@ifms.edu.br', {
+      redirectTo: `${window.location.origin}/redefinir-senha`,
+    });
+    expect(await screen.findByText(/instruções de redefinição/i)).toBeInTheDocument();
+  });
 });

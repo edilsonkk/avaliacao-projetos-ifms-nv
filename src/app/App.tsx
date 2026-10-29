@@ -8,7 +8,7 @@ import { Cabecalho, TipoTelaNavegacao } from '@/components/layout/Cabecalho';
 import { TelaAvaliador } from '@/features/avaliacao';
 import { TelaStaff } from '@/features/staff';
 import { TelaAdmin } from '@/features/admin';
-import { TelaLogin, AbaLogin } from '@/features/auth';
+import { TelaLogin, AbaLogin, TelaRedefinirSenha, CAMINHO_REDEFINIR_SENHA } from '@/features/auth';
 import { TelaoAoVivo } from '@/features/relatorios';
 import { TelaAutocadastroAvaliador } from '@/features/avaliacao';
 import { supabase } from '@/lib/supabase';
@@ -17,9 +17,11 @@ import { obterPerfilSessao } from '@/features/auth';
 
 export default function App() {
   // Inicialização com suporte a autocadastro via QR Code e rota raiz apontando para TelaLogin
-  const getInitialTela = (): TipoTelaNavegacao | 'login' | 'autocadastro' => {
+  const getInitialTela = (): TipoTelaNavegacao | 'login' | 'autocadastro' | 'redefinir-senha' => {
     const path = window.location.pathname;
     const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+
+    if (path === CAMINHO_REDEFINIR_SENHA) return 'redefinir-senha';
 
     if (searchParams?.get('cadastro') === 'avaliador' || path.includes('/autocadastro')) {
       return 'autocadastro';
@@ -41,7 +43,7 @@ export default function App() {
     return 'login';
   };
 
-  const [tela_atual, set_tela_atual] = useState<TipoTelaNavegacao | 'login' | 'autocadastro'>(getInitialTela);
+  const [tela_atual, set_tela_atual] = useState<TipoTelaNavegacao | 'login' | 'autocadastro' | 'redefinir-senha'>(getInitialTela);
   const [aba_login, set_aba_login] = useState<AbaLogin>('avaliador');
   const [, set_usuario_logado] = useState<string | null>(() => localStorage.getItem('sessao_id_usuario') || localStorage.getItem('usuario_id') || localStorage.getItem('avaliador_email'));
 
@@ -82,6 +84,14 @@ export default function App() {
     return () => {
       ativo = false;
     };
+  }, []);
+
+  // Link de recuperação aberto em outro caminho (ex.: Site URL): leva à tela de nova senha
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((evento) => {
+      if (evento === 'PASSWORD_RECOVERY') set_tela_atual('redefinir-senha');
+    });
+    return () => data.subscription.unsubscribe();
   }, []);
 
   // Sessão do Supabase Auth inválida durante escrita administrativa: força novo login Admin
@@ -145,6 +155,8 @@ export default function App() {
             aoVoltar={() => set_tela_atual('login')}
           />
         );
+      case 'redefinir-senha':
+        return <TelaRedefinirSenha aoConcluir={() => set_tela_atual('login')} />;
       case 'login':
       default:
         return (

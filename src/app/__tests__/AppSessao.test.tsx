@@ -1,10 +1,16 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '@/app/App';
 import * as auth from '@/features/auth';
+import { supabase } from '@/lib/supabase';
 
 vi.mock('@/lib/supabase', () => ({
-  supabase: { auth: { signOut: vi.fn() } },
+  supabase: {
+    auth: {
+      signOut: vi.fn(),
+      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+    },
+  },
   ambiente_supabase: 'local',
   verificar_conexao_configurada: () => true,
 }));
@@ -19,6 +25,8 @@ vi.mock('@/features/staff', () => ({ TelaStaff: () => <p>Tela do Staff</p> }));
 vi.mock('@/features/relatorios', () => ({ TelaoAoVivo: () => <p>Telão</p> }));
 vi.mock('@/features/auth', () => ({
   TelaLogin: () => <p>Tela de Login</p>,
+  TelaRedefinirSenha: () => <p>Tela de Redefinir Senha</p>,
+  CAMINHO_REDEFINIR_SENHA: '/redefinir-senha',
   obterPerfilSessao: vi.fn(),
 }));
 
@@ -57,5 +65,34 @@ describe('App - sessão confirmada pelo banco', () => {
     // Assert
     await waitFor(() => expect(auth.obterPerfilSessao).toHaveBeenCalled());
     expect(screen.getByText('Tela do Avaliador')).toBeInTheDocument();
+  });
+
+  it('deve abrir a tela de nova senha pelo link do e-mail de recuperação', () => {
+    // Arrange
+    window.history.replaceState({}, '', '/redefinir-senha');
+
+    // Act
+    render(<App />);
+
+    // Assert
+    expect(screen.getByText('Tela de Redefinir Senha')).toBeInTheDocument();
+  });
+
+  it('deve ir para a tela de nova senha quando o Auth avisa PASSWORD_RECOVERY em outro caminho', async () => {
+    // Arrange
+    window.history.replaceState({}, '', '/');
+    let avisar: (evento: string) => void = () => {};
+    vi.mocked(supabase.auth.onAuthStateChange).mockImplementation(((cb: typeof avisar) => {
+      avisar = cb;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    }) as never);
+    render(<App />);
+    expect(screen.getByText('Tela de Login')).toBeInTheDocument();
+
+    // Act
+    act(() => avisar('PASSWORD_RECOVERY'));
+
+    // Assert
+    expect(await screen.findByText('Tela de Redefinir Senha')).toBeInTheDocument();
   });
 });
