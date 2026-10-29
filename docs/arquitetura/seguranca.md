@@ -93,8 +93,9 @@ Lista completa em [funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#identid
 |---|---|---|
 | *Allow new users to sign up* | **ligado** | Necessário para o login anônimo do celular. Desligar bloqueia o pareamento |
 | *Anonymous sign-ins* | **ligado** | Sessão do celular do avaliador |
-| Rate limit de logins anônimos por IP | cerca de 300/h | Todos os celulares da feira saem pelo mesmo IP |
+| Rate limit de logins anônimos por IP | 300/h | Todos os celulares da feira saem pelo mesmo IP |
 | *Confirm email* | **ligado** | Impede que um cadastro se passe pelo e-mail de um Staff |
+| *Site URL* e *Redirect URLs* (*URL Configuration*) | `https://avaliacao-projetos-ifms-nv.web.app` (e `/**`) | Os links de "Esqueci minha senha" e de confirmação levam ao site, não ao `localhost` |
 
 O cadastro público aberto **não dá acesso**. A conta criada não tem papel: não lê pessoas nem notas, não roda funções
 de Admin, e só vira Staff se o **e-mail confirmado** for igual ao de um Staff cadastrado pelo Admin. Isso é coberto por

@@ -29,6 +29,10 @@ O evento (feira) é a unidade de isolamento de todos os dados. Código: `src/fea
 Criação de evento: se o PostgREST rejeitar colunas novas por schema cache, o insert é refeito só com os campos base
 (ver [troubleshooting](../operacao/troubleshooting.md#schema-cache-desatualizado-no-postgrest)).
 
+- O cadastro não envia `limite_corte`: a data do evento vai só em `data_evento`.
+- Ao criar ou ativar um evento, o novo evento é gravado (ou ativado) **antes** de os outros serem desativados. Se a
+  gravação falhar, o evento ativo atual continua ativo.
+
 ## Janela de avaliação
 
 Avaliações só acontecem dentro de `data_evento` + `horario_inicio`…`horario_fim` e com `sistema_liberado = true`.

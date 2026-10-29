@@ -69,27 +69,15 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
       }
 
       try {
-        let { data: dados_evento, error: erro_busca } = await supabase
+        const { data: dados_evento } = await supabase
           .from('eventos')
           .select('*')
           .eq('id_evento', id_evento_ativo)
           .single();
 
-        if (erro_busca || !dados_evento) {
-          const { data: dados_sing } = await supabase
-            .from('eventos')
-            .select('*')
-            .eq('id', id_evento_ativo)
-            .single();
-
-          if (dados_sing) {
-            dados_evento = dados_sing;
-          }
-        }
-
         if (dados_evento) {
           set_nome_evento(dados_evento.nome_evento || nome_evento_atual || 'FETEC MS 2026');
-          set_data_evento(dados_evento.data_evento || (dados_evento.limite_corte ? String(dados_evento.limite_corte).split('T')[0] : null) || new Date().toISOString().split('T')[0]);
+          set_data_evento(dados_evento.data_evento || new Date().toISOString().split('T')[0]);
           set_minutos_timeout_lock(dados_evento.minutos_timeout_lock || 15);
           set_cota_avaliacoes_padrao(dados_evento.cota_avaliacoes_padrao || 3);
           set_sistema_liberado(dados_evento.sistema_liberado !== false);
