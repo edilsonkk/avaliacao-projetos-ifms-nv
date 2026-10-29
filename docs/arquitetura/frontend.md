@@ -84,6 +84,37 @@ Mocks usam o mesmo alias do código: `vi.mock('@/lib/supabase', ...)`.
 5. Mudanças de banco entram como nova migração em `supabase/migrations/` (`AAAAMMDDHHMMSS_descricao.sql`)
    e o `supabase/schema.sql` é atualizado em seguida.
 
+## Keep-alive da sessão
+
+O app **não usa WebSocket** (não há canais Realtime do Supabase). As telas "ao vivo" consultam o banco em intervalos:
+o Telão a cada 10 s e o celular, enquanto espera o pareamento, a cada 3 s. Por isso não há Ping/Pong a manter. O que
+se perde com o aparelho ocioso é outra coisa: o navegador congela timers em abas ocultas e celulares bloqueados, o
+token do Auth (1 h) pode vencer nesse tempo e a próxima consulta só sairia no próximo ciclo.
+
+`src/lib/keepAliveSessao.ts`, ligado uma vez em `App.tsx`, trata a **retomada**:
+
+| Gatilho | Quando acontece |
+|---|---|
+| `visibilitychange` para `visible` | Volta para a aba, desbloqueio do celular |
+| `online` | Wi-Fi ou 4G voltou |
+| `pageshow` com `persisted` | Página restaurada do cache do navegador (voltar/avançar) |
+
+Na retomada (eventos seguidos dentro de 2 s contam uma vez, e nada acontece com a aba oculta):
+
+1. religa a renovação automática do token (`startAutoRefresh`);
+2. se o token expira em menos de 60 s (ou já expirou), renova com `refreshSession` antes de qualquer consulta;
+3. dispara o evento `app:retomada` (`EVENTO_APP_RETOMADA`), mesmo que a renovação falhe por falta de rede.
+
+Telas com consulta periódica ouvem o evento com `aoRetomarApp(acao)` e consultam na hora: o Telão atualiza os
+totais e o celular do avaliador entra assim que é desbloqueado, se o Staff já tiver pareado. Uma tela nova com
+polling deve fazer o mesmo e chamar a função de retorno no cleanup do `useEffect`.
+
+Se um dia o app adotar Realtime, use o heartbeat do próprio `realtime-js` (opções `heartbeatIntervalMs` e
+`worker: true`, para o batimento não ser congelado em segundo plano) e reabra os canais no `app:retomada`.
+
+**Testes**: `src/lib/__tests__/keepAliveSessao.test.ts`, mais os casos de retomada em `TelaoAoVivo.test.tsx` e
+`VinculoAvaliador.test.tsx`.
+
 ## Próximos passos recomendados
 
 Débitos conhecidos que a nova estrutura facilita resolver (ver também [PRD](../PRD.md), item L8):

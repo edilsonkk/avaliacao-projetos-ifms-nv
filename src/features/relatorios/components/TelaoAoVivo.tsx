@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { aoRetomarApp } from '@/lib/keepAliveSessao';
 import {
   Trophy,
   Activity,
@@ -124,6 +125,9 @@ export const TelaoAoVivo: React.FC = () => {
       buscar_dados_telao();
     }, 10000);
 
+    // Telão que ficou em segundo plano ou sem rede: atualiza na hora em que volta
+    const parar_retomada = aoRetomarApp(buscar_dados_telao);
+
     // Cronômetro simples do tempo decorrido
     const intervalo_cronometro = setInterval(() => {
       set_metricas_telao((anterior) => {
@@ -146,6 +150,7 @@ export const TelaoAoVivo: React.FC = () => {
     return () => {
       clearInterval(intervalo_polling);
       clearInterval(intervalo_cronometro);
+      parar_retomada();
     };
   }, [conexao_banco_configurada]);
 

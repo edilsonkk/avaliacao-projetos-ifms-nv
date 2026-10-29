@@ -13,6 +13,7 @@ import { TelaoAoVivo } from '@/features/relatorios';
 import { TelaAutocadastroAvaliador } from '@/features/avaliacao';
 import { supabase } from '@/lib/supabase';
 import { EVENTO_SESSAO_ADMIN_EXPIRADA, MENSAGEM_SESSAO_EXPIRADA } from '@/lib/sessaoAdmin';
+import { iniciarKeepAliveSessao } from '@/lib/keepAliveSessao';
 import { obterPerfilSessao } from '@/features/auth';
 
 export default function App() {
@@ -85,6 +86,9 @@ export default function App() {
       ativo = false;
     };
   }, []);
+
+  // Aparelho ocioso (aba oculta, celular bloqueado, sem rede): ao voltar, renova a sessão e avisa as telas
+  useEffect(() => iniciarKeepAliveSessao({ auth: supabase.auth }), []);
 
   // Link de recuperação aberto em outro caminho (ex.: Site URL): leva à tela de nova senha
   useEffect(() => {

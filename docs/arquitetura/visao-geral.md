@@ -9,11 +9,11 @@ auditoria e homologação dos resultados.
 │            CLIENTE WEB (SPA)           │
 │   React 19 + Vite 8 + Tailwind v4      │
 └──────────────────┬─────────────────────┘
-                   │ PostgREST / WebSocket (supabase-js)
+                   │ HTTPS: PostgREST e Auth (supabase-js)
                    ▼
 ┌────────────────────────────────────────┐
 │            SUPABASE                    │
-│  - Auth (sessão do Admin)              │
+│  - Auth (Admin, Staff e celulares)     │
 │  - Row Level Security (RLS)            │
 │  - Views pré-computadas                │
 └──────────────────┬─────────────────────┘

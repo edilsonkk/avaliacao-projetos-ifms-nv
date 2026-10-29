@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TelaoAoVivo } from '@/features/relatorios';
 import { supabase } from '@/lib/supabase';
+import { EVENTO_APP_RETOMADA } from '@/lib/keepAliveSessao';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: { from: vi.fn(), rpc: vi.fn() },
@@ -42,5 +43,23 @@ describe('TelaoAoVivo', () => {
     await waitFor(() => expect(supabase.rpc).toHaveBeenCalled());
     expect(screen.queryByText('124')).not.toBeInTheDocument();
     expect(screen.queryByText('36')).not.toBeInTheDocument();
+  });
+
+  it('deve atualizar na hora quando o app volta de segundo plano, sem esperar o próximo ciclo', async () => {
+    // Arrange
+    vi.mocked(supabase.rpc).mockReset().mockResolvedValue({
+      data: { total_projetos: 40, avaliadores_credenciados: 12, avaliacoes_em_andamento: 3, avaliacoes_realizadas: 57, cota_padrao: 3 },
+      error: null,
+    } as never);
+    render(<TelaoAoVivo />);
+    await waitFor(() => expect(supabase.rpc).toHaveBeenCalledTimes(1));
+
+    // Act
+    act(() => {
+      window.dispatchEvent(new Event(EVENTO_APP_RETOMADA));
+    });
+
+    // Assert
+    await waitFor(() => expect(supabase.rpc).toHaveBeenCalledTimes(2));
   });
 });
