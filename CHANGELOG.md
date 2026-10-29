@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.4](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.3...v0.6.4) (2026-10-29)
+
+
+### Correções
+
+* **atribuicoes:** atribuição forçada validada no banco e retomada no celular ([#28](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/28)) ([8d9a8f4](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/8d9a8f4c96dddb1eec90b4b9625c837a66d7f04a))
+
 ## [0.6.3](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.2...v0.6.3) (2026-10-29)
 
 
