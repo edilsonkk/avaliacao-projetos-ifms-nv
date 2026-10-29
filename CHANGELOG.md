@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.3.0...v0.3.1) (2026-10-29)
+
+
+### Correções
+
+* **eventos:** cadastrar evento sem gravar data em limite_corte ([#14](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/14)) ([1102f42](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/1102f42651e0c2199c9baef5dd2ef9d8b98faecc))
+
 ## [0.3.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.2.0...v0.3.0) (2026-10-28)
 
 
