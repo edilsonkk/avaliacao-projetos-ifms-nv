@@ -14,12 +14,14 @@ vi.mock('@/lib/supabase', () => ({
   supabase: {
     rpc: mockRpc,
     from: mockFrom,
+    auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'jwt' } }, error: null }) },
   },
   verificar_conexao_configurada: vi.fn(() => true),
 }));
 
 // Mock do window.alert e window.location.reload
 vi.stubGlobal('alert', vi.fn());
+vi.stubGlobal('confirm', vi.fn(() => true));
 Object.defineProperty(window, 'location', {
   configurable: true,
   value: { reload: vi.fn() },

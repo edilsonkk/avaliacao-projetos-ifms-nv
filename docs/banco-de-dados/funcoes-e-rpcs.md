@@ -54,7 +54,8 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 |---|---|
 | `admin_reset_global(p_id_evento uuid default null)` → `jsonb` | Apaga todos os dados do evento. Ver [eventos](../regras-de-negocio/eventos.md#reset-global) |
 | `admin_desbloquear_todos()` | Remove todas as travas |
-| `admin_desbloquear_projeto(p_id_projeto uuid)` | Remove as travas de um projeto |
+| `admin_desbloquear_projeto(p_id_projeto uuid)` | Remove **todas** as travas de um projeto (não é usada pela tela) |
+| `admin_desbloquear_trava(p_id_lock uuid)` | Remove a trava de um avaliador; devolve `false` se ela já não existia |
 | `admin_remover_quarentena(p_id_projeto uuid)` | Tira um projeto da quarentena |
 | `admin_remover_quarentena_todos()` | Tira todos os projetos da quarentena |
 | `excluir_avaliacao(p_id_avaliacao uuid)` | Soft delete: `status = 'CANCELADA'`, `is_quarentena = false` |

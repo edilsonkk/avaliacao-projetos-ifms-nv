@@ -65,8 +65,18 @@ Se algum registro vier sem os objetos relacionados, o componente busca em lote p
 
 ## Projetos bloqueados
 
-Card **Projetos Bloqueados**: mostra travas ativas (avaliador em campo). Libera com `admin_desbloquear_projeto` ou
-`admin_desbloquear_todos`, por exemplo no intervalo do almoço, para travas abandonadas.
+Card **Projetos Bloqueados**: mostra as travas ativas (avaliador em campo) dos projetos do **evento ativo**. Cada
+linha é a trava de **um** avaliador; o mesmo projeto aparece uma vez por avaliador (até a cota). A lista mostra quanto
+falta para cada trava expirar (em vermelho nos últimos 5 minutos), começa pela que expira primeiro, atualiza a cada
+30 segundos e ao voltar para a aba, e tira da lista na hora a trava que venceu.
+
+- **Liberar trava** (linha): `admin_desbloquear_trava(p_id_lock)` solta só aquele avaliador; os outros do mesmo
+  projeto continuam.
+- **Desbloquear Todos**: `admin_desbloquear_todos()`, por exemplo no intervalo do almoço, para travas abandonadas.
+- As duas ações **pedem confirmação**: quem perde a trava não consegue enviar a avaliação em andamento
+  (`fn_enviar_avaliacao` exige a trava) e precisa sortear de novo. A trava expira sozinha; libere só se o avaliador
+  desistiu ou trocou de aparelho.
+- O contador do card no painel conta as mesmas travas da tela (válidas e do evento ativo).
 
 Testes: `src/features/avaliacao/__tests__/TelaAvaliadorJanelaHorarios.test.tsx`,
 `src/features/atribuicoes/__tests__/ModalExclusaoAvaliacaoCustom.test.tsx`,

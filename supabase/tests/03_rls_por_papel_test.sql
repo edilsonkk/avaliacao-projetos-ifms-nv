@@ -87,7 +87,7 @@ SELECT is((SELECT count(*)::int FROM public.usuarios), 0, 'Celular sem vínculo 
 -- Avaliadora 1 (aparelho vinculado) tentando agir como o Avaliador 2
 -- ---------------------------------------------------------------------------
 SELECT pg_temp.como('d1000000-0000-0000-0000-0000000000a1');
-SELECT is((SELECT count(*)::int FROM public.projetos), 1, 'Avaliador vinculado lê projetos');
+SELECT is((SELECT count(*)::int FROM public.projetos WHERE id_evento = 'e1000000-0000-0000-0000-000000000001'), 1, 'Avaliador vinculado lê projetos');
 SELECT is((SELECT count(*)::int FROM public.usuarios), 1, 'Avaliador só lê o próprio usuário');
 SELECT is((SELECT count(*)::int FROM public.avaliacoes), 0, 'Avaliador não lê notas e pareceres de outros');
 SELECT throws_ok($$ INSERT INTO public.locks_ativos (id_usuario, id_projeto, expira_em)

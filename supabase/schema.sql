@@ -85,6 +85,30 @@ $$;
 ALTER FUNCTION "public"."admin_desbloquear_todos"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_desbloquear_trava"("p_id_lock" "uuid") RETURNS boolean
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_apagadas integer;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  DELETE FROM public.locks_ativos WHERE id_lock = p_id_lock;
+  GET DIAGNOSTICS v_apagadas = ROW_COUNT;
+  RETURN v_apagadas > 0;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_desbloquear_trava"("p_id_lock" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."admin_desbloquear_trava"("p_id_lock" "uuid") IS 'Admin libera a trava de um avaliador (uma linha de locks_ativos), sem afetar os outros avaliadores do projeto.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -2930,6 +2954,12 @@ GRANT ALL ON FUNCTION "public"."admin_desbloquear_projeto"("p_id_projeto" "uuid"
 REVOKE ALL ON FUNCTION "public"."admin_desbloquear_todos"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_desbloquear_todos"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_desbloquear_todos"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_desbloquear_trava"("p_id_lock" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_desbloquear_trava"("p_id_lock" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_desbloquear_trava"("p_id_lock" "uuid") TO "service_role";
 
 
 

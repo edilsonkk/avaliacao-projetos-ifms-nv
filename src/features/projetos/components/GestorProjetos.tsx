@@ -15,9 +15,6 @@ import {
   UploadCloud,
   FileSpreadsheet,
   Terminal,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   Plus,
   Download,
   Zap,
@@ -32,6 +29,7 @@ import { parsePlanilhaProjetos } from '@/lib/parsers/planilhaProjetosParser';
 import { ModalDeParaMapping, ItemMapeamentoDePara, DecisaoMapeamento } from '@/components/importacao/ModalDeParaMapping';
 import { buscarMelhorCorrespondencia, CandidatoMatch } from '@/lib/parsers/fuzzyMatcher';
 import { normalizarAreaTematica } from '@/lib/parsers/areasTematicasNormalizer';
+import { CabecalhoOrdenavel, compararNatural } from '@/components/ui/CabecalhoOrdenavel';
 
 export interface ProjetoItem {
   id_projeto: string;
@@ -1163,7 +1161,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoOrdenacao === 'asc' ? valA - valB : valB - valA;
       }
-      const comparacao = String(valA).localeCompare(String(valB), 'pt-BR', { numeric: true, sensitivity: 'base' });
+      const comparacao = compararNatural(String(valA), String(valB));
       return direcaoOrdenacao === 'asc' ? comparacao : -comparacao;
     });
   }, [projetos_filtrados, colunaOrdenacao, direcaoOrdenacao]);
@@ -1922,27 +1920,3 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
 };
 
 type ColunaOrdenacao = 'codigo' | 'corredor' | 'estande' | 'presenca' | 'titulo' | 'topo';
-
-/** Cabeçalho de coluna clicável e acessível por teclado, com o estado de ordenação anunciado (aria-sort). */
-const CabecalhoOrdenavel: React.FC<{
-  coluna: ColunaOrdenacao;
-  rotulo: string;
-  ativa: ColunaOrdenacao;
-  direcao: 'asc' | 'desc';
-  aoOrdenar: (coluna: ColunaOrdenacao) => void;
-}> = ({ coluna, rotulo, ativa, direcao, aoOrdenar }) => {
-  const ordenada = ativa === coluna;
-  const Icone = !ordenada ? ArrowUpDown : direcao === 'asc' ? ArrowUp : ArrowDown;
-  return (
-    <th scope="col" aria-sort={ordenada ? (direcao === 'asc' ? 'ascending' : 'descending') : 'none'} className="p-0">
-      <button
-        type="button"
-        onClick={() => aoOrdenar(coluna)}
-        className="w-full px-4 py-3 flex items-center gap-1.5 uppercase font-black tracking-wider hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500"
-      >
-        <span>{rotulo}</span>
-        <Icone aria-hidden="true" className={`w-3.5 h-3.5 ${ordenada ? 'text-emerald-600' : 'text-slate-400'}`} />
-      </button>
-    </th>
-  );
-};
