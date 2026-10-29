@@ -123,4 +123,43 @@ describe('ModalConfiguracoesEvento - acesso dos avaliadores', () => {
       max_tentativas_codigo: 4,
     });
   });
+
+  it('deve explicar cada forma de vincular o celular na dica do campo', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    renderizar();
+    const select = await screen.findByLabelText(/formas de vincular o celular/i);
+    const dica = select.parentElement!.querySelector('button[aria-label="Mais informações"]') as HTMLElement;
+
+    // Act
+    await user.hover(dica);
+
+    // Assert
+    expect(dica).toHaveAccessibleDescription(/pareamento pelo staff.*código de acesso.*ambos/i);
+  });
+
+  it('deve ter dica em todos os campos da configuração', async () => {
+    // Arrange / Act
+    renderizar();
+    await screen.findByLabelText(/tamanho dos códigos/i);
+
+    // Assert: 7 campos do evento + 5 de acesso + zona de perigo
+    const dicas = screen.getAllByRole('button', { name: /mais informações/i });
+    expect(dicas).toHaveLength(13);
+    dicas.forEach((d) => expect(d).toHaveAccessibleDescription(/.{30,}/));
+  });
+
+  it('deve abrir como diálogo nomeado e fechar pelo botão', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    const ao_fechar = vi.fn();
+    render(<ModalConfiguracoesEvento id_evento_ativo={ID_EVENTO} nome_evento_atual="FETEC MS 2026" ao_fechar={ao_fechar} />);
+
+    // Act
+    await user.click(await screen.findByRole('button', { name: /fechar configurações/i }));
+
+    // Assert
+    expect(screen.getByRole('dialog', { name: /configurações do evento ativo/i })).toBeInTheDocument();
+    expect(ao_fechar).toHaveBeenCalled();
+  });
 });

@@ -24,15 +24,27 @@ export const PARAMETROS_ACESSO_PADRAO: ParametrosAcesso = {
 
 type CampoNumerico = Exclude<keyof ParametrosAcesso, 'metodos_vinculo'>;
 
-export const LIMITES_ACESSO: Record<CampoNumerico, { min: number; max: number; rotulo: string; unidade: string }> = {
-  minutos_validade_pareamento: { min: 1, max: 60, rotulo: 'Validade do código de pareamento', unidade: 'minutos' },
-  minutos_validade_codigo_acesso: { min: 1, max: 120, rotulo: 'Validade do código de acesso', unidade: 'minutos' },
-  tamanho_codigo: { min: 6, max: 10, rotulo: 'Tamanho dos códigos', unidade: 'caracteres' },
-  max_tentativas_codigo: { min: 1, max: 10, rotulo: 'Tentativas por código de acesso', unidade: '' },
+export const LIMITES_ACESSO: Record<CampoNumerico, { min: number; max: number; rotulo: string; unidade: string; dica: string }> = {
+  minutos_validade_pareamento: {
+    min: 1, max: 60, rotulo: 'Validade do código de pareamento', unidade: 'minutos',
+    dica: 'Por quanto tempo vale o código que aparece no celular do avaliador. Se expirar antes de o Staff digitá-lo, o celular gera outro com um toque.',
+  },
+  minutos_validade_codigo_acesso: {
+    min: 1, max: 120, rotulo: 'Validade do código de acesso', unidade: 'minutos',
+    dica: 'Prazo para o avaliador usar o código gerado pelo Staff. O código vale uma única vez; depois do prazo, o Staff gera outro.',
+  },
+  tamanho_codigo: {
+    min: 6, max: 10, rotulo: 'Tamanho dos códigos', unidade: 'caracteres',
+    dica: 'Quantidade de caracteres dos dois códigos (pareamento e acesso). Mais longo é mais difícil de adivinhar, porém mais demorado de digitar.',
+  },
+  max_tentativas_codigo: {
+    min: 1, max: 10, rotulo: 'Tentativas por código de acesso', unidade: '',
+    dica: 'Quantos erros o avaliador pode cometer ao digitar um código de acesso. Ao atingir o limite, o código é invalidado e o Staff precisa gerar outro.',
+  },
 };
 
 export const METODOS_VINCULO: { valor: MetodoVinculo; rotulo: string }[] = [
-  { valor: 'ambos', rotulo: 'Pareamento pelo Staff e código de acesso' },
+  { valor: 'ambos', rotulo: 'Ambos (pareamento e código)' },
   { valor: 'pareamento', rotulo: 'Só pareamento pelo Staff' },
   { valor: 'codigo', rotulo: 'Só código de acesso' },
 ];

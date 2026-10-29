@@ -25,6 +25,10 @@ O evento (feira) é a unidade de isolamento de todos os dados. Código: `src/fea
   `PGRST204` e perda silenciosa da data (ver [troubleshooting](../operacao/troubleshooting.md#data-do-evento-não-era-salva)).
 - Ao salvar, `ao_salvar_sucesso(nome_evento, dataFormatada)` atualiza o painel e o `localStorage` na hora, sem F5.
 - Também dá acesso à **Gestão de Administradores**.
+- Layout em três colunas (Evento, Acesso dos avaliadores, Gestão de Eventos + Zona de Perigo), sem rolagem a partir
+  de 1280×720; em telas menores as colunas empilham e o modal rola por dentro.
+- Cada campo tem um ícone de dica (`Dica`, em `src/components/ui/`) que explica o campo ao passar o mouse, ao focar
+  pelo teclado ou ao tocar. Os textos das dicas de acesso ficam em `LIMITES_ACESSO` (`acessoAvaliadores.ts`).
 
 Criação de evento: se o PostgREST rejeitar colunas novas por schema cache, o insert é refeito só com os campos base
 (ver [troubleshooting](../operacao/troubleshooting.md#schema-cache-desatualizado-no-postgrest)).

@@ -10,6 +10,7 @@ import {
 } from '../acessoAvaliadores';
 import { Settings, X, Save, Loader2, CheckCircle2, AlertTriangle, RotateCcw, History, PlusCircle, Building2, ShieldCheck } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
+import { Dica } from '@/components/ui/Dica';
 
 interface PropriedadesModalConfiguracoes {
   id_evento_ativo: string;
@@ -223,37 +224,52 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
     }
   };
 
+  const campo =
+    'w-full min-w-0 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none';
+  const campoCurto = campo.replace('w-full ', '');
+  const secao = 'p-4 bg-slate-50/60 dark:bg-slate-900/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3 min-w-0';
+  const tituloSecao = 'text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wide';
+  const botaoGestao =
+    'w-full px-3 py-2.5 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-700 text-left transition-all flex items-center justify-between gap-2 cursor-pointer group';
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full border border-slate-200 dark:border-slate-700 shadow-2xl space-y-6">
+    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="titulo-configuracoes-evento"
+        className="bg-white dark:bg-slate-800 rounded-3xl p-4 sm:p-6 w-full max-w-6xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden lg:overflow-visible lg:max-h-none border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4"
+      >
         {/* Cabeçalho do Modal */}
-        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-4">
-          <div className="flex items-center gap-2 text-slate-900 dark:text-white font-extrabold text-lg">
-            <Settings className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+          <h2 id="titulo-configuracoes-evento" className="flex items-center gap-2 text-slate-900 dark:text-white font-extrabold text-lg">
+            <Settings aria-hidden="true" className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
             Configurações do Evento Ativo
-          </div>
+          </h2>
           <button
             type="button"
             onClick={ao_fechar}
+            aria-label="Fechar configurações"
             className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X aria-hidden="true" className="w-5 h-5" />
           </button>
         </div>
 
         {/* Mensagem de Feedback */}
         {mensagem_feedback && (
           <div
-            className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+            role={mensagem_feedback.tipo === 'erro' ? 'alert' : 'status'}
+            className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
               mensagem_feedback.tipo === 'sucesso'
                 ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
                 : 'bg-red-50 dark:bg-red-950/50 border-red-300 dark:border-red-800 text-red-800 dark:text-red-200'
             }`}
           >
             {mensagem_feedback.tipo === 'sucesso' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <CheckCircle2 aria-hidden="true" className="w-4 h-4 text-emerald-600 shrink-0" />
             ) : (
-              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+              <AlertTriangle aria-hidden="true" className="w-4 h-4 text-red-600 shrink-0" />
             )}
             <span>{mensagem_feedback.texto}</span>
           </div>
@@ -261,269 +277,200 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
 
         {carregando_dados ? (
           <div className="p-8 text-center space-y-2">
-            <Loader2 className="w-6 h-6 text-emerald-600 animate-spin mx-auto" />
-            <p className="text-xs font-semibold text-slate-500">
-              Carregando parâmetros do evento...
-            </p>
+            <Loader2 aria-hidden="true" className="w-6 h-6 text-emerald-600 animate-spin mx-auto" />
+            <p className="text-xs font-semibold text-slate-500">Carregando parâmetros do evento...</p>
           </div>
         ) : (
           <form onSubmit={salvar_configuracoes} className="space-y-4">
-            {/* Nome do Evento */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                Nome do Evento:
-              </label>
-              <input
-                type="text"
-                value={nome_evento}
-                onChange={(e) => set_nome_evento(e.target.value)}
-                required
-                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-              />
-            </div>
-
-            {/* Timeout Lock e Cota em Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                  Timeout Lock (Minutos):
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="120"
-                  value={minutos_timeout_lock}
-                  onChange={(e) => set_minutos_timeout_lock(Number(e.target.value))}
-                  required
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                  Cota Padrão de Avaliações:
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={cota_avaliacoes_padrao}
-                  onChange={(e) => set_cota_avaliacoes_padrao(Number(e.target.value))}
-                  required
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Data do Evento, Horário de Início e Horário de Fim */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                  Data do Evento:
-                </label>
-                <input
-                  type="date"
-                  value={data_evento}
-                  onChange={(e) => set_data_evento(e.target.value)}
-                  required
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                  Horário Início:
-                </label>
-                <input
-                  type="time"
-                  value={horario_inicio}
-                  onChange={(e) => set_horario_inicio(e.target.value)}
-                  required
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                  Horário Fim:
-                </label>
-                <input
-                  type="time"
-                  value={horario_fim}
-                  onChange={(e) => set_horario_fim(e.target.value)}
-                  required
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Checkbox Sistema Liberado */}
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                  Sistema Liberado para Avaliadores
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  Permite que avaliadores sorteiem e enviem notas.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={sistema_liberado}
-                onChange={(e) => set_sistema_liberado(e.target.checked)}
-                className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer"
-              />
-            </div>
-
-            {/* Acesso dos avaliadores: vínculo do celular */}
-            <fieldset className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
-              <legend className="px-1 text-xs font-bold text-slate-800 dark:text-slate-200 uppercase">
-                Acesso dos avaliadores
-              </legend>
-              <div>
-                <label htmlFor="metodos_vinculo" className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                  Formas de vincular o celular:
-                </label>
-                <select
-                  id="metodos_vinculo"
-                  value={parametros_acesso.metodos_vinculo}
-                  onChange={(e) => set_parametros_acesso((anterior) => ({ ...anterior, metodos_vinculo: e.target.value as MetodoVinculo }))}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                >
-                  {METODOS_VINCULO.map((m) => (
-                    <option key={m.valor} value={m.valor}>{m.rotulo}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(Object.keys(LIMITES_ACESSO) as (keyof typeof LIMITES_ACESSO)[]).map((campo) => {
-                  const limite = LIMITES_ACESSO[campo];
-                  return (
-                    <div key={campo}>
-                      <label htmlFor={campo} className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                        {limite.rotulo}{limite.unidade ? ` (${limite.unidade})` : ''}:
-                      </label>
-                      <input
-                        id={campo}
-                        type="number"
-                        min={limite.min}
-                        max={limite.max}
-                        step={1}
-                        value={parametros_acesso[campo]}
-                        onChange={(e) => set_parametros_acesso((anterior) => ({ ...anterior, [campo]: Number(e.target.value) }))}
-                        required
-                        className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            </fieldset>
-
-            {/* Gestão de Eventos: Eventos Anteriores e Criar novo evento */}
-            <div className="pt-4 border-t border-slate-100 dark:border-slate-700 space-y-2">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">
-                Gestão de Eventos
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    ao_fechar();
-                    if (ao_abrir_historico) ao_abrir_historico();
-                  }}
-                  className="p-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-700 text-left transition-all flex items-center justify-between cursor-pointer group"
-                >
-                  <div>
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                      Eventos Anteriores
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      Histórico e edições passadas
-                    </span>
-                  </div>
-                  <History className="w-5 h-5 text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors shrink-0" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    ao_fechar();
-                    if (ao_abrir_novo_evento) ao_abrir_novo_evento();
-                  }}
-                  className="p-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-700 text-left transition-all flex items-center justify-between cursor-pointer group"
-                >
-                  <div>
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                      Criar novo evento
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      Inicializar nova instância
-                    </span>
-                  </div>
-                  <PlusCircle className="w-5 h-5 text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors shrink-0" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    ao_fechar();
-                    if (ao_abrir_instituicoes) ao_abrir_instituicoes();
-                  }}
-                  className="p-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-700 text-left transition-all flex items-center justify-between cursor-pointer group"
-                >
-                  <div>
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                      Instituições de Ensino / Escolas
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      Gerenciar instituições e prevenção de conflitos
-                    </span>
-                  </div>
-                  <Building2 className="w-5 h-5 text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors shrink-0" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    ao_fechar();
-                    if (ao_abrir_administradores) ao_abrir_administradores();
-                  }}
-                  className="p-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-700 text-left transition-all flex items-center justify-between cursor-pointer group"
-                >
-                  <div>
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
-                      Gestão de Administradores
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      Cadastrar e gerenciar administradores
-                    </span>
-                  </div>
-                  <ShieldCheck className="w-5 h-5 text-slate-500 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors shrink-0" />
-                </button>
-              </div>
-            </div>
-
-            {/* Zona de Perigo / Ações Críticas */}
-            <div className="pt-4 border-t border-red-200 dark:border-red-900/40">
-              <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+              {/* Coluna 1: dados e funcionamento do evento */}
+              <section aria-labelledby="secao-evento" className={secao}>
+                <h3 id="secao-evento" className={tituloSecao}>Evento</h3>
                 <div>
-                  <span className="text-xs font-bold text-red-900 dark:text-red-300 block flex items-center gap-1.5">
-                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                    Zona de Perigo
-                  </span>
-                  <span className="text-[11px] text-red-700 dark:text-red-400">
-                    Limpa todas as avaliações, notas e locks do evento ativo.
-                  </span>
+                  <Rotulo htmlFor="cfg-nome-evento" dica="Nome exibido no cabeçalho do sistema, nos relatórios e no Telão." alinhar="inicio" lado="baixo">
+                    Nome do Evento:
+                  </Rotulo>
+                  <input id="cfg-nome-evento" type="text" value={nome_evento} onChange={(e) => set_nome_evento(e.target.value)} required className={campo} />
                 </div>
-                <button
-                  type="button"
-                  onClick={ao_disparar_reset_global || handleConfirmarReset}
-                  className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs shrink-0 cursor-pointer"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  Reset Global
-                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="min-w-0 col-span-2">
+                    <Rotulo htmlFor="cfg-data-evento" dica="Dia da feira. Os avaliadores só conseguem avaliar nesta data, entre o horário de início e o de fim." alinhar="inicio">
+                      Data:
+                    </Rotulo>
+                    <input id="cfg-data-evento" type="date" value={data_evento} onChange={(e) => set_data_evento(e.target.value)} required className={`${campo} px-2`} />
+                  </div>
+                  <div className="min-w-0">
+                    <Rotulo htmlFor="cfg-horario-inicio" dica="A partir deste horário os avaliadores podem sortear projetos e enviar notas.">
+                      Início:
+                    </Rotulo>
+                    <input id="cfg-horario-inicio" type="time" value={horario_inicio} onChange={(e) => set_horario_inicio(e.target.value)} required className={`${campo} px-2`} />
+                  </div>
+                  <div className="min-w-0">
+                    <Rotulo htmlFor="cfg-horario-fim" dica="Depois deste horário não é possível sortear novos projetos. Um projeto já reservado ainda pode ser concluído." alinhar="fim">
+                      Fim:
+                    </Rotulo>
+                    <input id="cfg-horario-fim" type="time" value={horario_fim} onChange={(e) => set_horario_fim(e.target.value)} required className={`${campo} px-2`} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="min-w-0">
+                    <Rotulo
+                      htmlFor="cfg-timeout-lock"
+                      dica="Tempo que o projeto sorteado fica reservado para o avaliador. Se a nota não for enviada nesse prazo, a reserva expira e o projeto volta para o sorteio."
+                      alinhar="inicio"
+                    >
+                      Timeout Lock (min):
+                    </Rotulo>
+                    <input id="cfg-timeout-lock" type="number" min="1" max="120" value={minutos_timeout_lock} onChange={(e) => set_minutos_timeout_lock(Number(e.target.value))} required className={campo} />
+                  </div>
+                  <div className="min-w-0">
+                    <Rotulo
+                      htmlFor="cfg-cota-padrao"
+                      dica="Quantas avaliações cada projeto deve receber. Ao atingir a cota, o projeto deixa de ser sorteado."
+                      alinhar="fim"
+                    >
+                      Cota Padrão:
+                    </Rotulo>
+                    <input id="cfg-cota-padrao" type="number" min="1" max="10" value={cota_avaliacoes_padrao} onChange={(e) => set_cota_avaliacoes_padrao(Number(e.target.value))} required className={campo} />
+                  </div>
+                </div>
+
+                <div className="p-3 bg-white dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="flex items-center gap-1 text-xs font-bold text-slate-800 dark:text-slate-200">
+                      <label htmlFor="cfg-sistema-liberado" className="cursor-pointer">Sistema liberado para avaliadores</label>
+                      <Dica alinhar="inicio">
+                        Desligado, nenhum avaliador sorteia projetos nem envia notas novas: use para pausar ou encerrar a feira. Admin e Staff continuam funcionando normalmente.
+                      </Dica>
+                    </span>
+                    <span className="text-[11px] text-slate-500">Permite sortear e enviar notas.</span>
+                  </div>
+                  <input
+                    id="cfg-sistema-liberado"
+                    type="checkbox"
+                    checked={sistema_liberado}
+                    onChange={(e) => set_sistema_liberado(e.target.checked)}
+                    className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer shrink-0"
+                  />
+                </div>
+              </section>
+
+              {/* Coluna 2: acesso dos avaliadores (vínculo do celular) */}
+              <fieldset className={secao}>
+                <legend className={`${tituloSecao} float-left w-full mb-3`}>Acesso dos avaliadores</legend>
+                <div className="clear-both">
+                  <Rotulo
+                    htmlFor="metodos_vinculo"
+                    dica={
+                      <span className="block space-y-1.5">
+                        <span className="block"><strong>Pareamento pelo Staff:</strong> o celular do avaliador mostra um código e o Staff o digita no balcão de credenciamento. Exige a presença do avaliador, por isso é o mais seguro.</span>
+                        <span className="block"><strong>Código de acesso:</strong> o Staff gera um código e o entrega ao avaliador, que digita o e-mail e o código no próprio celular. Útil quando ele não pode passar no balcão.</span>
+                        <span className="block"><strong>Ambos:</strong> o celular oferece as duas formas.</span>
+                      </span>
+                    }
+                    alinhar="inicio"
+                    lado="baixo"
+                  >
+                    Formas de vincular o celular:
+                  </Rotulo>
+                  <select
+                    id="metodos_vinculo"
+                    value={parametros_acesso.metodos_vinculo}
+                    onChange={(e) => set_parametros_acesso((anterior) => ({ ...anterior, metodos_vinculo: e.target.value as MetodoVinculo }))}
+                    className={campo}
+                  >
+                    {METODOS_VINCULO.map((m) => (
+                      <option key={m.valor} value={m.valor}>{m.rotulo}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {(Object.keys(LIMITES_ACESSO) as (keyof typeof LIMITES_ACESSO)[]).map((campoAcesso) => {
+                    const limite = LIMITES_ACESSO[campoAcesso];
+                    return (
+                      <div key={campoAcesso} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
+                        <div className="min-w-0 flex items-center gap-1">
+                          <label htmlFor={campoAcesso} className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase leading-tight">
+                            {limite.rotulo}{limite.unidade ? ` (${limite.unidade})` : ''}:
+                          </label>
+                          <Dica alinhar="inicio">{limite.dica}</Dica>
+                        </div>
+                        <input
+                          id={campoAcesso}
+                          type="number"
+                          min={limite.min}
+                          max={limite.max}
+                          step={1}
+                          value={parametros_acesso[campoAcesso]}
+                          onChange={(e) => set_parametros_acesso((anterior) => ({ ...anterior, [campoAcesso]: Number(e.target.value) }))}
+                          required
+                          className={`${campoCurto} w-20 shrink-0 text-center`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              {/* Coluna 3: gestão e zona de perigo */}
+              <div className="space-y-4 min-w-0 md:col-span-2 lg:col-span-1">
+                <section aria-labelledby="secao-gestao" className={secao}>
+                  <h3 id="secao-gestao" className={tituloSecao}>Gestão de Eventos</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2">
+                    <button type="button" onClick={() => { ao_fechar(); if (ao_abrir_historico) ao_abrir_historico(); }} className={botaoGestao}>
+                      <span className="min-w-0">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">Eventos Anteriores</span>
+                        <span className="text-[11px] text-slate-500">Histórico e edições passadas</span>
+                      </span>
+                      <History aria-hidden="true" className="w-5 h-5 text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors shrink-0" />
+                    </button>
+                    <button type="button" onClick={() => { ao_fechar(); if (ao_abrir_novo_evento) ao_abrir_novo_evento(); }} className={botaoGestao}>
+                      <span className="min-w-0">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">Criar novo evento</span>
+                        <span className="text-[11px] text-slate-500">Inicializar nova instância</span>
+                      </span>
+                      <PlusCircle aria-hidden="true" className="w-5 h-5 text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors shrink-0" />
+                    </button>
+                    <button type="button" onClick={() => { ao_fechar(); if (ao_abrir_instituicoes) ao_abrir_instituicoes(); }} className={botaoGestao}>
+                      <span className="min-w-0">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">Instituições de Ensino / Escolas</span>
+                        <span className="text-[11px] text-slate-500">Gerenciar instituições e prevenção de conflitos</span>
+                      </span>
+                      <Building2 aria-hidden="true" className="w-5 h-5 text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors shrink-0" />
+                    </button>
+                    <button type="button" onClick={() => { ao_fechar(); if (ao_abrir_administradores) ao_abrir_administradores(); }} className={botaoGestao}>
+                      <span className="min-w-0">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">Gestão de Administradores</span>
+                        <span className="text-[11px] text-slate-500">Cadastrar e gerenciar administradores</span>
+                      </span>
+                      <ShieldCheck aria-hidden="true" className="w-5 h-5 text-slate-500 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors shrink-0" />
+                    </button>
+                  </div>
+                </section>
+
+                {/* Zona de Perigo / Ações Críticas */}
+                <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-3 rounded-2xl flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-red-900 dark:text-red-300 flex items-center gap-1.5">
+                      <AlertTriangle aria-hidden="true" className="w-4 h-4 text-red-600 shrink-0" />
+                      Zona de Perigo
+                      <Dica alinhar="inicio">
+                        Apaga todas as avaliações, notas e reservas de projetos do evento ativo. Não pode ser desfeito; o sistema pede confirmação em duas etapas antes de executar.
+                      </Dica>
+                    </span>
+                    <span className="text-[11px] text-red-700 dark:text-red-400">Limpa avaliações, notas e locks do evento ativo.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={ao_disparar_reset_global || handleConfirmarReset}
+                    className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
+                  >
+                    <RotateCcw aria-hidden="true" className="w-4 h-4" />
+                    Reset Global
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -541,7 +488,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
                 disabled={salvando}
                 className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 flex items-center gap-2 shadow-sm transition-all"
               >
-                {salvando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {salvando ? <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" /> : <Save aria-hidden="true" className="w-4 h-4" />}
                 Salvar Configurações
               </button>
             </div>
@@ -551,6 +498,22 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
     </div>
   );
 };
+
+/** Rótulo de campo com o ícone de dica ao lado (fora do <label>, para não alterar o nome acessível do campo). */
+const Rotulo: React.FC<{
+  htmlFor: string;
+  dica: React.ReactNode;
+  alinhar?: 'inicio' | 'centro' | 'fim';
+  lado?: 'cima' | 'baixo';
+  children: React.ReactNode;
+}> = ({ htmlFor, dica, alinhar, lado, children }) => (
+  <div className="flex items-start gap-1 mb-1">
+    <label htmlFor={htmlFor} className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase leading-tight">
+      {children}
+    </label>
+    <Dica alinhar={alinhar} lado={lado}>{dica}</Dica>
+  </div>
+);
 
 export const ConfiguracoesGerais = ModalConfiguracoesEvento;
 
