@@ -480,16 +480,10 @@ export const TelaAdmin: React.FC = () => {
           queryQuarentena = queryQuarentena.eq('id_evento', idEventoAtivo);
         }
 
+        // Conta projetos (mesma regra da tela Projetos em Quarentena), nunca avaliações soltas
         const { count: count_q, error: err_q } = await queryQuarentena;
-        if (!err_q && count_q !== null) {
-          quarentena_count = count_q;
-        } else {
-          const { count: count_fallback } = await supabase
-            .from('avaliacoes')
-            .select('*', { count: 'exact', head: true })
-            .eq('is_quarentena', true);
-          quarentena_count = count_fallback || 0;
-        }
+        if (err_q) console.warn('Erro ao contar projetos em quarentena:', err_q.message);
+        quarentena_count = count_q ?? 0;
       } catch (e) {
         quarentena_count = 0;
       }
@@ -1522,6 +1516,7 @@ export const TelaAdmin: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
           <div className="w-[98vw] max-w-[98vw] h-[95vh] max-h-[95vh] my-auto flex flex-col">
             <ProjetosQuarentena
+              id_evento_ativo={metricas_admin.evento_ativo_id}
               aoAtualizarMetricas={fetchDashboardData}
               aoFechar={() => {
                 set_mostrar_gestor_quarentena(false);

@@ -117,6 +117,7 @@ Modalidades que o avaliador não pode avaliar. PK `(id_usuario, id_evento, id_mo
 | `is_check_in_realizado` | Presença confirmada pelo Staff |
 | `is_fora_da_competicao` | Participa sem concorrer |
 | `forcar_topo_fila` | Prioridade máxima no sorteio |
+| `quarentena_resolvida_em`, `quarentena_resolvida_por` | Quando e qual Admin aceitou a divergência de notas (quarentena) |
 
 A tabela **não** tem colunas textuais `modalidade`, `area_conhecimento` ou `nome_instituicao`. Use os relacionamentos
 (`modalidades(nome_modalidade)`, `areas_tematicas(nome_area)`, `instituicoes(nome_exibicao, sigla)`).
@@ -169,7 +170,7 @@ ausências.
 | `view_relatorio_projetos` | Projetos com notas individuais em JSON (`avaliacoes_detalhadas`) |
 | `view_relatorio_avaliadores` | Avaliações por avaliador com início, fim e duração (`tempo_formatado`) |
 | `view_relatorio_ausencias` | Ausências de `avaliacoes` (status `AUSENTE`) e `historico_impedimentos` |
-| `view_projetos_quarentena` | Projetos com divergência > 2,5 pontos (com 2+ avaliações) ou `is_quarentena = true` |
+| `view_projetos_quarentena` | Projetos com divergência > 2,5 pontos (com 2+ avaliações) ou `is_quarentena = true`; divergência já aceita pelo Admin (`projetos.quarentena_resolvida_em`) só volta com avaliação nova |
 | `view_projetos_pendentes_avaliacao` | Projetos abaixo da cota |
 | `view_avaliadores_credenciados` | Avaliadores com check-in no evento ativo |
 
