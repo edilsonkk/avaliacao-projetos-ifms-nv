@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.2...v0.6.3) (2026-10-29)
+
+
+### Correções
+
+* **quarentena:** "Tirar de Quarentena" passa a valer e a tela mostra as notas para decidir ([#26](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/26)) ([0aa065e](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/0aa065ec32a5469b6cd6a30427c2ab6cde7285f4))
+
 ## [0.6.2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.1...v0.6.2) (2026-10-29)
 
 
