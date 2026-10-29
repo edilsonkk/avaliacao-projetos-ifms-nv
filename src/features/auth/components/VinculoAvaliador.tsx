@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, KeyRound, Loader2, RefreshCw, Smartphone } from 'lucide-react';
+import { aoRetomarApp } from '@/lib/keepAliveSessao';
 import {
   garantirSessaoAparelho,
   obterPerfilSessao,
@@ -77,7 +78,7 @@ export const VinculoAvaliador: React.FC<PropriedadesVinculoAvaliador> = ({ aoVin
   // Enquanto mostra o código, consulta o banco até o Staff confirmar o pareamento
   useEffect(() => {
     if (modo !== 'pareamento' || !pareamento || expirado) return;
-    const intervalo = setInterval(async () => {
+    const consultar = async () => {
       if (new Date(pareamento.expira_em).getTime() <= Date.now()) {
         setExpirado(true);
         return;
@@ -88,8 +89,14 @@ export const VinculoAvaliador: React.FC<PropriedadesVinculoAvaliador> = ({ aoVin
       } catch {
         // falha momentânea de rede: tenta de novo no próximo ciclo
       }
-    }, intervaloConsultaMs);
-    return () => clearInterval(intervalo);
+    };
+    const intervalo = setInterval(consultar, intervaloConsultaMs);
+    // Celular desbloqueado depois de o Staff parear: entra na hora, sem esperar o próximo ciclo
+    const pararRetomada = aoRetomarApp(consultar);
+    return () => {
+      clearInterval(intervalo);
+      pararRetomada();
+    };
   }, [modo, pareamento, expirado, aoVincular, intervaloConsultaMs]);
 
   const mudarModo = async (novo: Modo) => {

@@ -1,9 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { VinculoAvaliador } from '@/features/auth/components/VinculoAvaliador';
 import * as vinculo from '@/features/auth/vinculoAparelho';
 import type { PerfilSessao } from '@/features/auth/vinculoAparelho';
+import { EVENTO_APP_RETOMADA } from '@/lib/keepAliveSessao';
 
 vi.mock('@/features/auth/vinculoAparelho', () => ({
   garantirSessaoAparelho: vi.fn(),
@@ -117,5 +118,21 @@ describe('VinculoAvaliador', () => {
     expect(await screen.findByRole('textbox', { name: /código de acesso/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /parear com o staff/i })).not.toBeInTheDocument();
     expect(vinculo.solicitarCodigoPareamento).not.toHaveBeenCalled();
+  });
+
+  it('deve entrar assim que o celular é desbloqueado, sem esperar o próximo ciclo de consulta', async () => {
+    // Arrange: consulta periódica longa; o Staff pareou enquanto o celular estava bloqueado
+    const aoVincular = vi.fn();
+    vi.mocked(vinculo.obterPerfilSessao).mockResolvedValueOnce(perfil(null)).mockResolvedValue(perfil('avaliador'));
+    render(<VinculoAvaliador aoVincular={aoVincular} intervaloConsultaMs={60_000} />);
+    await screen.findByRole('status', { name: /código de pareamento/i });
+
+    // Act
+    act(() => {
+      window.dispatchEvent(new Event(EVENTO_APP_RETOMADA));
+    });
+
+    // Assert
+    await waitFor(() => expect(aoVincular).toHaveBeenCalledWith(expect.objectContaining({ papel: 'avaliador' })));
   });
 });
