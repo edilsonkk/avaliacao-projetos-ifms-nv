@@ -16,6 +16,7 @@ import {
   Info
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
+import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 
 interface AtribuicaoForcadaProps {
   isOpen: boolean;
@@ -59,6 +60,14 @@ export interface UsuarioAvaliadorItem {
   is_ocupado?: boolean;
 }
 
+/** Enter ou espaço acionam itens de lista selecionáveis (role=radio/checkbox), como num clique. */
+const aoTeclarSelecionar = (acao: () => void) => (e: React.KeyboardEvent) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    acao();
+  }
+};
+
 export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
   isOpen,
   aoFechar,
@@ -82,6 +91,8 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
 
   // Histórico de avaliações concluídas para cálculo de conflito e duplicidade
   const [avaliacoesRealizadas, setAvaliacoesRealizadas] = useState<Array<{ id_projeto: string; id_usuario: string }>>([]);
+  // Pares projeto:avaliador em que o próprio avaliador declarou conflito de interesse
+  const [conflitosDeclarados, setConflitosDeclarados] = useState<Set<string>>(new Set());
 
   const [carregandoDados, setCarregandoDados] = useState<boolean>(true);
   const [submetendo, setSubmetendo] = useState<boolean>(false);
@@ -119,9 +130,10 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
   };
 
   // Carrega entidades elegíveis respeitando regras estritas de presença e credenciamento
-  const carregarDadosElegiveis = async () => {
+  // manterAviso: recarrega depois de uma recusa do banco sem apagar a mensagem que explica o motivo
+  const carregarDadosElegiveis = async (manterAviso = false) => {
     setCarregandoDados(true);
-    setToast(null);
+    if (!manterAviso) setToast(null);
 
     if (!conexaoConfigurada) {
       setListaProjetosElegiveis([]);
@@ -153,7 +165,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
 
       let queryAvaliadoresEvento = supabase
         .from('avaliadores_evento')
-        .select('id_usuario, id_evento, id_instituicao, is_credenciado, instituicoes(nome_exibicao)')
+        .select('id_usuario, id_evento, id_instituicao, is_credenciado, instituicoes(nome_exibicao), usuarios(nome, email, papel)')
         .eq('is_credenciado', true);
 
       if (eventoIdResolvido) {
@@ -195,37 +207,29 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
         if (typeof queryBloqueios.eq === 'function') queryBloqueios = queryBloqueios.eq('id_evento', eventoIdResolvido);
       }
 
-      // Consulta de avaliações de forma resiliente para tolerar variações de schema
-      const promessaAvaliacoes = (async () => {
-        try {
-          const res = await supabase
-            .from('avaliacoes')
-            .select('id_projeto, id_usuario, is_quarentena, status, status_avaliacao');
-          return res;
-        } catch (_err) {
-          return { data: [], error: null };
-        }
-      })();
-
+      // Só dados de projetos do evento ativo (projetos!inner + filtro pelo evento)
+      const doEvento = (q: any) => (eventoIdResolvido ? q.eq('projetos.id_evento', eventoIdResolvido) : q);
       const [
         resLocksAtivos,
-        resAvaliadoresCredenciados,
         resAvaliadoresEvento,
         resAvaliacoes,
-        resBloqueiosModalidade
+        resBloqueiosModalidade,
+        resConflitosDeclarados,
       ] = await Promise.all([
-        supabase
-          .from('locks_ativos')
-          .select('id_projeto, id_usuario'),
-        supabase
-          .from('view_avaliadores_credenciados')
-          .select('*')
-          .eq('is_credenciado', true)
-          .order('nome', { ascending: true }),
+        // Travas vencidas não ocupam vaga nem deixam o avaliador ocupado
+        doEvento(supabase.from('locks_ativos').select('id_projeto, id_usuario, projetos!inner(id_evento)').gt('expira_em', new Date().toISOString())),
         queryAvaliadoresEvento,
-        promessaAvaliacoes,
+        doEvento(supabase.from('avaliacoes').select('id_projeto, id_usuario, status, projetos!inner(id_evento)')),
         queryBloqueios,
+        doEvento(supabase.from('historico_impedimentos').select('id_projeto, id_usuario, projetos!inner(id_evento)').eq('tipo', 'conflito')),
       ]);
+      const primeiroErro = [resLocksAtivos, resAvaliadoresEvento, resAvaliacoes, resBloqueiosModalidade, resConflitosDeclarados].find((r: any) => r?.error)?.error;
+      if (primeiroErro) throw primeiroErro;
+
+      const conflitosDeclarados = new Set<string>(
+        (resConflitosDeclarados.data || []).map((c: any) => `${c.id_projeto}:${c.id_usuario}`)
+      );
+      setConflitosDeclarados(conflitosDeclarados);
 
       // Mapeamento de modalidades bloqueadas por avaliador
       const bloqueiosPorAvaliador = new Map<string, string[]>();
@@ -253,21 +257,13 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
 
       setTotalAvaliadoresOcupados(idsUsuariosComLock.size);
 
-      // Mapeamento de contagem de avaliações e quarentenas
+      // Contagem de avaliações ativas por projeto
       const contagemAvaliacoes = new Map<string, number>();
-      const projetosEmQuarentena = new Set<string>();
       const avaliacoesPares: Array<{ id_projeto: string; id_usuario: string }> = [];
 
       (resAvaliacoes.data || []).forEach((av: any) => {
         if (av.id_projeto) {
-          if (av.is_quarentena && (!av.quarentena_decisao || av.quarentena_decisao === 'pendente')) {
-            projetosEmQuarentena.add(av.id_projeto);
-          }
-
-          const isCancelada =
-            av.status === 'CANCELADA' ||
-            av.status_avaliacao === 'CANCELADA' ||
-            av.status_avaliacao === 'cancelada';
+          const isCancelada = av.status === 'CANCELADA';
 
           // Apenas avaliações válidas contam para a cota do projeto
           if (!isCancelada) {
@@ -287,7 +283,6 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
       // FILTRAGEM DE PROJETOS ELEGÍVEIS:
       // - Check-in presencial confirmado
       // - Não pode estar fora da competição
-      // - Não pode estar em quarentena pendente
       // - Cota de avaliações (feitas + travas ativas < cota estrita)
       let countProjetosBloqueados = 0;
       const todosProjetos = resProjetosData || [];
@@ -299,7 +294,6 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
         if (!checkinPositivo) return false;
 
         if (p.is_fora_da_competicao === true) return false;
-        if (projetosEmQuarentena.has(idProj)) return false;
 
         const cota = p.cota_avaliacoes_customizada || cotaCalculada;
         const feitas = contagemAvaliacoes.get(idProj) || 0;
@@ -334,10 +328,10 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
           codigo_projeto: p.codigo_projeto || null,
           titulo: p.titulo || p.titulo_projeto || 'Projeto sem título',
           titulo_projeto: p.titulo || p.titulo_projeto || 'Projeto sem título',
-          estande: p.estande || p.estande_numero || 'EST-S/N',
-          estande_numero: p.estande || p.estande_numero || 'EST-S/N',
-          corredor: p.corredor || 'A',
-          modalidade: nomeMod || 'Geral',
+          estande: p.estande || p.estande_numero || null,
+          estande_numero: p.estande || p.estande_numero || null,
+          corredor: p.corredor || null,
+          modalidade: nomeMod || null,
           id_modalidade: p.id_modalidade || null,
           id_instituicao: p.id_instituicao || null,
           nome_instituicao: nomeInst || null,
@@ -352,12 +346,10 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
 
       // FILTRAGEM DE AVALIADORES ELEGÍVEIS:
       // - is_credenciado = true no evento
-      const idsCredenciadosNoEvento = new Set<string>();
       const mapaInstituicaoAvaliador = new Map<string, { id_inst?: string; nome_inst?: string }>();
 
       (resAvaliadoresEvento.data || []).forEach((ae: any) => {
         if (ae.id_usuario && ae.is_credenciado === true) {
-          idsCredenciadosNoEvento.add(ae.id_usuario);
           const nomeInst = Array.isArray(ae.instituicoes)
             ? ae.instituicoes[0]?.nome_exibicao
             : (ae.instituicoes as any)?.nome_exibicao;
@@ -368,36 +360,25 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
         }
       });
 
-      const avaliadoresBrutos = resAvaliadoresCredenciados.data || [];
-      const avaliadoresElegiveisFiltrados = avaliadoresBrutos.filter((a: any) => {
-        const idUsuario = a.id_usuario || a.id;
-        if (!idUsuario) return false;
-
-        if (a.is_credenciado !== true) return false;
-        if (idsCredenciadosNoEvento.size > 0 && !idsCredenciadosNoEvento.has(idUsuario)) {
-          return false;
-        }
-
-        return true;
-      });
-
-      const avaliadoresNormalizados: UsuarioAvaliadorItem[] = avaliadoresElegiveisFiltrados.map((a: any) => {
-        const idUsuario = a.id_usuario || a.id;
-        const instInfo = mapaInstituicaoAvaliador.get(idUsuario);
-
-        return {
-          id_usuario: idUsuario,
-          id: idUsuario,
-          nome: a.nome || 'Avaliador',
-          email: a.email || '',
-          papel: a.papel || 'AVALIADOR',
-          is_credenciado: true,
-          id_instituicao: instInfo?.id_inst || null,
-          nome_instituicao: instInfo?.nome_inst || null,
-          modalidades_bloqueadas: bloqueiosPorAvaliador.get(idUsuario) || [],
-          is_ocupado: idsUsuariosComLock.has(idUsuario),
-        };
-      });
+      const avaliadoresNormalizados: UsuarioAvaliadorItem[] = (resAvaliadoresEvento.data || [])
+        .filter((ae: any) => ae.id_usuario && ae.is_credenciado === true)
+        .map((ae: any) => {
+          const usuario = Array.isArray(ae.usuarios) ? ae.usuarios[0] : ae.usuarios;
+          const instInfo = mapaInstituicaoAvaliador.get(ae.id_usuario);
+          return {
+            id_usuario: ae.id_usuario,
+            id: ae.id_usuario,
+            nome: usuario?.nome || 'Avaliador não identificado',
+            email: usuario?.email || '',
+            papel: usuario?.papel || 'AVALIADOR',
+            is_credenciado: true,
+            id_instituicao: instInfo?.id_inst || null,
+            nome_instituicao: instInfo?.nome_inst || null,
+            modalidades_bloqueadas: bloqueiosPorAvaliador.get(ae.id_usuario) || [],
+            is_ocupado: idsUsuariosComLock.has(ae.id_usuario),
+          };
+        })
+        .sort((a: UsuarioAvaliadorItem, b: UsuarioAvaliadorItem) => a.nome.localeCompare(b.nome, 'pt-BR'));
 
       setListaAvaliadoresElegiveis(avaliadoresNormalizados);
     } catch (err: any) {
@@ -461,6 +442,8 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
         );
         if (jaAvaliou) {
           motivoInelegivel = 'Já avaliou este projeto';
+        } else if (conflitosDeclarados.has(`${projetoBancaObj.id_projeto}:${aval.id_usuario}`)) {
+          motivoInelegivel = 'Declarou conflito com este projeto';
         }
       }
 
@@ -470,7 +453,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
         motivoInelegivel,
       };
     });
-  }, [listaAvaliadoresElegiveis, projetoBancaObj, avaliacoesRealizadas]);
+  }, [listaAvaliadoresElegiveis, projetoBancaObj, avaliacoesRealizadas, conflitosDeclarados]);
 
   const toggleAvaliadorBanca = (idUsuario: string) => {
     const jaSelecionado = avaliadoresBancaSelecionados.includes(idUsuario);
@@ -520,7 +503,15 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
           (av) => av.id_projeto === proj.id_projeto && av.id_usuario === avaliadorFilaObj.id_usuario
         );
         if (jaAvaliou) {
-          motivoInelegivel = 'Já avaliado por você';
+          motivoInelegivel = 'Já avaliado por este avaliador';
+        } else if (conflitosDeclarados.has(`${proj.id_projeto}:${avaliadorFilaObj.id_usuario}`)) {
+          motivoInelegivel = 'Avaliador declarou conflito';
+        }
+
+        // Sem vaga: avaliações ativas + travas já ocupam a cota
+        const vagasProjeto = (proj.cota_avaliacoes_customizada || cotaEventoResolvida || 3) - ((proj.total_avaliacoes_feitas || 0) + (proj.locks_ativos_count || 0));
+        if (!motivoInelegivel && vagasProjeto <= 0) {
+          motivoInelegivel = 'Cota atingida';
         }
       }
 
@@ -530,7 +521,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
         motivoInelegivel,
       };
     });
-  }, [listaProjetosElegiveis, avaliadorFilaObj, avaliacoesRealizadas]);
+  }, [listaProjetosElegiveis, avaliadorFilaObj, avaliacoesRealizadas, conflitosDeclarados, cotaEventoResolvida]);
 
   const toggleProjetoFila = (idProjeto: string) => {
     setProjetosFilaSelecionados((prev) =>
@@ -592,8 +583,6 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
     setSubmetendo(true);
     setToast(null);
 
-    const expiracao2Horas = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-
     try {
       if (modo === 'banca') {
         if (!projetoBancaSelecionado) {
@@ -626,30 +615,27 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
           }
         }
 
-        // Inserção das travas em locks_ativos para cada avaliador da banca
-        const inserts = avaliadoresBancaSelecionados.map((idUsuario) => ({
-          id_projeto: projetoBancaSelecionado,
-          id_usuario: idUsuario,
-          expira_em: expiracao2Horas,
-        }));
-
-        const { error } = await supabase.from('locks_ativos').insert(inserts);
+        // O banco valida tudo de novo (cota sob lock do projeto, conflitos, ocupação) e grava tudo ou nada
+        if (!(await garantirSessaoAdmin())) {
+          setSubmetendo(false);
+          return;
+        }
+        const { error } = await supabase.rpc('admin_atribuir_banca', {
+          p_id_projeto: projetoBancaSelecionado,
+          p_ids_usuarios: avaliadoresBancaSelecionados,
+        });
 
         if (error) {
-          console.error('Erro ao registrar travas em locks_ativos:', error);
-          if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
-            exibirFeedback('erro', 'Um dos avaliadores ou projetos acabou de receber uma trava ativa concorrente!');
-          } else {
-            exibirFeedback('erro', `Erro ao registrar travas: ${error.message}`);
-          }
-          await carregarDadosElegiveis();
+          console.error('Erro ao atribuir banca:', error);
+          exibirFeedback('erro', tratarErroEscritaAdmin(error));
+          await carregarDadosElegiveis(true);
           setSubmetendo(false);
           return;
         }
 
         exibirFeedback(
           'sucesso',
-          `Banca alocada com sucesso! ${avaliadoresBancaSelecionados.length} trava(s) ativa(s) criada(s) com validade de 2 horas.`
+          `Projeto atribuído a ${avaliadoresBancaSelecionados.length} avaliador(es). Aparece no celular deles na hora (validade de 2 horas).`
         );
 
         setTimeout(() => {
@@ -681,54 +667,27 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
           }
         }
 
-        let primeiroProjetoId: string | null = null;
-        let projetosParaFila = [...projetosFilaSelecionados];
+        if (!(await garantirSessaoAdmin())) {
+          setSubmetendo(false);
+          return;
+        }
+        const { data: resultado, error } = await supabase.rpc('admin_enfileirar_projetos', {
+          p_id_usuario: avaliadorFilaSelecionado,
+          p_ids_projetos: projetosFilaSelecionados,
+        });
 
-        // Se o avaliador estiver livre, o 1º projeto selecionado vai para locks_ativos
-        if (!avaliadorFilaObj.is_ocupado) {
-          primeiroProjetoId = projetosParaFila.shift() || null;
+        if (error) {
+          console.error('Erro ao enfileirar projetos:', error);
+          exibirFeedback('erro', tratarErroEscritaAdmin(error));
+          await carregarDadosElegiveis(true);
+          setSubmetendo(false);
+          return;
         }
 
-        if (primeiroProjetoId) {
-          const { error: lockErr } = await supabase.from('locks_ativos').insert([{
-            id_usuario: avaliadorFilaSelecionado,
-            id_projeto: primeiroProjetoId,
-            expira_em: expiracao2Horas,
-          }]);
-
-          if (lockErr) {
-            console.error('Erro ao alocar primeiro projeto em locks_ativos:', lockErr);
-            exibirFeedback('erro', `Falha ao alocar trava ativa imediata: ${lockErr.message}`);
-            setSubmetendo(false);
-            return;
-          }
-        }
-
-        // Projetos subsequentes vão para fila_atribuicoes_direcionadas
-        if (projetosParaFila.length > 0) {
-          const itemsFila = projetosParaFila.map((projId, idx) => ({
-            id_usuario: avaliadorFilaSelecionado,
-            id_projeto: projId,
-            ordem: idx + (primeiroProjetoId ? 2 : 1),
-            status: 'pendente',
-          }));
-
-          try {
-            const { error: filaErr } = await supabase
-              .from('fila_atribuicoes_direcionadas')
-              .insert(itemsFila);
-
-            if (filaErr) {
-              console.warn('Aviso ao enfileirar em fila_atribuicoes_direcionadas:', filaErr.message);
-            }
-          } catch (errFila) {
-            console.warn('Fila direcionada não disponível no momento:', errFila);
-          }
-        }
-
-        const msgSucesso = primeiroProjetoId
-          ? `1º projeto ativado imediatamente para ${avaliadorFilaObj.nome} e ${projetosParaFila.length} enfileirado(s)!`
-          : `${projetosParaFila.length} projeto(s) enfileirados com sucesso para ${avaliadorFilaObj.nome}!`;
+        const { ativado, enfileirados } = (resultado || {}) as { ativado: string | null; enfileirados: number };
+        const msgSucesso = ativado
+          ? `1º projeto já está com ${avaliadorFilaObj.nome}${enfileirados > 0 ? ` e ${enfileirados} entraram na fila` : ''}.`
+          : `${enfileirados} projeto(s) na fila de ${avaliadorFilaObj.nome}; entram quando ele terminar o atual.`;
 
         exibirFeedback('sucesso', msgSucesso);
 
@@ -792,6 +751,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
           <div className="flex items-center gap-2 p-1 bg-slate-200/70 dark:bg-slate-800 rounded-2xl w-full sm:w-fit">
             <button
               type="button"
+              aria-pressed={modo === 'banca'}
               onClick={() => {
                 setModo('banca');
                 setToast(null);
@@ -811,6 +771,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
 
             <button
               type="button"
+              aria-pressed={modo === 'enfileirar'}
               onClick={() => {
                 setModo('enfileirar');
                 setToast(null);
@@ -833,6 +794,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
         {/* FEEDBACK INTEGRADO / TOAST ELEGANTE (SEM WINDOW.ALERT) */}
         {toast && (
           <div
+            role={toast.tipo === 'erro' ? 'alert' : 'status'}
             className={`px-5 py-3 border-b flex items-center justify-between text-xs font-semibold animate-in fade-in slide-in-from-top-1 ${
               toast.tipo === 'sucesso'
                 ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
@@ -908,6 +870,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
                   <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
+                    aria-label={modo === 'banca' ? 'Buscar projeto' : 'Buscar avaliador'}
                     value={buscaEsquerda}
                     onChange={(e) => setBuscaEsquerda(e.target.value)}
                     placeholder={modo === 'banca' ? "Buscar por código, título ou estande..." : "Buscar por nome ou e-mail..."}
@@ -916,7 +879,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
                 </div>
 
                 {/* Lista da Coluna Esquerda */}
-                <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0">
+                <div role="radiogroup" aria-label={modo === 'banca' ? 'Projetos elegíveis' : 'Avaliadores credenciados'} className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0 p-0.5">
                   {modo === 'banca' ? (
                     // RENDERIZAÇÃO: PROJETOS (para Banca)
                     listaEsquerdaFiltrada.map((item: any) => {
@@ -931,12 +894,21 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
                       return (
                         <div
                           key={idProj}
+                          role="radio"
+                          aria-checked={selecionado}
+                          aria-label={`Projeto ${p.codigo_projeto || p.titulo}, ${vagas} vaga(s)`}
+                          tabIndex={0}
+                          onKeyDown={aoTeclarSelecionar(() => {
+                            setProjetoBancaSelecionado(idProj);
+                            setAvaliadoresBancaSelecionados([]);
+                            setToast(null);
+                          })}
                           onClick={() => {
                             setProjetoBancaSelecionado(idProj);
                             setAvaliadoresBancaSelecionados([]); // Limpa para recalcular vagas
                             setToast(null);
                           }}
-                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                             selecionado
                               ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/20'
                               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
@@ -945,10 +917,10 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                               <span className="font-mono text-[11px] font-black text-indigo-600 dark:text-indigo-400">
-                                {p.codigo_projeto || p.estande || 'SEM-CÓD'}
+                                {p.codigo_projeto || 'N/I'}
                               </span>
                               <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold">
-                                Estande: {p.estande || p.estande_numero || 'S/N'}
+                                Estande: {p.estande || p.estande_numero || '-'}
                               </span>
                               <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold">
                                 {vagas} vaga(s) restante(s)
@@ -985,12 +957,21 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
                       return (
                         <div
                           key={idUsr}
+                          role="radio"
+                          aria-checked={selecionado}
+                          aria-label={`Avaliador ${a.nome}, ${a.is_ocupado ? 'em avaliação' : 'livre'}`}
+                          tabIndex={0}
+                          onKeyDown={aoTeclarSelecionar(() => {
+                            setAvaliadorFilaSelecionado(idUsr);
+                            setProjetosFilaSelecionados([]);
+                            setToast(null);
+                          })}
                           onClick={() => {
                             setAvaliadorFilaSelecionado(idUsr);
                             setProjetosFilaSelecionados([]);
                             setToast(null);
                           }}
-                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                             selecionado
                               ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/20'
                               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
@@ -1076,6 +1057,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
                   <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
+                    aria-label={modo === 'banca' ? 'Filtrar avaliadores' : 'Filtrar projetos'}
                     value={buscaDireita}
                     onChange={(e) => setBuscaDireita(e.target.value)}
                     placeholder={modo === 'banca' ? "Filtrar avaliadores disponíveis..." : "Filtrar projetos da fila..."}
@@ -1084,7 +1066,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
                 </div>
 
                 {/* Lista da Coluna Direita */}
-                <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0">
+                <div role="group" aria-label={modo === 'banca' ? 'Avaliadores para a banca' : 'Projetos para a fila'} className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0 p-0.5">
                   {modo === 'banca' ? (
                     // MODO BANCA: RENDERIZA AVALIADORES COM CHECKBOX
                     listaDireitaFiltrada.length === 0 ? (
@@ -1101,10 +1083,18 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
                         return (
                           <div
                             key={idUsr}
+                            role="checkbox"
+                            aria-checked={selecionado}
+                            aria-disabled={bloqueado}
+                            aria-label={`Avaliador ${a.nome}${bloqueado ? `: ${a.motivoInelegivel}` : ''}`}
+                            tabIndex={bloqueado ? -1 : 0}
+                            onKeyDown={aoTeclarSelecionar(() => {
+                              if (!bloqueado) toggleAvaliadorBanca(idUsr);
+                            })}
                             onClick={() => {
                               if (!bloqueado) toggleAvaliadorBanca(idUsr);
                             }}
-                            className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 ${
+                            className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                               bloqueado
                                 ? 'opacity-60 bg-slate-100/60 dark:bg-slate-800/20 border-slate-200 dark:border-slate-800 cursor-not-allowed'
                                 : selecionado
@@ -1163,10 +1153,18 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
                         return (
                           <div
                             key={idProj}
+                            role="checkbox"
+                            aria-checked={selecionado}
+                            aria-disabled={bloqueado}
+                            aria-label={`Projeto ${p.codigo_projeto || p.titulo}${bloqueado ? `: ${p.motivoInelegivel}` : selecionado ? `, ${ordemNaSelecao}º na fila` : ''}`}
+                            tabIndex={bloqueado ? -1 : 0}
+                            onKeyDown={aoTeclarSelecionar(() => {
+                              if (!bloqueado) toggleProjetoFila(idProj);
+                            })}
                             onClick={() => {
                               if (!bloqueado) toggleProjetoFila(idProj);
                             }}
-                            className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 ${
+                            className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                               bloqueado
                                 ? 'opacity-60 bg-slate-100/60 dark:bg-slate-800/20 border-slate-200 dark:border-slate-800 cursor-not-allowed'
                                 : selecionado
@@ -1177,10 +1175,10 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 mb-1 flex-wrap">
                                 <span className="font-mono text-[11px] font-black text-indigo-600 dark:text-indigo-400">
-                                  {p.codigo_projeto || p.estande || 'SEM-CÓD'}
+                                  {p.codigo_projeto || 'N/I'}
                                 </span>
                                 <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold">
-                                  Estande: {p.estande || p.estande_numero || 'S/N'}
+                                  Estande: {p.estande || p.estande_numero || '-'}
                                 </span>
                                 {bloqueado && (
                                   <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold flex items-center gap-1">
@@ -1242,7 +1240,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
                   {projetoBancaObj ? (
                     <span className="font-bold text-slate-800 dark:text-slate-200">
                       <span className="font-mono text-indigo-600 dark:text-indigo-400 mr-1.5 font-black">
-                        [{projetoBancaObj.codigo_projeto || projetoBancaObj.estande}]
+                        [{projetoBancaObj.codigo_projeto || 'N/I'}]
                       </span>
                       {projetoBancaObj.titulo || projetoBancaObj.titulo_projeto}
                       <span className="text-slate-400 font-normal ml-2">

@@ -151,7 +151,8 @@ Nota por critério: `id_resposta`, `id_avaliacao`, `id_pergunta`, `nota_atribuid
 
 ### `locks_ativos`
 Travas de avaliação em andamento: `id_lock`, `id_usuario` (**único**: um projeto por vez por avaliador),
-`id_projeto` (vários avaliadores permitidos: banca), `bloqueado_em`, `expira_em`.
+`id_projeto` (vários avaliadores permitidos: banca), `bloqueado_em`, `expira_em`, `atribuido_por` (Admin da
+atribuição forçada; `NULL` = sorteio).
 
 ### `fila_atribuicoes_direcionadas`
 Atribuições feitas pela coordenação: `id_atribuicao`, `id_usuario`, `id_projeto`, `ordem`,

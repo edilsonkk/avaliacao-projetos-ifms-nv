@@ -83,11 +83,22 @@ Botão `Priorizar` / `Topo da Fila` ao lado do Check-in em cada linha do Gestor 
 
 Card **Atribuir Projeto** no Bloco 1 do painel Admin.
 
-- **Modo Banca**: vários avaliadores no mesmo projeto ao mesmo tempo.
-- **Modo Fila**: enfileira projetos para um avaliador em `fila_atribuicoes_direcionadas` (por `ordem`).
-- Lista só projetos do evento ativo.
-- Recusa e sinaliza: mesma instituição, modalidade bloqueada e `"Já avaliou este projeto"`. Esta última vale para
-  qualquer par `(projeto, avaliador)` já registrado, inclusive cancelado.
+- **Modo Banca** (`admin_atribuir_banca(p_id_projeto, p_ids_usuarios[])`): vários avaliadores no mesmo projeto ao
+  mesmo tempo. Tudo ou nada: se um avaliador não puder, nada é gravado e a mensagem diz quem e por quê.
+- **Modo Fila** (`admin_enfileirar_projetos(p_id_usuario, p_ids_projetos[])`): se o avaliador estiver livre, o 1º
+  projeto já vira trava; os demais entram em `fila_atribuicoes_direcionadas` na ordem escolhida, **depois** dos itens
+  pendentes que ele já tinha. Projeto repetido na seleção é ignorado; projeto já pendente na fila é recusado.
+- **O banco valida tudo** (`fn_motivo_inelegivel`, as mesmas regras do sorteio e do envio da nota): check-in, fora da
+  competição, credenciamento no evento, mesma instituição, modalidade bloqueada, "Já avaliou este projeto" (inclusive
+  cancelada), **conflito declarado pelo próprio avaliador** e avaliador ocupado. A cota (avaliações ativas + travas
+  válidas) é checada com o projeto bloqueado (`FOR UPDATE`), sem corrida com o sorteio. A tela mostra os mesmos
+  motivos antes de enviar, só para orientar.
+- Travas da atribuição valem **2 horas** e guardam quem atribuiu (`locks_ativos.atribuido_por`).
+- A lista usa só dados do evento ativo, e só travas válidas (vencidas não ocupam vaga nem deixam o avaliador
+  "Em Avaliação"). Projetos em quarentena podem receber atribuição (como no sorteio): é o caminho para uma avaliação
+  de desempate.
+- No celular, o sorteio **retoma** a trava atribuída pelo Admin em vez de apagá-la; o avaliador vê o projeto ao
+  abrir o app ou tocar em sortear.
 - Para a cota, avaliações canceladas não contam.
 - Na `TelaAvaliador`, itens da fila de projetos já avaliados pelo usuário viram `ja_avaliado` e são descartados antes
   do sorteio.

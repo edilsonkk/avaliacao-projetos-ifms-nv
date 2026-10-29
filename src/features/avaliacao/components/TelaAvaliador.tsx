@@ -635,6 +635,33 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
         return;
       }
 
+      // Projeto atribuído pela coordenação (atribuição forçada): retoma em vez de sortear outro.
+      // Quem precisa descartar a trava (envio, ausência, conflito) já a apagou antes de chamar o sorteio.
+      try {
+        const { data: travaAtribuida } = await supabase
+          .from('locks_ativos')
+          .select('id_projeto, atribuido_por')
+          .eq('id_usuario', avaliadorId)
+          .gt('expira_em', new Date().toISOString())
+          .not('atribuido_por', 'is', null)
+          .maybeSingle();
+
+        if (travaAtribuida?.id_projeto) {
+          const { data: projAtribuido } = await supabase
+            .from('projetos')
+            .select('*, modalidades(nome_modalidade), instituicoes(nome_exibicao)')
+            .eq('id_projeto', travaAtribuida.id_projeto)
+            .maybeSingle();
+          if (projAtribuido) {
+            setProjetoAtual(projAtribuido);
+            exibir_notificacao('Projeto atribuído pela coordenação carregado para avaliação.');
+            return;
+          }
+        }
+      } catch (_errAtribuida) {
+        // Falha momentânea: segue para a fila e o sorteio normais
+      }
+
       // Exclusão explícita de trava anterior usando a chave primária real obtida do cache
       await supabase.from('locks_ativos').delete().eq('id_usuario', avaliadorId);
 

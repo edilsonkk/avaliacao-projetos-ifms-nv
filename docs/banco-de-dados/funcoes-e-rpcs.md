@@ -57,6 +57,10 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `admin_desbloquear_projeto(p_id_projeto uuid)` | Remove **todas** as travas de um projeto (não é usada pela tela) |
 | `admin_desbloquear_trava(p_id_lock uuid)` | Remove a trava de um avaliador; devolve `false` se ela já não existia |
 | `admin_remover_quarentena_evento(p_id_evento uuid)` | Aceita a divergência de todos os projetos em quarentena do evento; devolve quantos |
+| `admin_atribuir_banca(p_id_projeto uuid, p_ids_usuarios uuid[])` | Atribuição forçada em banca (tudo ou nada); devolve quantas travas |
+| `admin_enfileirar_projetos(p_id_usuario uuid, p_ids_projetos uuid[])` | Atribuição forçada em fila; devolve `{ativado, enfileirados}` |
+| `fn_motivo_inelegivel(p_id_projeto uuid, p_id_usuario uuid)` | Interna: motivo de o avaliador não poder avaliar o projeto (`NULL` = pode) |
+| `fn_vagas_projeto(p_id_projeto uuid)` | Interna: cota − avaliações ativas − travas válidas |
 | `admin_remover_quarentena(p_id_projeto uuid)` | Aceita a divergência do projeto (registra `quarentena_resolvida_em/_por`) |
 | `admin_remover_quarentena_todos()` | Aceita a divergência de todos os projetos em quarentena, de todos os eventos (a tela usa a versão por evento) |
 | `excluir_avaliacao(p_id_avaliacao uuid)` | Soft delete: `status = 'CANCELADA'`, `is_quarentena = false` |

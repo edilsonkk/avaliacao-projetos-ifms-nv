@@ -31,6 +31,7 @@ describe('Regras de Negócio: Cota Estrita, Sorteio, Auto-cadastro e De-Para', (
       delete: vi.fn(() => chain),
       eq: vi.fn(() => chain),
       neq: vi.fn(() => chain),
+      gt: vi.fn(() => chain),
       order: vi.fn(() => chain),
       limit: vi.fn(() => chain),
       single: vi.fn(() => Promise.resolve(resposta)),
@@ -97,8 +98,8 @@ describe('Regras de Negócio: Cota Estrita, Sorteio, Auto-cadastro e De-Para', (
       if (tabela === 'avaliadores_evento') {
         return criarQueryChain({
           data: [
-            { id_usuario: 'usr-1', is_credenciado: true },
-            { id_usuario: 'usr-2', is_credenciado: true },
+            { id_usuario: 'usr-1', is_credenciado: true, usuarios: { nome: 'Avaliador Alfa', email: 'alfa@teste.com' } },
+            { id_usuario: 'usr-2', is_credenciado: true, usuarios: { nome: 'Avaliador Beta', email: 'beta@teste.com' } },
           ],
           error: null,
         });
