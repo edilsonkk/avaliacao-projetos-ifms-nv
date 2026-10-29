@@ -51,6 +51,18 @@ if (res.error && (res.error.message?.includes('schema cache') || res.error.code 
 
 ---
 
+## Erro "no unique or exclusion constraint matching the ON CONFLICT" ao importar projetos
+
+**Sintoma**: "Importar (.xlsx/.csv)" em Projetos falhava com `there is no unique or exclusion constraint matching the
+ON CONFLICT specification`.
+**Causa**: o upsert usava `onConflict: 'codigo_projeto'`, mas a tabela não tinha constraint única nessa coluna.
+**Solução**: migration `20261029200000_chave_natural_projetos.sql` cria `UNIQUE (id_evento, codigo_projeto)` e o
+`GestorProjetos` usa `onConflict: 'id_evento,codigo_projeto'`. Se a migration acusar códigos repetidos no mesmo
+evento, decida qual projeto fica (veja se há avaliações ligadas) e corrija o código do outro antes de publicar.
+**Teste**: `supabase/tests/04_chave_natural_projetos_test.sql` e `src/features/projetos/__tests__/GestorProjetos.test.tsx`.
+
+---
+
 ## Erro "invalid input syntax for type numeric" ao cadastrar evento
 
 **Sintoma**: "Novo Evento" falhava com `invalid input syntax for type numeric: "AAAA-MM-DDT23:59:59+00:00"`, e o
@@ -135,7 +147,7 @@ usavam colunas textuais que não existem em `projetos` (`modalidade`, `area_conh
 `is_fora_da_competicao`. Com `id_evento` nulo, `NULL = p_id_evento` é falso.
 **Solução**: gravar todos os campos, criar entidades relacionadas ausentes e atribuir o evento ativo a projetos
 legados ao abrir o gestor ([eventos](../regras-de-negocio/eventos.md#escopo-por-evento)).
-**Teste**: `src/features/projetos/__tests__/GestorProjetosCamposCompletos.test.tsx`.
+**Teste**: `src/features/projetos/__tests__/GestorProjetos.test.tsx`.
 
 ---
 

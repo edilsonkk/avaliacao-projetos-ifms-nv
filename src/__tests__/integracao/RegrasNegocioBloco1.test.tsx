@@ -238,7 +238,7 @@ describe('Validação de Regras de Negócio Remodeladas do Bloco 1', () => {
 
     fireEvent.click(cardProjetos);
     expect(await screen.findByText('Gestor de Projetos')).toBeDefined();
-    expect(await screen.findByText(/credenciados/i)).toBeDefined();
+    expect(await screen.findByText(/com check-in/i)).toBeDefined();
   });
 
   it('2. CARD PROJETOS BLOQUEADOS: deve consultar locks válidos (expira_em > now) e renderizar no modal', async () => {

@@ -18,12 +18,25 @@ gestores de cada feature. Modelos estáticos: `public/modelos/`.
 
 | Gestor | Tabelas | Colunas reconhecidas | Chave do upsert |
 |---|---|---|---|
-| `GestorProjetos` | `projetos` | Código, Título, Área Temática, Nível/Categoria/Modalidade, Instituição, Sigla, Estande, Corredor, Orientador, Estudantes, Fora da Competição | `codigo_projeto` |
+| `GestorProjetos` | `projetos` | Código, Título, Área Temática, Nível/Categoria/Modalidade, Instituição, Sigla, Estande, Corredor, Orientador, Estudantes, Fora da Competição | `id_evento, codigo_projeto` (constraint `uq_projetos_evento_codigo`) |
 | `GestorAvaliadores` | `usuarios`, `avaliadores_evento`, `avaliador_areas`, `avaliador_modalidades_bloqueadas` | nome, email, instituicao, sigla_instituicao, modalidades_bloqueadas, areas, CPF | `email` |
 | `GestorStaff` | `usuarios`, `avaliadores_evento` | Nome, E-mail, Papel (`STAFF`/`MONITOR`) | `email` |
 | `GestorInstituicoes` | `instituicoes` | Nome / Nome de Exibição, Sigla, Campus | `nome_normalizado` |
 | `GestorModalidades` | `modalidades` | Código, Modalidade, Nível, Área Temática, Descrição | por evento |
 | `GestorQuestionarios` | `questionarios`, `perguntas_questionario` | Pergunta/Critério, Lembrete/Descrição, Peso (padrão 1.0) | vinculado ao questionário |
+
+### Importação de projetos
+
+1. Exige evento ativo: sem ele, nada é gravado.
+2. Instituições e modalidades que não batem exatamente abrem o De-Para (associar a uma existente ou cadastrar).
+3. Referências novas (instituições, áreas temáticas, modalidades) são gravadas **num único insert por tabela**, já
+   com `id_evento`, antes dos projetos.
+4. Os projetos vão num único upsert por `(id_evento, codigo_projeto)`. Código com espaços nas pontas é aparado.
+5. Código repetido na planilha: vale a última linha, e o console avisa. Projeto sem código é sempre criado de novo
+   (o console avisa), então prefira sempre informar o código.
+6. Reimportar atualiza título, estande, corredor, instituição, área, modalidade e "fora da competição", mas **não**
+   mexe em check-in nem em "Topo da Fila".
+7. Modalidade não encontrada deixa o projeto sem modalidade e aparece no console.
 
 **Baixar Modelo (.xlsx)** está disponível em Projetos, Avaliadores e Modalidades.
 - Projetos: colunas `codigo_projeto`, `titulo`, `estande`, `corredor`, `instituicao`, `sigla_instituicao`,

@@ -67,13 +67,13 @@ Os critérios de aceite referenciam as suítes de teste (`src/**/__tests__/`) qu
 | ID | Requisito | Critério de aceite |
 |---|---|---|
 | RF-10 | Cada gestor oferece "Baixar Modelo (.xlsx)", "Importar" e cadastro manual, com busca e ordenação por coluna | Seis gestores: Projetos, Avaliadores, Staff, Instituições, Modalidades e Níveis, Questionários |
-| RF-11 | Importação em lote (parsing em memória + upsert único) por chave natural: `codigo_projeto` (projetos), `email` (usuários), `nome_normalizado` (instituições) | Reimportar a mesma planilha não duplica registros (`ChaveNaturalUpsert.test`) |
+| RF-11 | Importação em lote (parsing em memória + upsert único) por chave natural: `(id_evento, codigo_projeto)` (projetos), `email` (usuários), `nome_normalizado` (instituições) | Reimportar a mesma planilha não duplica registros (`GestorProjetos.test`, `04_chave_natural_projetos_test.sql`) |
 | RF-12 | Termos de instituição, modalidade e área são comparados por sanitização + similaridade (Levenshtein + token sort) com limiar **≥ 85%** | `fuzzyMatcher.test` |
 | RF-13 | Se todos os termos têm correspondência exata (nome, sigla ou alias), grava direto; senão abre o **De-Para**, com % de confiança, troca de vínculo ou "+ Cadastrar como Novo" | `GestorModalidadesEDePara.test`, `CotaEstritaEAutoCadastroDePara.test` |
 | RF-14 | Vínculos confirmados no De-Para viram aliases (`instituicao_aliases`, `modalidade_aliases`) e são reconhecidos automaticamente nas importações seguintes | — |
 | RF-15 | Áreas temáticas são normalizadas para as 9 grandes áreas do CNPq (com fallback em maiúsculas sem acento) | `areasTematicasNormalizer.test` |
 | RF-16 | Instituições inexistentes na importação de projetos são cadastradas uma única vez por lote | `AutoCadastroEAreasTematicasEvento.test` |
-| RF-17 | Projeto guarda evento, instituição, área, modalidade, estande, corredor, orientador, estudantes, cota customizada, "fora da competição" e "forçar topo da fila" | `GestorProjetosCamposCompletos.test` |
+| RF-17 | Projeto guarda evento, instituição, área, modalidade, estande, corredor, orientador, estudantes, cota customizada, "fora da competição" e "forçar topo da fila" | `GestorProjetos.test` |
 | RF-18 | Avaliador guarda instituição, várias áreas de atuação e modalidades bloqueadas; o bloqueio é alternado com um clique na tabela | `GestorAvaliadoresAreas.test`, `GestorAvaliadoresBloqueios.test`, `GestorAvaliadoresColunasEBloqueios.test` |
 | RF-19 | Questionário tem escala, perguntas ordenadas, `peso_calculo` e `peso_desempate`; o projeto pode fixar um questionário | — |
 | RF-20 | Formatos aceitos: `.xlsx` e `.csv` | `.xls` é recusado com mensagem orientando a conversão (`excelUtils.ts`) |
