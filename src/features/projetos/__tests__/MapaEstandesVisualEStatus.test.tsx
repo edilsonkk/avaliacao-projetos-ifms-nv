@@ -79,66 +79,48 @@ describe('MapaEstandes: Visualização Expandida, Cores e Badges de Notas', () =
     { id_projeto: 'p-03' } // p-03 tem lock ativo
   ];
 
+  // Cadeia do supabase-js: filtros encadeáveis; range/maybeSingle/await resolvem o resultado
+  const cadeia = (resultado: { data: unknown; error: unknown }) => {
+    const chain: any = {};
+    ['select', 'eq', 'or', 'order', 'gt'].forEach((m) => (chain[m] = vi.fn(() => chain)));
+    chain.range = vi.fn(() => Promise.resolve(resultado));
+    chain.maybeSingle = vi.fn(() => Promise.resolve(resultado));
+    chain.then = (ok: any, erro: any) => Promise.resolve(resultado).then(ok, erro);
+    return chain;
+  };
+
+  const mockAuditoria = [
+    {
+      id_avaliacao: 'av-1',
+      nota_final: 9.5,
+      parecer_final: 'Excelente trabalho!',
+      created_at: '2026-10-25T10:00:00Z',
+      usuarios: { nome: 'Prof. Carlos Dr.', email: 'carlos@ifms.edu.br' }
+    }
+  ];
+
+  const mockarTabelas = (respostas: Record<string, { data: unknown; error: unknown }>) => {
+    (supabase.from as any).mockImplementation((tabela: string) => {
+      const chain = cadeia(respostas[tabela] ?? { data: [], error: null });
+      if (tabela === 'avaliacoes') {
+        const selectOriginal = chain.select;
+        chain.select = vi.fn((campos: string) => {
+          selectOriginal(campos);
+          // Modal de auditoria pede o parecer; o mapa só as notas
+          return campos.includes('parecer_final') ? cadeia({ data: mockAuditoria, error: null }) : chain;
+        });
+      }
+      return chain;
+    });
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
-
-    (supabase.from as any).mockImplementation((tabela: string) => {
-      if (tabela === 'projetos') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({ data: mockProjetos, error: null })
-            }),
-            order: vi.fn().mockResolvedValue({ data: mockProjetos, error: null })
-          })
-        };
-      }
-      if (tabela === 'avaliacoes') {
-        return {
-          select: vi.fn().mockImplementation((campos: string) => {
-            if (campos.includes('parecer_final')) {
-              // Chamada do modal de auditoria
-              return {
-                eq: vi.fn().mockReturnValue({
-                  order: vi.fn().mockResolvedValue({
-                    data: [
-                      {
-                        id_avaliacao: 'av-1',
-                        nota_final: 9.5,
-                        parecer_final: 'Excelente trabalho!',
-                        created_at: '2026-10-25T10:00:00Z',
-                        usuarios: { nome: 'Prof. Carlos Dr.', email: 'carlos@ifms.edu.br' }
-                      }
-                    ],
-                    error: null
-                  })
-                })
-              };
-            }
-            return Promise.resolve({ data: mockAvaliacoes, error: null });
-          })
-        };
-      }
-      if (tabela === 'locks_ativos') {
-        return {
-          select: vi.fn().mockResolvedValue({ data: mockLocks, error: null })
-        };
-      }
-      if (tabela === 'eventos') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({
-                data: { cota_avaliacoes_padrao: 3 },
-                error: null
-              })
-            })
-          })
-        };
-      }
-      return {
-        select: vi.fn().mockResolvedValue({ data: [], error: null })
-      };
+    mockarTabelas({
+      projetos: { data: mockProjetos, error: null },
+      avaliacoes: { data: mockAvaliacoes, error: null },
+      locks_ativos: { data: mockLocks, error: null },
+      eventos: { data: { cota_avaliacoes_padrao: 3 }, error: null },
     });
   });
 
@@ -343,81 +325,16 @@ describe('MapaEstandes: Visualização Expandida, Cores e Badges de Notas', () =
     expect(screen.getByTitle('Sair da Tela Cheia')).toBeDefined();
   });
 
-  it('9. RESILIÊNCIA A ERROS DE SCHEMA: se a query relacional falhar por ausência de FK ou coluna, aciona fallback para colunas base sem crashar', async () => {
-    let primeiraChamada = true;
-    (supabase.from as any).mockImplementation((tabela: string) => {
-      if (tabela === 'projetos') {
-        return {
-          select: vi.fn().mockImplementation((campos: string) => {
-            if (primeiraChamada) {
-              primeiraChamada = false;
-              // Simula o erro do Supabase reportado pelo usuário
-              return {
-                eq: vi.fn().mockReturnValue({
-                  order: vi.fn().mockResolvedValue({
-                    data: null,
-                    error: { message: 'column projetos.modalidade does not exist' }
-                  })
-                }),
-                order: vi.fn().mockResolvedValue({
-                  data: null,
-                  error: { message: 'column projetos.modalidade does not exist' }
-                })
-              };
-            }
-            // Segunda chamada: Fallback com colunas base nativas
-            return {
-              eq: vi.fn().mockReturnValue({
-                order: vi.fn().mockResolvedValue({
-                  data: [
-                    {
-                      id_projeto: 'p-fallback',
-                      id_evento: 'evt-2026',
-                      codigo_projeto: 'FETEC-999',
-                      titulo: 'Projeto Resiliente em Modo Fallback',
-                      estande: 'C-01',
-                      corredor: 'Corredor C',
-                      is_check_in_realizado: true
-                    }
-                  ],
-                  error: null
-                })
-              }),
-              order: vi.fn().mockResolvedValue({
-                data: [
-                  {
-                    id_projeto: 'p-fallback',
-                    id_evento: 'evt-2026',
-                    codigo_projeto: 'FETEC-999',
-                    titulo: 'Projeto Resiliente em Modo Fallback',
-                    estande: 'C-01',
-                    corredor: 'Corredor C',
-                    is_check_in_realizado: true
-                  }
-                ],
-                error: null
-              })
-            };
-          })
-        };
-      }
-      return {
-        select: vi.fn().mockResolvedValue({ data: [], error: null })
-      };
+  it('9. ERRO DE LEITURA: mostra o erro em vez de um mapa vazio ou incompleto', async () => {
+    mockarTabelas({
+      projetos: { data: mockProjetos, error: null },
+      avaliacoes: { data: null, error: { code: 'XX000', message: 'banco fora do ar' } },
+      eventos: { data: { cota_avaliacoes_padrao: 3 }, error: null },
     });
 
-    render(
-      <MapaEstandes
-        id_evento_ativo="evt-2026"
-        cota_padrao_evento={3}
-      />
-    );
+    render(<MapaEstandes id_evento_ativo="evt-2026" cota_padrao_evento={3} />);
 
-    await waitFor(() => {
-      // O projeto do fallback deve ser renderizado com sucesso
-      expect(screen.getByText('Projeto Resiliente em Modo Fallback')).toBeDefined();
-      expect(screen.getByText('Corredor C')).toBeDefined();
-      expect(screen.getByText('C-01')).toBeDefined();
-    });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Erro ao carregar o mapa de estandes: banco fora do ar');
+    expect(screen.queryByText('Robô Pantaneiro Autônomo')).toBeNull();
   });
 });

@@ -23,6 +23,9 @@ import {
   Check
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
+import { buscarTodas } from '@/lib/buscarTodas';
+import { tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
+import { compararNatural } from '@/components/ui/CabecalhoOrdenavel';
 
 export type StatusProjetoMapa = 'nao_credenciado' | 'credenciado' | 'faltando' | 'avaliado';
 
@@ -37,9 +40,12 @@ export interface ProjetoMapItem {
   area_conhecimento?: string | null;
   nome_instituicao?: string | null;
   is_check_in_realizado: boolean;
+  is_fora_da_competicao: boolean;
   tem_lock: boolean;
   is_quarentena: boolean;
   qtd_avaliacoes: number;
+  /** Cota do projeto (customizada ou a padrão do evento). */
+  cota: number;
   media_geral: number | null;
   notas: number[];
   status_mapa: StatusProjetoMapa;
@@ -85,177 +91,109 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
 
   const conexao_banco = verificar_conexao_configurada();
 
-  // 1. CARREGAR DADOS DO BANCO
+  // 1. CARREGAR DADOS DO BANCO (só do evento ativo)
   const carregar_dados_mapa = async () => {
     set_carregando(true);
     set_mensagem_erro(null);
 
-    if (!conexao_banco) {
+    if (!conexao_banco || !id_evento_ativo) {
       set_projetos_map([]);
       set_carregando(false);
       return;
     }
 
     try {
-      // 1.1 Identificar cota configurada no evento se id_evento_ativo for conhecido
-      let cotaLocal = cota_padrao_evento || 3;
-      if (id_evento_ativo) {
-        try {
-          const { data: evData } = await supabase
-            .from('eventos')
-            .select('cota_avaliacoes_padrao')
+      const { data: evData, error: erroEvento } = await supabase
+        .from('eventos')
+        .select('cota_avaliacoes_padrao')
+        .eq('id_evento', id_evento_ativo)
+        .maybeSingle();
+      if (erroEvento) throw erroEvento;
+      const cotaEvento = evData?.cota_avaliacoes_padrao || cota_padrao_evento || 3;
+      set_cota_efetiva(cotaEvento);
+
+      const agora = new Date().toISOString();
+      const [projetosData, avaliacoes, locks, quarentena] = await Promise.all([
+        buscarTodas<any>(() =>
+          supabase
+            .from('projetos')
+            .select(`
+              id_projeto,
+              id_evento,
+              codigo_projeto,
+              titulo,
+              estande,
+              corredor,
+              is_check_in_realizado,
+              is_fora_da_competicao,
+              cota_avaliacoes_customizada,
+              modalidades ( nome_modalidade ),
+              areas_tematicas ( nome_area ),
+              instituicoes ( nome_exibicao )
+            `)
             .eq('id_evento', id_evento_ativo)
-            .single();
-          if (evData?.cota_avaliacoes_padrao) {
-            cotaLocal = evData.cota_avaliacoes_padrao;
-          }
-        } catch {
-          // Mantém cota_padrao_evento
-        }
-      }
-      set_cota_efetiva(cotaLocal);
+            .order('id_projeto', { ascending: true })
+        ),
+        // Avaliações válidas (não canceladas) dos projetos deste evento
+        buscarTodas<{ id_projeto: string; nota_final: number | null }>(() =>
+          supabase
+            .from('avaliacoes')
+            .select('id_avaliacao, id_projeto, nota_final, projetos!inner(id_evento)')
+            .eq('projetos.id_evento', id_evento_ativo)
+            .or('status.is.null,status.neq.CANCELADA')
+            .order('id_avaliacao', { ascending: true })
+        ),
+        // Travas ainda válidas: as vencidas só são limpas no próximo sorteio
+        buscarTodas<{ id_projeto: string }>(() =>
+          supabase
+            .from('locks_ativos')
+            .select('id_lock, id_projeto, projetos!inner(id_evento)')
+            .eq('projetos.id_evento', id_evento_ativo)
+            .or(`expira_em.is.null,expira_em.gt.${agora}`)
+            .order('id_lock', { ascending: true })
+        ),
+        // Quarentena pendente (divergência ainda não resolvida), a mesma lista da tela Quarentena
+        buscarTodas<{ id_projeto: string }>(() =>
+          supabase
+            .from('view_projetos_quarentena')
+            .select('id_projeto')
+            .eq('id_evento', id_evento_ativo)
+            .order('id_projeto', { ascending: true })
+        ),
+      ]);
 
-      // 1.2 Consultar projetos do evento com chaves estrangeiras
-      let queryProj = supabase
-        .from('projetos')
-        .select(`
-          id_projeto,
-          id_evento,
-          codigo_projeto,
-          titulo,
-          estande,
-          corredor,
-          is_check_in_realizado,
-          modalidades ( id_modalidade, nome_modalidade ),
-          areas_tematicas ( id_area, nome_area ),
-          instituicoes ( id_instituicao, nome_exibicao, sigla )
-        `);
-
-      if (id_evento_ativo) {
-        queryProj = queryProj.eq('id_evento', id_evento_ativo);
-      }
-
-      let { data: projetosData, error: erroProjetos } = await queryProj.order('estande', { ascending: true });
-
-      // Fallback resiliente: se der erro na consulta relacional, busca as colunas base da tabela projetos
-      if (erroProjetos) {
-        console.warn('Aviso: tentando consulta simplificada direta de projetos:', erroProjetos.message);
-        let queryBase = supabase
-          .from('projetos')
-          .select('id_projeto, id_evento, codigo_projeto, titulo, estande, corredor, is_check_in_realizado');
-        if (id_evento_ativo) {
-          queryBase = queryBase.eq('id_evento', id_evento_ativo);
-        }
-        const fallbackRes = await queryBase.order('estande', { ascending: true });
-        if (fallbackRes.error) {
-          throw fallbackRes.error;
-        }
-        projetosData = fallbackRes.data as any;
-      }
-
-      if (!projetosData || projetosData.length === 0) {
-        set_projetos_map([]);
-        set_carregando(false);
-        return;
-      }
-
-      // 1.3 Consultar locks_ativos e avaliações com notas
-      let locksSet = new Set<string>();
-      let quarentenaSet = new Set<string>();
-      // Mapear id_projeto -> lista de notas válidas
+      const locksSet = new Set(locks.map((l) => l.id_projeto));
+      const quarentenaSet = new Set(quarentena.map((q) => q.id_projeto));
       const mapaNotas = new Map<string, number[]>();
-
-      try {
-        const [locksRes, avaliacoesRes] = await Promise.all([
-          supabase.from('locks_ativos').select('id_projeto'),
-          supabase.from('avaliacoes').select('id_projeto, nota_final, is_quarentena, status')
-        ]);
-
-        if (locksRes.data) {
-          locksRes.data.forEach((l: any) => {
-            if (l.id_projeto) locksSet.add(l.id_projeto);
-          });
+      const mapaQtd = new Map<string, number>();
+      avaliacoes.forEach((a) => {
+        mapaQtd.set(a.id_projeto, (mapaQtd.get(a.id_projeto) || 0) + 1);
+        if (a.nota_final !== null && a.nota_final !== undefined && !isNaN(Number(a.nota_final))) {
+          mapaNotas.set(a.id_projeto, [...(mapaNotas.get(a.id_projeto) || []), Number(a.nota_final)]);
         }
+      });
 
-        if (avaliacoesRes.data) {
-          avaliacoesRes.data.forEach((a: any) => {
-            if (!a.id_projeto) return;
-            if (a.status === 'CANCELADA') return;
-
-            if (a.is_quarentena) {
-              quarentenaSet.add(a.id_projeto);
-            }
-
-            if (a.nota_final !== null && a.nota_final !== undefined) {
-              const numNota = Number(a.nota_final);
-              if (!isNaN(numNota)) {
-                const arr = mapaNotas.get(a.id_projeto) || [];
-                arr.push(numNota);
-                mapaNotas.set(a.id_projeto, arr);
-              }
-            } else {
-              // Avaliação registrada mesmo sem nota_final preenchida ainda
-              const arr = mapaNotas.get(a.id_projeto) || [];
-              mapaNotas.set(a.id_projeto, arr);
-            }
-          });
-        }
-      } catch (errSecundario) {
-        console.warn('Aviso: status secundário de locks/avaliações:', errSecundario);
-      }
-
-      // 1.4 Processar cada projeto e determinar seus 4 estados de cor
       const processados: ProjetoMapItem[] = projetosData.map((p) => {
-        const temLock = locksSet.has(p.id_projeto);
-        const temQuarentena = quarentenaSet.has(p.id_projeto);
         const notasDoProjeto = mapaNotas.get(p.id_projeto) || [];
-        const qtdAval = notasDoProjeto.length;
+        const qtdAval = mapaQtd.get(p.id_projeto) || 0;
+        const cotaProjeto = p.cota_avaliacoes_customizada || cotaEvento;
+        const mediaCalculada =
+          notasDoProjeto.length > 0
+            ? Math.round((notasDoProjeto.reduce((acc, curr) => acc + curr, 0) / notasDoProjeto.length) * 100) / 100
+            : null;
+        const isCredenciado = p.is_check_in_realizado === true;
 
-        let mediaCalculada: number | null = null;
-        if (qtdAval > 0) {
-          const soma = notasDoProjeto.reduce((acc, curr) => acc + curr, 0);
-          mediaCalculada = Math.round((soma / qtdAval) * 100) / 100;
-        }
-
-        const isCredenciado = p.is_check_in_realizado !== false; // default true se null
-
-        // 4 Estados de Cores:
-        // 1. não credenciado (cinza)
-        // 2. credenciado (0 avaliações) (azul)
-        // 3. faltando avaliações (1 a cota-1) (amarelo)
-        // 4. avaliado (>= cota) (verde)
-        let status_mapa: StatusProjetoMapa = 'nao_credenciado';
-        if (!isCredenciado) {
-          status_mapa = 'nao_credenciado';
-        } else if (qtdAval === 0) {
-          status_mapa = 'credenciado';
-        } else if (qtdAval < cotaLocal) {
-          status_mapa = 'faltando';
-        } else {
-          status_mapa = 'avaliado';
-        }
+        // 4 estados de cor: não credenciado (cinza), credenciado sem avaliação (azul),
+        // faltando avaliações (âmbar) e cota do projeto completa (verde)
+        let status_mapa: StatusProjetoMapa;
+        if (!isCredenciado) status_mapa = 'nao_credenciado';
+        else if (qtdAval === 0) status_mapa = 'credenciado';
+        else if (qtdAval < cotaProjeto) status_mapa = 'faltando';
+        else status_mapa = 'avaliado';
 
         const estandeNum = p.estande && p.estande.trim() !== '' ? p.estande.trim() : null;
-        const corredorNome = p.corredor && p.corredor.trim() !== ''
-          ? p.corredor.trim()
-          : extrair_corredor_pelo_estande(estandeNum);
-
-        // Extrai nomes das relações com segurança
-        const modObj: any = (p as any).modalidades;
-        const areaObj: any = (p as any).areas_tematicas;
-        const instObj: any = (p as any).instituicoes;
-
-        const modNome = Array.isArray(modObj)
-          ? modObj[0]?.nome_modalidade
-          : modObj?.nome_modalidade || (p as any).modalidade || null;
-
-        const areaNome = Array.isArray(areaObj)
-          ? areaObj[0]?.nome_area
-          : areaObj?.nome_area || (p as any).area_conhecimento || null;
-
-        const instNome = Array.isArray(instObj)
-          ? instObj[0]?.nome_exibicao
-          : instObj?.nome_exibicao || (p as any).nome_instituicao || null;
+        const corredorNome = p.corredor && p.corredor.trim() !== '' ? p.corredor.trim() : extrair_corredor_pelo_estande(estandeNum);
+        const relacao = (valor: any, campo: string) => (Array.isArray(valor) ? valor[0]?.[campo] : valor?.[campo]) ?? null;
 
         return {
           id_projeto: p.id_projeto,
@@ -264,41 +202,38 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
           titulo: p.titulo,
           estande: estandeNum,
           corredor: corredorNome,
-          modalidade: modNome,
-          area_conhecimento: areaNome,
-          nome_instituicao: instNome,
+          modalidade: relacao(p.modalidades, 'nome_modalidade'),
+          area_conhecimento: relacao(p.areas_tematicas, 'nome_area'),
+          nome_instituicao: relacao(p.instituicoes, 'nome_exibicao'),
           is_check_in_realizado: isCredenciado,
-          tem_lock: temLock,
-          is_quarentena: temQuarentena,
+          is_fora_da_competicao: p.is_fora_da_competicao === true,
+          tem_lock: locksSet.has(p.id_projeto),
+          is_quarentena: quarentenaSet.has(p.id_projeto),
           qtd_avaliacoes: qtdAval,
+          cota: cotaProjeto,
           media_geral: mediaCalculada,
           notas: notasDoProjeto,
-          status_mapa
+          status_mapa,
         };
       });
 
       set_projetos_map(processados);
     } catch (err: any) {
       console.error('Erro ao consultar dados para o mapa de estandes:', err);
-      set_mensagem_erro(`Erro ao carregar mapa de estandes: ${err?.message || err}`);
+      set_mensagem_erro(`Erro ao carregar o mapa de estandes: ${tratarErroEscritaAdmin(err)}`);
       set_projetos_map([]);
     } finally {
       set_carregando(false);
     }
   };
 
+  /** Sem corredor cadastrado, só deduz quando o estande é "letra + número" (A-01, B12); não inventa corredor. */
   const extrair_corredor_pelo_estande = (estandeStr: string | null): string => {
     if (!estandeStr || estandeStr.trim() === '' || estandeStr.toUpperCase() === 'SEM-ESTANDE') {
       return 'Sem Estande Atribuído';
     }
-    const numLimpo = estandeStr.toUpperCase().trim();
-    if (numLimpo.includes('A-') || numLimpo.includes('EST-A') || numLimpo.startsWith('A')) return 'Corredor A';
-    if (numLimpo.includes('B-') || numLimpo.includes('EST-B') || numLimpo.startsWith('B')) return 'Corredor B';
-    if (numLimpo.includes('C-') || numLimpo.includes('EST-C') || numLimpo.startsWith('C')) return 'Corredor C';
-    if (numLimpo.includes('D-') || numLimpo.includes('EST-D') || numLimpo.startsWith('D')) return 'Corredor D';
-    if (numLimpo.includes('E-') || numLimpo.includes('EST-E') || numLimpo.startsWith('E')) return 'Corredor E';
-    if (numLimpo.includes('F-') || numLimpo.includes('EST-F') || numLimpo.startsWith('F')) return 'Corredor F';
-    return 'Corredor Principal';
+    const letra = estandeStr.trim().match(/^([A-Za-z])\s*-?\s*\d+$/);
+    return letra ? `Corredor ${letra[1].toUpperCase()}` : 'Corredor não informado';
   };
 
   useEffect(() => {
@@ -315,7 +250,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
     set_avaliacoes_audit([]);
 
     try {
-      let { data, error } = await supabase
+      const { data, error } = await supabase
         .from('avaliacoes')
         .select(`
           id_avaliacao,
@@ -325,26 +260,14 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
           usuarios ( nome, email )
         `)
         .eq('id_projeto', projetoItem.id_projeto)
+        .or('status.is.null,status.neq.CANCELADA')
         .order('created_at', { ascending: false });
-
-      if (error) {
-        console.warn('Tentando fallback de consulta de avaliações sem join:', error.message);
-        const { data: dataSimples, error: erroSimples } = await supabase
-          .from('avaliacoes')
-          .select('id_avaliacao, nota_final, parecer_final, created_at, id_usuario')
-          .eq('id_projeto', projetoItem.id_projeto)
-          .order('created_at', { ascending: false });
-
-        if (erroSimples) {
-          throw error;
-        }
-        data = dataSimples as any;
-      }
+      if (error) throw error;
 
       set_avaliacoes_audit(data || []);
     } catch (err: any) {
       console.error('Falha de auditoria no Supabase:', err);
-      set_erro_audit(`Falha na consulta de avaliações: ${err?.message || err}`);
+      set_erro_audit(`Falha na consulta de avaliações: ${tratarErroEscritaAdmin(err)}`);
     } finally {
       set_carregando_audit(false);
     }
@@ -398,7 +321,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
       listaProjetos.sort((a, b) => {
         const estA = a.estande || '';
         const estB = b.estande || '';
-        return estA.localeCompare(estB, undefined, { numeric: true, sensitivity: 'base' });
+        return compararNatural(estA, estB);
       });
     });
 
@@ -406,7 +329,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
     return Array.from(mapa.entries()).sort((a, b) => {
       if (a[0] === 'Sem Estande Atribuído') return 1;
       if (b[0] === 'Sem Estande Atribuído') return -1;
-      return a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: 'base' });
+      return compararNatural(a[0], b[0]);
     });
   }, [projetos_map, termo_busca, filtro_status]);
 
@@ -440,7 +363,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
               Mapa de Estandes & Pavilhão
             </h2>
             <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              Distribuição física, corredores, status em tempo real e cota ({cota_efetiva} avaliações/projeto)
+              Distribuição física, corredores e status em tempo real. Cota padrão: {cota_efetiva} avaliações por projeto (ou a cota do projeto)
             </p>
           </div>
         </div>
@@ -481,6 +404,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
             type="button"
             onClick={() => set_modo_fullscreen(!modo_fullscreen)}
             title={modo_fullscreen ? 'Sair da Tela Cheia' : 'Modo Tela Cheia (Expandir Janela)'}
+            aria-label={modo_fullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
             className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 cursor-pointer transition-all"
           >
             {modo_fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -490,8 +414,9 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
           <button
             type="button"
             onClick={carregar_dados_mapa}
-            disabled={carregando}
+            disabled={carregando || !id_evento_ativo}
             title="Sincronizar Pavilhão e Avaliações"
+            aria-label="Atualizar mapa"
             className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 cursor-pointer transition-all"
           >
             <RefreshCw className={`w-4 h-4 ${carregando ? 'animate-spin text-teal-600' : ''}`} />
@@ -503,6 +428,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
               type="button"
               onClick={aoFechar}
               title="Fechar Mapa"
+            aria-label="Fechar mapa"
               className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50 dark:hover:text-red-400 text-slate-500 cursor-pointer transition-all border border-slate-200 dark:border-slate-700"
             >
               <X className="w-5 h-5" />
@@ -511,8 +437,14 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
         </div>
       </div>
 
+      {!id_evento_ativo && (
+        <div role="alert" className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs font-semibold mt-4 shrink-0">
+          Não há evento ativo. O mapa é de cada evento: ative um evento para vê-lo.
+        </div>
+      )}
+
       {mensagem_erro && (
-        <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 text-xs flex items-center gap-2 mt-4 shrink-0">
+        <div role="alert" className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 text-xs flex items-center gap-2 mt-4 shrink-0">
           <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
           <span className="font-semibold">{mensagem_erro}</span>
         </div>
@@ -531,6 +463,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
           <button
             type="button"
             onClick={() => set_filtro_status('todos')}
+            aria-pressed={filtro_status === 'todos'}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
               filtro_status === 'todos'
                 ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-900 dark:border-white shadow-xs'
@@ -544,6 +477,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
           <button
             type="button"
             onClick={() => set_filtro_status(filtro_status === 'nao_credenciado' ? 'todos' : 'nao_credenciado')}
+            aria-pressed={filtro_status === 'nao_credenciado'}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border ${
               filtro_status === 'nao_credenciado'
                 ? 'ring-2 ring-slate-500 shadow-sm bg-slate-600 text-white border-slate-600'
@@ -558,6 +492,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
           <button
             type="button"
             onClick={() => set_filtro_status(filtro_status === 'credenciado' ? 'todos' : 'credenciado')}
+            aria-pressed={filtro_status === 'credenciado'}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border ${
               filtro_status === 'credenciado'
                 ? 'ring-2 ring-blue-500 shadow-sm bg-blue-600 text-white border-blue-600'
@@ -572,6 +507,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
           <button
             type="button"
             onClick={() => set_filtro_status(filtro_status === 'faltando' ? 'todos' : 'faltando')}
+            aria-pressed={filtro_status === 'faltando'}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border ${
               filtro_status === 'faltando'
                 ? 'ring-2 ring-amber-500 shadow-sm bg-amber-500 text-white border-amber-500'
@@ -586,6 +522,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
           <button
             type="button"
             onClick={() => set_filtro_status(filtro_status === 'avaliado' ? 'todos' : 'avaliado')}
+            aria-pressed={filtro_status === 'avaliado'}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border ${
               filtro_status === 'avaliado'
                 ? 'ring-2 ring-emerald-600 shadow-sm bg-emerald-600 text-white border-emerald-600'
@@ -677,12 +614,12 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
                   } else if (proj.status_mapa === 'faltando') {
                     cardBorderBg = 'bg-amber-50/90 hover:bg-amber-100/90 dark:bg-amber-950/40 dark:hover:bg-amber-950/60 border-amber-300 dark:border-amber-700 text-amber-950 dark:text-amber-100';
                     statusTagBg = 'bg-amber-200/90 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200';
-                    const faltam = Math.max(1, cota_efetiva - proj.qtd_avaliacoes);
+                    const faltam = Math.max(1, proj.cota - proj.qtd_avaliacoes);
                     statusTexto = `Faltam ${faltam} aval.`;
                   } else if (proj.status_mapa === 'avaliado') {
                     cardBorderBg = 'bg-emerald-50/90 hover:bg-emerald-100/90 dark:bg-emerald-950/40 dark:hover:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700 text-emerald-950 dark:text-emerald-100';
                     statusTagBg = 'bg-emerald-200/90 text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200';
-                    statusTexto = `Avaliado (${proj.qtd_avaliacoes}/${cota_efetiva})`;
+                    statusTexto = `Avaliado (${proj.qtd_avaliacoes}/${proj.cota})`;
                   }
 
                   const estandeFormatado = proj.estande || 'SEM ESTANDE';
@@ -701,6 +638,11 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
                             {estandeFormatado}
                           </span>
                           <div className="flex items-center gap-1">
+                            {proj.is_fora_da_competicao && (
+                              <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                                Fora da competição
+                              </span>
+                            )}
                             {proj.tem_lock && (
                               <span title="Avaliador avaliando no estande" className="p-0.5 rounded bg-amber-500 text-white">
                                 <Lock className="w-3 h-3 animate-pulse" />
@@ -712,7 +654,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
                               </span>
                             )}
                             <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${statusTagBg}`}>
-                              {proj.qtd_avaliacoes}/{cota_efetiva}
+                              {proj.qtd_avaliacoes}/{proj.cota}
                             </span>
                           </div>
                         </div>
@@ -771,13 +713,18 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
                           </div>
 
                           <div className="flex items-center gap-1.5 shrink-0">
+                            {proj.is_fora_da_competicao && (
+                              <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                                Fora da competição
+                              </span>
+                            )}
                             {proj.tem_lock && (
-                              <span title="Avaliador no estande neste instante" className="p-1 rounded-md bg-amber-500 text-white shadow-2xs">
+                              <span role="img" aria-label="Avaliador no estande neste instante" title="Avaliador no estande neste instante" className="p-1 rounded-md bg-amber-500 text-white shadow-2xs">
                                 <Lock className="w-3.5 h-3.5 animate-pulse" />
                               </span>
                             )}
                             {proj.is_quarentena && (
-                              <span title="Projeto em Quarentena / Divergência" className="p-1 rounded-md bg-rose-500 text-white shadow-2xs">
+                              <span role="img" aria-label="Em quarentena: notas divergentes" title="Em quarentena: notas divergentes" className="p-1 rounded-md bg-rose-500 text-white shadow-2xs">
                                 <AlertTriangle className="w-3.5 h-3.5" />
                               </span>
                             )}
@@ -813,7 +760,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
                           </div>
 
                           <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">
-                            {proj.qtd_avaliacoes}/{cota_efetiva} aval.
+                            {proj.qtd_avaliacoes}/{proj.cota} aval.
                           </span>
                         </div>
 
@@ -913,7 +860,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase block">Progresso</span>
                 <span className="text-xs font-black font-mono text-slate-800 dark:text-slate-200">
-                  {projeto_selecionado.qtd_avaliacoes} / {cota_efetiva} cota
+                  {projeto_selecionado.qtd_avaliacoes} / {projeto_selecionado.cota} cota
                 </span>
               </div>
               <div>
