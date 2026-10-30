@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.7](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.6...v0.6.7) (2026-10-30)
+
+
+### Correções
+
+* **avaliadores:** excluir não apaga mais notas e importação não rebaixa Admin/Staff ([#35](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/35)) ([8c72cf6](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/8c72cf6ae9058d83caf82915c429ede5e0b00f42))
+* **instituicoes:** importação sem erro de ON CONFLICT, sem duplicatas e exclusão que não desliga o conflito ([#39](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/39)) ([68e243b](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/68e243b7d7e5adf02b353847beaa7cba3851d648))
+* **modalidades:** reimportar não derruba a planilha e excluir não apaga bloqueios dos avaliadores ([#40](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/40)) ([ad44e28](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/ad44e286e79ca49cc781e2f253fcdf87ec099843))
+* **questionarios:** criar volta a funcionar e editar não apaga mais as notas por critério ([#38](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/38)) ([dee3589](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/dee358943fc28e9dcc9872e7a4aeaafa838c3a15))
+* **staff:** cadastro e importação não mudam mais o papel de Admin/Avaliador ([#37](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/37)) ([b5c0d32](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/b5c0d32d17b6106871fa436ed883a4ffa0d1b645))
+
 ## [0.6.6](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.5...v0.6.6) (2026-10-30)
 
 
