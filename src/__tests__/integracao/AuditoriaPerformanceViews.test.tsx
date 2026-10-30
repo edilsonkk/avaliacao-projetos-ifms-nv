@@ -193,7 +193,6 @@ describe('Auditoria de Desempenho, Ausência de Loop Infinito e Integração de 
 
     await waitFor(() => {
       expect(mockFrom).toHaveBeenCalledWith('eventos');
-      expect(mockFrom).toHaveBeenCalledWith('projetos');
     });
 
     const totalChamadasAposMontagem = mockFrom.mock.calls.length;

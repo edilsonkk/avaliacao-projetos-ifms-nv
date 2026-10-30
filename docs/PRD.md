@@ -91,7 +91,7 @@ Os critérios de aceite referenciam as suítes de teste (`src/**/__tests__/`) qu
 |---|---|---|
 | RF-40 | Tabela de expositores (corredor, estande, projeto, instituição, expositores, status) com confirmar/cancelar check-in e contador ao vivo | `TelaStaffLayoutEAutocadastro.test` |
 | RF-41 | Tabela de avaliadores com credenciar/bloquear, editar e alternar modalidades; **sem botão de exclusão** | idem |
-| RF-42 | Contadores de credenciados não duplicam | `SincroniaContadores.test` |
+| RF-42 | Contadores de credenciados não duplicam e não contam o Staff como avaliador | `GestorAvaliadores.test`, `GestorStaff.test`, `18_telao_test.sql` |
 
 ### 5.5 Motor de sorteio — `sortear_proximo_projeto` (SQL) + `TelaAvaliador`
 | ID | Requisito | Critério de aceite |
