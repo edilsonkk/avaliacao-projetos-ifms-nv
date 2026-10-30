@@ -22,7 +22,7 @@ gestores de cada feature. Modelos estáticos: `public/modelos/`.
 | `GestorAvaliadores` | RPC `admin_salvar_avaliadores` (uma chamada para a planilha toda) | nome, email, instituicao, sigla_instituicao, modalidades_bloqueadas, areas | `email` (sem diferenciar maiúsculas); e-mails de Admin/Staff são ignorados |
 | `GestorStaff` | RPC `admin_salvar_staff` (uma chamada) | Nome, E-mail, Papel (`STAFF`/`MONITOR`) | `email` (sem diferenciar maiúsculas); e-mails de Admin/Avaliador são ignorados |
 | `GestorInstituicoes` | RPC `admin_salvar_instituicoes` (uma chamada) | Nome / Instituição, Sigla, Câmpus | `(id_evento, nome_normalizado)` |
-| `GestorModalidades` | `modalidades` | Código, Modalidade, Nível, Área Temática, Descrição | por evento |
+| `GestorModalidades` | RPC `admin_salvar_modalidades` (uma chamada) | Código, Modalidade, Nível, Área Temática, Descrição | `(id_evento, nome)` sem diferenciar maiúsculas/acentos |
 | `GestorQuestionarios` | Preenche o formulário; grava por `admin_salvar_questionario` ao salvar | Pergunta/Critério, Lembrete/Descrição, Peso (padrão 1.0) | vinculado ao questionário |
 
 ### Importação de projetos
@@ -110,9 +110,17 @@ acentuação oficial:
 ## Modalidades e Níveis
 
 Card no Bloco 2 (`GestorModalidades`), no layout canônico dos gestores: cadastro com código, nome, nível
-(Fundamental, Médio, Médio/Técnico, Técnico, Superior, Geral), área temática e descrição; busca; ordenação em todas
-as colunas; edição inline.
+(Fundamental, Médio, Médio/Técnico, Técnico, Superior, Geral), área temática (com sugestões das áreas do evento) e
+descrição; busca sem diferenciar acentos; ordenação em todas as colunas, também pelo teclado; edição em diálogo.
 
-Testes: `src/lib/parsers/__tests__/`, `src/features/cadastros/__tests__/GestorModalidadesEDePara.test.tsx`,
+- Lista só as modalidades do **evento ativo**. Sem evento ativo, a tela avisa e não cadastra.
+- Cadastro e importação passam por `admin_salvar_modalidades` (uma chamada): modalidade que já existe no evento
+  (mesmo nome, sem diferenciar maiúsculas/acentos) é atualizada, sem derrubar a planilha. No De-Para, **associar a uma
+  existente** grava o nome da planilha como apelido (`modalidade_aliases`), e a próxima planilha de projetos já casa.
+- **Excluir** pede confirmação e é recusado se houver projeto da modalidade ou avaliador com ela bloqueada
+  (`admin_excluir_modalidade`): os projetos ficariam sem modalidade e os bloqueios seriam apagados.
+
+Testes: `src/lib/parsers/__tests__/`, `src/features/cadastros/__tests__/GestorModalidades.test.tsx`,
+`GestorModalidadesEDePara.test.tsx`, `supabase/tests/14_gestor_modalidades_test.sql`,
 `src/features/projetos/__tests__/`, `src/features/avaliadores/__tests__/GestorAvaliadores.test.tsx`,
 `src/__tests__/integracao/AutoCadastroEAreasTematicasEvento.test.tsx`, `CotaEstritaEAutoCadastroDePara.test.tsx`.

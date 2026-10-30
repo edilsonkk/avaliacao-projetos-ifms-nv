@@ -101,51 +101,7 @@ describe('Validação TDD: Gestor de Modalidades e Níveis, De-Para e Aliases', 
     });
   });
 
-  it('1. GESTOR DE MODALIDADES: renderiza cabeçalho com ações padrão (Baixar Modelo, Importar, Nova Modalidade)', async () => {
-    const mockFechar = vi.fn();
-    render(<GestorModalidades ao_fechar={mockFechar} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Gestor de Modalidades e Níveis')).toBeDefined();
-      expect(screen.getByRole('button', { name: /Baixar Modelo/i })).toBeDefined();
-      expect(screen.getByRole('button', { name: /Importar/i })).toBeDefined();
-      expect(screen.getByRole('button', { name: /Nova Modalidade/i })).toBeDefined();
-    });
-
-    // Verifica que a listagem inicial carregou a modalidade mockada
-    expect(screen.getByText('Ensino Médio e Técnico')).toBeDefined();
-    expect(screen.getByText('EM-01')).toBeDefined();
-  });
-
-  it('2. FORMULÁRIO RETRÁTIL: permite abrir formulário e cadastrar nova modalidade com campos completos', async () => {
-    render(<GestorModalidades />);
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Nova Modalidade/i })).toBeDefined();
-    });
-
-    // Abre formulário
-    fireEvent.click(screen.getByRole('button', { name: /Nova Modalidade/i }));
-
-    expect(screen.getByPlaceholderText('Código (ex: MOD-EM)')).toBeDefined();
-    expect(screen.getByPlaceholderText(/Nome da Modalidade/i)).toBeDefined();
-
-    // Preenche os campos
-    fireEvent.change(screen.getByPlaceholderText('Código (ex: MOD-EM)'), {
-      target: { value: 'EF-01' },
-    });
-    fireEvent.change(screen.getByPlaceholderText(/Nome da Modalidade/i), {
-      target: { value: 'Ensino Fundamental' },
-    });
-
-    // Salva o cadastro
-    const btnSalvar = screen.getByRole('button', { name: /Cadastrar Modalidade/i });
-    fireEvent.click(btnSalvar);
-
-    await waitFor(() => {
-      expect(mockFrom).toHaveBeenCalledWith('modalidades');
-    });
-  });
+  // Cabeçalho, cadastro, importação e exclusão do Gestor de Modalidades: ver GestorModalidades.test.tsx
 
   it('3. MODAL DE-PARA MAPPING: exibe termos fuzzy (>= 85%) e novos para validação antes de inserir', async () => {
     const mockConfirmar = vi.fn();

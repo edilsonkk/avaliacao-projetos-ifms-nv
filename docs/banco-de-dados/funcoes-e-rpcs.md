@@ -78,6 +78,8 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `admin_salvar_instituicoes(p_id_evento uuid, p_itens jsonb)` → `jsonb` | Cadastro manual e importação de instituições por `(id_evento, nome_normalizado)`. Devolve `{cadastradas, atualizadas, ignoradas}` |
 | `admin_excluir_instituicao(p_id_instituicao)` | Exclui instituição sem projeto nem avaliador vinculado |
 | `fn_normalizar_nome(p_texto)` → `text` | Chave de comparação de nomes (minúsculas, sem acento, sem espaços nas pontas); usada pelo trigger de `instituicoes` |
+| `admin_salvar_modalidades(p_id_evento uuid, p_itens jsonb)` → `jsonb` | Cadastro manual e importação de modalidades (cria ou atualiza pelo nome; `id_existente` grava apelido). Devolve `{cadastradas, atualizadas, associadas, ignoradas}` |
+| `admin_excluir_modalidade(p_id_modalidade)` | Exclui modalidade sem projeto nem bloqueio de avaliador |
 | `fn_expurgar_modalidades_bloqueadas(p_id_usuario, p_id_evento)` | Interna: remove travas e fila do avaliador em projetos das modalidades bloqueadas |
 | `fn_recalcular_quarentena(p_id_projeto uuid)` | Interna: marca/desmarca `is_quarentena` das avaliações ativas pela regra da view |
 | `is_admin()` → `boolean` | Usuário autenticado tem papel `ADMIN` |
