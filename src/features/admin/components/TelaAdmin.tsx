@@ -1238,7 +1238,7 @@ export const TelaAdmin: React.FC = () => {
             >
               <X className="w-5 h-5" />
             </button>
-            <GestorInstituicoes ao_fechar={() => set_mostrar_gestor_instituicoes(false)} />
+            <GestorInstituicoes id_evento_ativo={metricas_admin.evento_ativo_id} ao_fechar={() => set_mostrar_gestor_instituicoes(false)} />
           </div>
         </div>
       )}

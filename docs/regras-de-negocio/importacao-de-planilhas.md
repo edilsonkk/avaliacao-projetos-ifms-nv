@@ -21,7 +21,7 @@ gestores de cada feature. Modelos estáticos: `public/modelos/`.
 | `GestorProjetos` | `projetos` | Código, Título, Área Temática, Nível/Categoria/Modalidade, Instituição, Sigla, Estande, Corredor, Orientador, Estudantes, Fora da Competição | `id_evento, codigo_projeto` (constraint `uq_projetos_evento_codigo`) |
 | `GestorAvaliadores` | RPC `admin_salvar_avaliadores` (uma chamada para a planilha toda) | nome, email, instituicao, sigla_instituicao, modalidades_bloqueadas, areas | `email` (sem diferenciar maiúsculas); e-mails de Admin/Staff são ignorados |
 | `GestorStaff` | RPC `admin_salvar_staff` (uma chamada) | Nome, E-mail, Papel (`STAFF`/`MONITOR`) | `email` (sem diferenciar maiúsculas); e-mails de Admin/Avaliador são ignorados |
-| `GestorInstituicoes` | `instituicoes` | Nome / Nome de Exibição, Sigla, Campus | `nome_normalizado` |
+| `GestorInstituicoes` | RPC `admin_salvar_instituicoes` (uma chamada) | Nome / Instituição, Sigla, Câmpus | `(id_evento, nome_normalizado)` |
 | `GestorModalidades` | `modalidades` | Código, Modalidade, Nível, Área Temática, Descrição | por evento |
 | `GestorQuestionarios` | Preenche o formulário; grava por `admin_salvar_questionario` ao salvar | Pergunta/Critério, Lembrete/Descrição, Peso (padrão 1.0) | vinculado ao questionário |
 
@@ -97,8 +97,15 @@ acentuação oficial:
 
 ## Instituições
 
-- A tabela mostra só Nome e Sigla, ambas ordenáveis. O `nome_normalizado` não é exibido.
-- Cadastro e edição inline incluem a sigla.
+- Lista só as instituições do **evento ativo**: Instituição, Sigla e Câmpus, ordenáveis (também pelo teclado). Sem
+  evento ativo, a tela avisa e não cadastra. O `nome_normalizado` não é exibido.
+- `nome_normalizado` é calculado por trigger no banco (`fn_normalizar_nome`: minúsculas, sem acento, sem espaços nas
+  pontas), o mesmo critério de Projetos, Avaliadores e autocadastro. A mesma escola escrita de outro jeito não
+  duplica no evento.
+- Cadastro e importação passam por `admin_salvar_instituicoes` (uma chamada): instituição já existente tem sigla e
+  câmpus atualizados; sigla vazia fica vazia (não é inventada). Há modelo `modelo_importacao_instituicoes.xlsx`.
+- **Excluir** pede confirmação e é recusado se houver projeto ou avaliador da instituição
+  (`admin_excluir_instituicao`): sem a instituição, a regra de conflito de instituição deixaria de valer para eles.
 
 ## Modalidades e Níveis
 
