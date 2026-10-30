@@ -59,7 +59,7 @@ describe('Auditoria de Regressão: Restrição de Exclusão (Erradicação de C�
               bloqueado_em: new Date().toISOString(),
               expira_em: new Date(Date.now() + 3600000).toISOString(),
               projetos: { codigo_projeto: 'P-01', titulo: 'Projeto 1', estande: 'E-1', corredor: 'A' },
-              usuarios: { nome: 'Avaliador 1', email: 'av1@ifms.edu.br' },
+              usuarios: { nome: 'Avaliador 1', email: 'av1@ifms.edu.br', papel: 'AVALIADOR' },
             },
           ],
           error: null,

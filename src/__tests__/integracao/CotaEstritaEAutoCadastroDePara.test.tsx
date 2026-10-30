@@ -98,8 +98,8 @@ describe('Regras de Negócio: Cota Estrita, Sorteio, Auto-cadastro e De-Para', (
       if (tabela === 'avaliadores_evento') {
         return criarQueryChain({
           data: [
-            { id_usuario: 'usr-1', is_credenciado: true, usuarios: { nome: 'Avaliador Alfa', email: 'alfa@teste.com' } },
-            { id_usuario: 'usr-2', is_credenciado: true, usuarios: { nome: 'Avaliador Beta', email: 'beta@teste.com' } },
+            { id_usuario: 'usr-1', is_credenciado: true, usuarios: { nome: 'Avaliador Alfa', email: 'alfa@teste.com', papel: 'AVALIADOR' } },
+            { id_usuario: 'usr-2', is_credenciado: true, usuarios: { nome: 'Avaliador Beta', email: 'beta@teste.com', papel: 'AVALIADOR' } },
           ],
           error: null,
         });

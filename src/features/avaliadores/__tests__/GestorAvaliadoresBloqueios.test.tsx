@@ -104,7 +104,7 @@ describe('TDD: Gestor de Avaliadores - Bloqueio de Modalidade, Instituição e C
               is_credenciado: true,
               id_instituicao: 'inst-1',
               instituicoes: { nome_exibicao: 'IFMS Campus CG' },
-              usuarios: { nome: 'Prof. Roberto Carlos', email: 'roberto@ifms.edu.br' },
+              usuarios: { nome: 'Prof. Roberto Carlos', email: 'roberto@ifms.edu.br', papel: 'AVALIADOR' },
             },
           ],
           error: null,

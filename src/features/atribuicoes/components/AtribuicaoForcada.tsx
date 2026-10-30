@@ -346,6 +346,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
 
       // FILTRAGEM DE AVALIADORES ELEGÍVEIS:
       // - is_credenciado = true no evento
+      // - papel AVALIADOR (o credenciamento do Staff fica na mesma tabela)
       const mapaInstituicaoAvaliador = new Map<string, { id_inst?: string; nome_inst?: string }>();
 
       (resAvaliadoresEvento.data || []).forEach((ae: any) => {
@@ -361,7 +362,10 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
       });
 
       const avaliadoresNormalizados: UsuarioAvaliadorItem[] = (resAvaliadoresEvento.data || [])
-        .filter((ae: any) => ae.id_usuario && ae.is_credenciado === true)
+        .filter((ae: any) => {
+          const usuario = Array.isArray(ae.usuarios) ? ae.usuarios[0] : ae.usuarios;
+          return ae.id_usuario && ae.is_credenciado === true && String(usuario?.papel || '').toUpperCase() === 'AVALIADOR';
+        })
         .map((ae: any) => {
           const usuario = Array.isArray(ae.usuarios) ? ae.usuarios[0] : ae.usuarios;
           const instInfo = mapaInstituicaoAvaliador.get(ae.id_usuario);

@@ -190,8 +190,8 @@ describe('Auditoria de Regressão: Impedir Reatribuição do Mesmo Projeto ao Me
       if (tabela === 'avaliadores_evento') {
         return criarQueryChain({
           data: [
-            { id_usuario: usuarioAvaliadorId, id_instituicao: null, is_credenciado: true, usuarios: { nome: 'Avaliador Original', email: 'original@ifms.edu.br' } },
-            { id_usuario: outroAvaliadorId, id_instituicao: null, is_credenciado: true, usuarios: { nome: 'Outro Avaliador', email: 'outro@ifms.edu.br' } },
+            { id_usuario: usuarioAvaliadorId, id_instituicao: null, is_credenciado: true, usuarios: { nome: 'Avaliador Original', email: 'original@ifms.edu.br', papel: 'AVALIADOR' } },
+            { id_usuario: outroAvaliadorId, id_instituicao: null, is_credenciado: true, usuarios: { nome: 'Outro Avaliador', email: 'outro@ifms.edu.br', papel: 'AVALIADOR' } },
           ],
           error: null,
         });

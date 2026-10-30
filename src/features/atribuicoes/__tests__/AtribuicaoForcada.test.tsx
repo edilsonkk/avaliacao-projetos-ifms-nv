@@ -75,6 +75,8 @@ describe('AtribuicaoForcada', () => {
         avaliador('u-2', 'Dr. Bruno Sem Credencial', { is_credenciado: false }),
         avaliador('u-3', 'Carla da Escola A', { id_instituicao: 'inst-a' }),
         avaliador('u-4', 'Davi Declarou Conflito'),
+        // Credenciamento do Staff fica na mesma tabela: não é avaliador
+        avaliador('u-5', 'Sara do Staff', { usuarios: { nome: 'Sara do Staff', email: 'u-5@ifms.edu.br', papel: 'STAFF' } }),
       ],
       avaliacoes: [
         { id_projeto: 'p-2', id_usuario: 'x1', status: 'CONCLUIDA' },
@@ -101,6 +103,15 @@ describe('AtribuicaoForcada', () => {
       expect(screen.queryByText('PROJ-LOTADO')).not.toBeInTheDocument();
       expect(screen.getByText(/1 com cota atingida/i)).toBeInTheDocument();
       expect(supabase.from).not.toHaveBeenCalledWith('view_avaliadores_credenciados');
+    });
+
+    it('não deve listar Staff credenciado como avaliador', async () => {
+      // Arrange / Act
+      renderizar();
+
+      // Assert
+      expect(await screen.findByText('Dra. Ana Credenciada')).toBeInTheDocument();
+      expect(screen.queryByText('Sara do Staff')).not.toBeInTheDocument();
     });
 
     it('deve buscar travas válidas e dados só do evento ativo', async () => {
