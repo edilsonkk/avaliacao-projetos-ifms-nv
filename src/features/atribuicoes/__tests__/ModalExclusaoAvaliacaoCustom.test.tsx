@@ -95,7 +95,8 @@ describe('ModalExclusaoAvaliacao', () => {
       expect(String(chamadasDe('avaliacoes', 'select')[0].args[0])).toContain('projetos!inner');
     });
 
-    it('deve trazer todas as avaliações, mesmo acima de 1000 (paginado)', async () => {
+    // Renderiza 1001 linhas: no runner do CI passa de 5 s, por isso o timeout maior.
+    it('deve trazer todas as avaliações, mesmo acima de 1000 (paginado)', { timeout: 30000 }, async () => {
       // Arrange: 1000 na primeira página e 1 na segunda
       paginas = [
         Array.from({ length: 1000 }, (_, i) => avaliacao(`av-${i}`, `P-${i}`, `Aval ${i}`, 8)),
@@ -106,7 +107,7 @@ describe('ModalExclusaoAvaliacao', () => {
       renderizar();
 
       // Assert
-      expect(await screen.findByText('Última Pessoa')).toBeInTheDocument();
+      expect(await screen.findByText('Última Pessoa', {}, { timeout: 20000 })).toBeInTheDocument();
       expect(chamadasDe('avaliacoes', 'range').map((c) => c.args)).toEqual([[0, 999], [1000, 1999]]);
       expect(screen.getByRole('button', { name: /todas \(1001\)/i })).toBeInTheDocument();
     });
