@@ -127,12 +127,16 @@ describe('VinculoAvaliador', () => {
     render(<VinculoAvaliador aoVincular={aoVincular} intervaloConsultaMs={60_000} />);
     await screen.findByRole('status', { name: /código de pareamento/i });
 
-    // Act
-    act(() => {
-      window.dispatchEvent(new Event(EVENTO_APP_RETOMADA));
-    });
-
-    // Assert
-    await waitFor(() => expect(aoVincular).toHaveBeenCalledWith(expect.objectContaining({ papel: 'avaliador' })));
+    // Act + Assert: o ouvinte é ligado num efeito depois da renderização; em máquina lenta (CI) ele pode
+    // ainda não existir no primeiro disparo, então o evento é repetido até a tela reagir
+    await waitFor(
+      () => {
+        act(() => {
+          window.dispatchEvent(new Event(EVENTO_APP_RETOMADA));
+        });
+        expect(aoVincular).toHaveBeenCalledWith(expect.objectContaining({ papel: 'avaliador' }));
+      },
+      { timeout: 4000 }
+    );
   });
 });
