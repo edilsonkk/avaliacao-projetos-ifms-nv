@@ -102,8 +102,10 @@ gravado ([criação de evento](../regras-de-negocio/eventos.md#configurações-d
 **Sintoma**: ao credenciar alguém, o contador pulava de 1 para 2.
 **Causa**: `JOIN` com `avaliadores_evento` sem deduplicação; contava vínculos em vez de pessoas.
 **Solução**: `Set<string>` de `id_usuario`, filtro por `papel` e por `id_evento`. Os contadores saíram dos cards do
-painel e ficaram dentro dos modais.
-**Teste**: `src/features/admin/__tests__/SincroniaContadores.test.tsx`.
+painel e ficaram dentro dos modais (gestores, Telão e Relatórios). O painel lê só o evento ativo; o cálculo de
+contadores que ele ainda fazia sem exibir foi removido.
+**Teste**: `src/features/admin/__tests__/SincroniaContadores.test.tsx` (o painel não varre tabelas), `GestorAvaliadores`,
+`GestorStaff` e `supabase/tests/18_telao_test.sql`.
 
 ---
 
@@ -111,8 +113,7 @@ painel e ficaram dentro dos modais.
 
 **Sintoma**: `TelaAdmin` disparava requisições sem parar e travava o navegador.
 **Causa**: função de fetch criada a cada render, usada como dependência de `useEffect`.
-**Solução**: `useCallback(async () => {...}, [conexao_banco_configurada])` e atualização funcional do estado
-(`set_metricas_admin(anterior => ({ ...anterior, ... }))`).
+**Solução**: `useCallback(async () => {...}, [conexao_banco_configurada])`; a função só lê o evento ativo.
 **Teste**: `src/__tests__/integracao/AuditoriaPerformanceViews.test.tsx`.
 
 ---

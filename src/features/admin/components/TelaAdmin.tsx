@@ -52,45 +52,19 @@ import { AtribuicaoForcada } from '@/features/atribuicoes';
 import { TelaoAoVivo } from '@/features/relatorios';
 import { ModalExclusaoAvaliacao } from '@/features/atribuicoes';
 
+// O Painel não exibe contadores (os números ficam no Telão, nos Relatórios e em cada gestor):
+// guarda só o evento ativo, que as telas abertas daqui recebem por props.
 interface MetricasAdminState {
-  total_projetos: number;
-  avaliadores_credenciados: number;
-  total_avaliadores_cadastrados: number;
-  locks_ativos: number;
-  projetos_quarentena: number;
-  projetos_ausentes: number;
-  projetos_pendentes_avaliacao: number;
-  avaliacoes_realizadas: number;
-  total_staff: number;
-  staff_credenciados: number;
-  total_staff_cadastrados: number;
-  total_administradores: number;
-  total_questionarios: number;
   evento_ativo_id: string;
   evento_ativo_nome: string;
   evento_ativo_edicao: string;
-  porcentagem_conclusao: number;
   cota_avaliacoes_padrao: number;
 }
 
 const metricas_iniciais_zeradas: MetricasAdminState = {
-  total_projetos: 0,
-  avaliadores_credenciados: 0,
-  total_avaliadores_cadastrados: 0,
-  locks_ativos: 0,
-  projetos_quarentena: 0,
-  projetos_ausentes: 0,
-  projetos_pendentes_avaliacao: 0,
-  avaliacoes_realizadas: 0,
-  total_staff: 0,
-  staff_credenciados: 0,
-  total_staff_cadastrados: 0,
-  total_administradores: 0,
-  total_questionarios: 0,
   evento_ativo_id: '',
   evento_ativo_nome: '',
   evento_ativo_edicao: '',
-  porcentagem_conclusao: 0,
   cota_avaliacoes_padrao: 3,
 };
 
@@ -103,8 +77,7 @@ export const TelaAdmin: React.FC = () => {
     typeof window !== 'undefined' ? localStorage.getItem('evento_ativo_nome') || 'FETEC MS' : 'FETEC MS'
   );
 
-  // Estados de carregamento e erro
-  const [carregando_metricas, set_carregando_metricas] = useState<boolean>(true);
+  // Estado de erro
   const [mensagem_erro_admin, set_mensagem_erro_admin] = useState<string | null>(null);
 
   // Controle dos Modais
@@ -243,332 +216,29 @@ export const TelaAdmin: React.FC = () => {
     }, 3500);
   };
 
-  // 1. Função que busca todas as métricas em tempo real no Supabase (resolvendo loop infinito e estados congelados)
+  // 1. Sincroniza o evento ativo do banco
   const fetchDashboardData = useCallback(async () => {
-    set_carregando_metricas(true);
     set_mensagem_erro_admin(null);
-
-    if (!conexao_banco_configurada) {
-      const overridesLocais = typeof window !== 'undefined'
-        ? JSON.parse(localStorage.getItem('avaliadores_credenciados_local') || '{}')
-        : {};
-      const credCount = Object.values(overridesLocais).filter(Boolean).length;
-
-      const overridesStaff = typeof window !== 'undefined'
-        ? JSON.parse(localStorage.getItem('staff_credenciados_local') || '{}')
-        : {};
-      const staffCredCount = Object.values(overridesStaff).filter(Boolean).length;
-
-      const canceladasLocal = typeof window !== 'undefined'
-        ? JSON.parse(localStorage.getItem('avaliacoes_canceladas_ids') || '[]')
-        : [];
-
-      set_metricas_admin(prev => ({
-        ...prev,
-        avaliadores_credenciados: credCount,
-        staff_credenciados: staffCredCount,
-        total_staff: staffCredCount,
-        avaliacoes_realizadas: Math.max(0, prev.avaliacoes_realizadas - canceladasLocal.length),
-      }));
-      set_carregando_metricas(false);
-      return;
-    }
+    if (!conexao_banco_configurada) return;
 
     try {
-      // 1. Sincronização prévia do Evento Ativo para obter id_evento real
-      let idEventoAtivo = '';
-      let nomeEvt = '';
-      let edicaoEvt = '';
-      let cotaPadraoEvt = 3;
+      const { data: dados_evento, error } = await supabase
+        .from('eventos')
+        .select('id_evento, nome_evento, edicao, cota_avaliacoes_padrao')
+        .eq('is_ativo', true)
+        .maybeSingle();
+      if (error) throw error;
 
-      try {
-        const { data: dados_evento } = await supabase
-          .from('eventos')
-          .select('*')
-          .eq('is_ativo', true)
-          .maybeSingle();
-
-        if (dados_evento) {
-          idEventoAtivo = dados_evento.id_evento || dados_evento.id || '';
-          if (dados_evento.nome_evento) {
-            nomeEvt = dados_evento.nome_evento;
-            setNomeEvento(dados_evento.nome_evento);
-          }
-          if (dados_evento.edicao) {
-            edicaoEvt = dados_evento.edicao;
-          }
-          if (dados_evento.cota_avaliacoes_padrao) {
-            cotaPadraoEvt = dados_evento.cota_avaliacoes_padrao;
-          }
-        }
-      } catch (errEvt) {
-        console.warn('Não foi possível sincronizar dados do evento:', errEvt);
-      }
-
-      // A) Total de projetos vinculados ao evento ativo
-      let total_proj_count = 0;
-      let queryProjetos = supabase
-        .from('projetos')
-        .select('*', { count: 'exact', head: true });
-
-      if (idEventoAtivo) {
-        queryProjetos = queryProjetos.eq('id_evento', idEventoAtivo);
-      }
-
-      const { count: count_projetos, error: erro_projetos } = await queryProjetos;
-
-      if (erro_projetos) {
-        let querySingular = supabase
-          .from('projeto')
-          .select('*', { count: 'exact', head: true });
-        if (idEventoAtivo) {
-          querySingular = querySingular.eq('id_evento', idEventoAtivo);
-        }
-        const { count: count_singular } = await querySingular;
-        total_proj_count = count_singular ?? 0;
-      } else {
-        total_proj_count = count_projetos ?? 0;
-      }
-
-      // Previne contadores congelados em 0 caso os projetos não possuam id_evento
-      if (total_proj_count === 0) {
-        const { count: countGlobal } = await supabase
-          .from('projetos')
-          .select('*', { count: 'exact', head: true });
-        if (countGlobal && countGlobal > 0) {
-          total_proj_count = countGlobal;
-        }
-      }
-
-      // B) Avaliadores credenciados e total cadastrado
-      let aval_cred_count = 0;
-      let aval_total_count = 0;
-      try {
-        let queryAvaliadores = supabase
-          .from('avaliadores_evento')
-          .select('id_usuario, usuarios!inner(id_usuario)', { count: 'exact', head: true })
-          .eq('is_credenciado', true);
-
-        if (idEventoAtivo) {
-          queryAvaliadores = queryAvaliadores.eq('id_evento', idEventoAtivo);
-        }
-
-        let { count: count_avaliadores, error: erro_avaliadores } = await queryAvaliadores;
-
-        if (erro_avaliadores) {
-          let querySemJoin = supabase
-            .from('avaliadores_evento')
-            .select('*', { count: 'exact', head: true })
-            .eq('is_credenciado', true);
-          if (idEventoAtivo) {
-            querySemJoin = querySemJoin.eq('id_evento', idEventoAtivo);
-          }
-          const resSemJoin = await querySemJoin;
-          count_avaliadores = resSemJoin.count;
-          erro_avaliadores = resSemJoin.error;
-        }
-
-        if (erro_avaliadores) {
-          let queryAvalSingular = supabase
-            .from('avaliador_evento')
-            .select('*', { count: 'exact', head: true })
-            .eq('is_credenciado', true);
-          if (idEventoAtivo) {
-            queryAvalSingular = queryAvalSingular.eq('id_evento', idEventoAtivo);
-          }
-          const { count: count_aval_singular } = await queryAvalSingular;
-          aval_cred_count = count_aval_singular ?? 0;
-        } else {
-          aval_cred_count = count_avaliadores ?? 0;
-        }
-
-        // Total de usuários avaliadores cadastrados
-        let queryUsuarios = supabase
-          .from('usuarios')
-          .select('id_usuario, papel');
-        const { data: usersData } = await queryUsuarios;
-        const avaliadoresCadastrados = (usersData || []).filter((u: any) => u.papel?.toUpperCase() === 'AVALIADOR');
-        aval_total_count = avaliadoresCadastrados.length;
-
-        if (aval_total_count === 0) {
-          aval_total_count = aval_cred_count;
-        }
-      } catch (errAval) {
-        console.warn('Erro ao consultar avaliadores credenciados do evento ativo:', errAval);
-      }
-
-      // C) Projetos bloqueados: contagem em 'locks_ativos' filtrando locks estritamente válidos (expira_em > agora)
-      const agoraIso = new Date().toISOString();
-      let total_locks_count = 0;
-      try {
-        // Só travas de projetos do evento ativo (mesma regra da tela Projetos Bloqueados)
-        let consultaLocks: any = supabase
-          .from('locks_ativos')
-          .select('id_lock, projetos!inner(id_evento)', { count: 'exact', head: true })
-          .gt('expira_em', agoraIso);
-        if (idEventoAtivo && typeof consultaLocks.eq === 'function') consultaLocks = consultaLocks.eq('projetos.id_evento', idEventoAtivo);
-        const { count: count_locks } = await consultaLocks;
-
-        total_locks_count = count_locks ?? 0;
-      } catch (errLocks) {
-        console.warn('Erro ao consultar locks ativos válidos:', errLocks);
-      }
-
-      // D) Avaliações em quarentena: consulta à view_projetos_quarentena (divergência > 2.5 OU is_quarentena)
-      let quarentena_count = 0;
-      try {
-        let queryQuarentena = supabase
-          .from('view_projetos_quarentena')
-          .select('*', { count: 'exact', head: true });
-
-        if (idEventoAtivo) {
-          queryQuarentena = queryQuarentena.eq('id_evento', idEventoAtivo);
-        }
-
-        // Conta projetos (mesma regra da tela Projetos em Quarentena), nunca avaliações soltas
-        const { count: count_q, error: err_q } = await queryQuarentena;
-        if (err_q) console.warn('Erro ao contar projetos em quarentena:', err_q.message);
-        quarentena_count = count_q ?? 0;
-      } catch (e) {
-        quarentena_count = 0;
-      }
-
-      // E) Avaliações concluídas (desconsiderando canceladas / soft delete)
-      const isUuidVal = (id?: string) => Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
-      let queryAvaliacoes = supabase
-        .from('avaliacoes')
-        .select('*', { count: 'exact', head: true });
-
-      if (typeof queryAvaliacoes.neq === 'function') {
-        queryAvaliacoes = queryAvaliacoes.neq('status', 'CANCELADA');
-      }
-
-      if (idEventoAtivo && isUuidVal(idEventoAtivo)) {
-        queryAvaliacoes = queryAvaliacoes.eq('id_evento', idEventoAtivo);
-      }
-
-      const { count: count_avaliacoes_feitas, error: err_aval_feitas } = await queryAvaliacoes;
-      let total_aval_feitas = count_avaliacoes_feitas || 0;
-
-      if (err_aval_feitas) {
-        let queryFallback = supabase
-          .from('avaliacoes')
-          .select('*', { count: 'exact', head: true });
-        if (typeof queryFallback.neq === 'function') {
-          queryFallback = queryFallback.neq('status', 'CANCELADA');
-        }
-        const { count: countFallback } = await queryFallback;
-        total_aval_feitas = countFallback || 0;
-      }
-
-      // Desconta imediatamente avaliações canceladas salvas localmente
-      if (typeof window !== 'undefined') {
-        const canceladasLocais = JSON.parse(localStorage.getItem('avaliacoes_canceladas_ids') || '[]');
-        if (Array.isArray(canceladasLocais) && canceladasLocais.length > 0) {
-          total_aval_feitas = Math.max(0, total_aval_feitas - canceladasLocais.length);
-        }
-      }
-
-      const cota_esperada = (total_proj_count || 1) * 3;
-      const pct_conclusao = Math.min(
-        100,
-        Math.round((total_aval_feitas / (cota_esperada || 1)) * 100)
-      );
-
-      // F) Staff: usuários com papel 'STAFF' cadastrados e credenciados no evento ativo
-      let staff_cred_count = 0;
-      let staff_total_count = 0;
-      let admin_count = 0;
-      try {
-        const { data: todos_usuarios } = await supabase
-          .from('usuarios')
-          .select('id_usuario, papel');
-
-        const staffUsers = (todos_usuarios || []).filter(
-          (u: any) => u.papel?.toUpperCase() === 'STAFF' || u.papel?.toUpperCase() === 'MONITOR'
-        );
-        staff_total_count = staffUsers.length;
-
-        const credStaffIds = new Set<string>();
-        if (idEventoAtivo && staffUsers.length > 0) {
-          const { data: staffAe } = await supabase
-            .from('avaliadores_evento')
-            .select('id_usuario, is_credenciado')
-            .eq('id_evento', idEventoAtivo)
-            .eq('is_credenciado', true);
-
-          (staffAe || []).forEach((s: any) => credStaffIds.add(s.id_usuario));
-          staff_cred_count = staffUsers.filter((u: any) => credStaffIds.has(u.id_usuario)).length;
-        }
-
-
-
-        // Administradores globais
-        if (todos_usuarios && todos_usuarios.length > 0) {
-          admin_count = todos_usuarios.filter(
-            (u: any) => u.papel?.toUpperCase() === 'ADMIN' || u.papel?.toUpperCase() === 'SUPERADMIN'
-          ).length;
-        }
-      } catch (errUser) {
-        console.warn('Erro ao consultar equipe Staff/Administradores:', errUser);
-      }
-
-      // G) Questionários: apenas registros na tabela questionarios atrelados ao evento ativo
-      let quest_count = 0;
-      try {
-        let queryQuest = supabase
-          .from('questionarios')
-          .select('*', { count: 'exact', head: true });
-
-        if (idEventoAtivo) {
-          queryQuest = queryQuest.eq('id_evento', idEventoAtivo);
-        }
-
-        const { count: count_quest, error: errQuest } = await queryQuest;
-
-        if (errQuest) {
-          let queryQuestSingular = supabase
-            .from('questionario')
-            .select('*', { count: 'exact', head: true });
-          if (idEventoAtivo) {
-            queryQuestSingular = queryQuestSingular.eq('id_evento', idEventoAtivo);
-          }
-          const { count: count_q_sing } = await queryQuestSingular;
-          quest_count = count_q_sing ?? 0;
-        } else {
-          quest_count = count_quest ?? 0;
-        }
-      } catch (errQ) {
-        console.warn('Erro ao contar questionários do evento ativo:', errQ);
-      }
-
-      // Atualização atômica consolidada de todas as métricas
-      set_metricas_admin((anterior) => ({
-        ...anterior,
-        evento_ativo_id: idEventoAtivo || anterior.evento_ativo_id,
-        evento_ativo_nome: nomeEvt || anterior.evento_ativo_nome,
-        evento_ativo_edicao: edicaoEvt || anterior.evento_ativo_edicao,
-        cota_avaliacoes_padrao: cotaPadraoEvt,
-        total_projetos: total_proj_count,
-        avaliadores_credenciados: aval_cred_count,
-        total_avaliadores_cadastrados: Math.max(aval_total_count, aval_cred_count),
-        locks_ativos: total_locks_count,
-        projetos_quarentena: quarentena_count,
-        projetos_ausentes: 0,
-        projetos_pendentes_avaliacao: 0,
-        avaliacoes_realizadas: total_aval_feitas,
-        porcentagem_conclusao: pct_conclusao,
-        total_staff: staff_cred_count,
-        staff_credenciados: staff_cred_count,
-        total_staff_cadastrados: staff_total_count,
-        total_administradores: admin_count || anterior.total_administradores,
-        total_questionarios: quest_count,
-      }));
+      if (dados_evento?.nome_evento) setNomeEvento(dados_evento.nome_evento);
+      set_metricas_admin({
+        evento_ativo_id: dados_evento?.id_evento || '',
+        evento_ativo_nome: dados_evento?.nome_evento || '',
+        evento_ativo_edicao: dados_evento?.edicao || '',
+        cota_avaliacoes_padrao: dados_evento?.cota_avaliacoes_padrao || 3,
+      });
     } catch (erro_excecao: any) {
-      console.error('Erro ao consultar métricas do painel admin no Supabase:', erro_excecao);
-      set_mensagem_erro_admin('Falha ao sincronizar métricas em tempo real com o banco de dados.');
-    } finally {
-      set_carregando_metricas(false);
+      console.error('Erro ao sincronizar o evento ativo:', erro_excecao);
+      set_mensagem_erro_admin('Falha ao sincronizar o evento ativo com o banco de dados.');
     }
   }, [conexao_banco_configurada]);
 
