@@ -73,9 +73,8 @@ export const TelaAdmin: React.FC = () => {
   const [metricas_admin, set_metricas_admin] = useState<MetricasAdminState>(metricas_iniciais_zeradas);
 
   // ESTADO RIGOROSO DO NOME DO EVENTO (Sincronizado entre Header e Modal de Configurações)
-  const [nomeEvento, setNomeEvento] = useState<string>(
-    typeof window !== 'undefined' ? localStorage.getItem('evento_ativo_nome') || 'FETEC MS' : 'FETEC MS'
-  );
+  // Vem do evento ativo do banco (o nome guardado no navegador pode ser de outro evento)
+  const [nomeEvento, setNomeEvento] = useState<string>('');
 
   // Estado de erro
   const [mensagem_erro_admin, set_mensagem_erro_admin] = useState<string | null>(null);
@@ -229,7 +228,7 @@ export const TelaAdmin: React.FC = () => {
         .maybeSingle();
       if (error) throw error;
 
-      if (dados_evento?.nome_evento) setNomeEvento(dados_evento.nome_evento);
+      setNomeEvento(dados_evento?.nome_evento || 'Nenhum evento ativo');
       set_metricas_admin({
         evento_ativo_id: dados_evento?.id_evento || '',
         evento_ativo_nome: dados_evento?.nome_evento || '',
@@ -468,7 +467,8 @@ export const TelaAdmin: React.FC = () => {
                 set_mostrar_modal_editar_nome_evento(true);
               }}
               title="Editar Nome do Evento"
-              className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              disabled={!metricas_admin.evento_ativo_id}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               aria-label="Editar Nome do Evento"
             >
               <Pencil className="w-4 h-4" />
