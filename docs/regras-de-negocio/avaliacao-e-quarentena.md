@@ -52,11 +52,20 @@ trava e sorteia outro projeto. Esse projeto não volta a ser sorteado para o mes
 
 Card **Excluir uma avaliação** (`ModalExclusaoAvaliacao`). Decisão: [ADR 0004](../decisoes/0004-soft-delete-de-avaliacoes-via-rpc.md).
 
-- **Nunca apaga**: `excluir_avaliacao` marca `status = 'CANCELADA'` (e `status_avaliacao`) e zera `is_quarentena`.
-- **Desfazer** disponível por 8 segundos num toast; depois, a restauração continua possível pelo botão `RotateCcw`
-  (`restaurar_avaliacao` → `CONCLUIDA`).
+- **Nunca apaga**: `excluir_avaliacao` marca `status = 'CANCELADA'` (e `status_avaliacao`), registra
+  `cancelada_em` / `cancelada_por` e **recalcula a quarentena do projeto** (`fn_recalcular_quarentena`, mesma regra da
+  view). Cancelar a nota fora da curva tira o projeto da quarentena; o aviso diz "O projeto saiu da quarentena".
+- **Desfazer** disponível por 8 segundos num toast; depois, a restauração continua possível pelo botão **Restaurar**
+  (`restaurar_avaliacao` → `CONCLUIDA`, também recalcula a quarentena).
+- **Restaurar respeita a cota**: se a vaga liberada já foi ocupada (outra avaliação ativa ou trava válida), o banco
+  recusa com "O projeto X já está com a cota completa (N de N vagas ocupadas)". Cancele outra avaliação antes.
+- A lista mostra **todas** as avaliações do evento ativo (filtro no banco, paginada de 1000 em 1000), com contadores
+  de concluídas e canceladas. Erros do banco aparecem na tela; nada é gravado por fora das funções.
+- Antes da migration `20261029240000`, cancelar só desmarcava a avaliação cancelada (as outras continuavam marcadas
+  e o projeto seguia em quarentena), restaurar podia passar da cota, e a tela lia só as 300 avaliações mais recentes
+  de todos os eventos.
 - Confirmação obrigatória: um modal vermelho mostra código, nome e área do projeto, nome e áreas do avaliador e nota
-  final antes de `Confirmar Exclusão`.
+  final antes de `Confirmar Exclusão` (`role="alertdialog"`).
 - Avaliação cancelada libera a cota do projeto para **outros** avaliadores; o mesmo avaliador nunca recebe o projeto
   de novo ([ADR 0005](../decisoes/0005-sorteio-nao-repete-avaliador.md)).
 

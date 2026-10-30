@@ -11,12 +11,11 @@ import {
   ChevronUp,
   Loader2,
   Undo2,
-  Info,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown
+  Info
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
+import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
+import { CabecalhoOrdenavel } from '@/components/ui/CabecalhoOrdenavel';
 
 export interface AvaliacaoDetalhada {
   id_avaliacao: string;
@@ -105,16 +104,6 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
     }
   };
 
-  const renderIconeOrdenacao = (coluna: ColunaOrdenacao) => {
-    if (colunaOrdenacao === coluna) {
-      return direcaoOrdenacao === 'asc' ? (
-        <ArrowUp className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-      ) : (
-        <ArrowDown className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-      );
-    }
-    return <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />;
-  };
 
   // Confirmação de exclusão
   const [avaliacaoParaExcluir, setAvaliacaoParaExcluir] = useState<AvaliacaoDetalhada | null>(null);
@@ -126,7 +115,9 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
     codigo_projeto: string;
     nome_avaliador: string;
     visivel: boolean;
+    saiuDaQuarentena?: boolean;
   } | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
 
   const timeoutUndoRef = useRef<NodeJS.Timeout | null>(null);
   const conexaoConfigurada = verificar_conexao_configurada();
@@ -139,7 +130,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
     if (proj.areas_tematicas?.nome_area) return proj.areas_tematicas.nome_area;
     if (proj.area_tematica) return proj.area_tematica;
     if (proj.area_conhecimento) return proj.area_conhecimento;
-    return 'Geral';
+    return 'Não informada';
   };
 
   const extrairAreasAvaliador = (av: AvaliacaoDetalhada): string[] => {
@@ -155,6 +146,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
 
   const carregarAvaliacoes = async () => {
     setCarregando(true);
+    setErro(null);
     try {
       if (!conexaoConfigurada) {
         setAvaliacoes([]);
@@ -194,198 +186,41 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
         console.warn('Erro ao carregar avaliador_areas:', errAvAreas);
       }
 
-      // 3. Carrega perguntas do questionário para discriminação dos critérios
-      const mapaPerguntas = new Map<string, any>();
-      try {
-        const { data: perguntasData } = await supabase
-          .from('perguntas_questionario')
-          .select('id_pergunta, texto_pergunta, peso_calculo');
-        (perguntasData || []).forEach((p: any) => {
-          mapaPerguntas.set(p.id_pergunta, p);
-        });
-      } catch (errPerg) {
-        console.warn('Erro ao carregar perguntas_questionario:', errPerg);
-      }
-
-      // 4. Consulta avaliações (estrita às colunas reais do schema.sql)
-      let avaliacoesCarregadas: any[] = [];
-      const { data, error } = await supabase
-        .from('avaliacoes')
-        .select(`
-          id_avaliacao,
-          id_projeto,
-          id_usuario,
-          nota_final,
-          status,
-          status_avaliacao,
-          parecer_final,
-          is_quarentena,
-          created_at,
-          projetos (
-            id_projeto,
-            codigo_projeto,
-            titulo,
-            estande,
-            corredor,
-            id_evento,
-            id_area
-          ),
-          usuarios (
-            id_usuario,
-            nome,
-            email
-          ),
-          respostas_avaliacao (
-            id_resposta,
-            id_pergunta,
-            nota_atribuida
-          )
-        `)
-        .order('created_at', { ascending: false })
-        .limit(300);
-
-      if (!error && data && data.length > 0) {
-        avaliacoesCarregadas = data as any[];
-      } else {
-        if (error) {
-          console.warn('Aviso: JOIN aninhado em avaliacoes falhou, acionando fallback e enriquecimento em lote:', error);
-        }
-        // Fallback: busca diretamente na tabela avaliacoes
-        const { data: dataSimples, error: errSimples } = await supabase
+      // 3. Avaliações do evento ativo, com projeto, avaliador e critérios embutidos.
+      //    Paginado: o PostgREST devolve no máximo 1000 linhas por consulta (max_rows).
+      const TAMANHO_PAGINA = 1000;
+      const resultadoFinal: AvaliacaoDetalhada[] = [];
+      for (let inicio = 0; ; inicio += TAMANHO_PAGINA) {
+        let consulta: any = supabase
           .from('avaliacoes')
-          .select('*')
+          .select(`
+            id_avaliacao,
+            id_projeto,
+            id_usuario,
+            nota_final,
+            status,
+            status_avaliacao,
+            parecer_final,
+            is_quarentena,
+            created_at,
+            projetos!inner ( id_projeto, codigo_projeto, titulo, estande, corredor, id_evento, id_area ),
+            usuarios ( id_usuario, nome, email ),
+            respostas_avaliacao ( id_resposta, id_pergunta, nota_atribuida, perguntas_questionario ( texto_pergunta, peso_calculo ) )
+          `);
+        if (id_evento_ativo) consulta = consulta.eq('projetos.id_evento', id_evento_ativo);
+        const { data, error } = await consulta
           .order('created_at', { ascending: false })
-          .limit(300);
-
-        if (!errSimples && dataSimples) {
-          avaliacoesCarregadas = dataSimples as any[];
-        }
-      }
-
-      // 5. ENRIQUECIMENTO RELACIONAL AUTOMÁTICO EM LOTE
-      // Garante que, se os joins retornaram vazio ou parciais, busca projetos e usuários pelos IDs
-      const idsProjetosFaltantes = Array.from(
-        new Set(
-          avaliacoesCarregadas
-            .filter((a) => {
-              const p = Array.isArray(a.projetos) ? a.projetos[0] : a.projetos;
-              return !p || !p.codigo_projeto;
-            })
-            .map((a) => a.id_projeto)
-            .filter(Boolean)
-        )
-      );
-
-      const idsUsuariosFaltantes = Array.from(
-        new Set(
-          avaliacoesCarregadas
-            .filter((a) => {
-              const u = Array.isArray(a.usuarios) ? a.usuarios[0] : a.usuarios;
-              return !u || !u.nome;
-            })
-            .map((a) => a.id_usuario)
-            .filter(Boolean)
-        )
-      );
-
-      const idsAvaliacoesSemRespostas = avaliacoesCarregadas
-        .filter((a) => !a.respostas_avaliacao || a.respostas_avaliacao.length === 0)
-        .map((a) => a.id_avaliacao);
-
-      const mapaProjetos = new Map<string, any>();
-      if (idsProjetosFaltantes.length > 0) {
-        try {
-          let qProj: any = supabase
-            .from('projetos')
-            .select('id_projeto, codigo_projeto, titulo, estande, corredor, id_evento, id_area');
-          if (typeof qProj.in === 'function') {
-            qProj = qProj.in('id_projeto', idsProjetosFaltantes);
-          }
-          const { data: projsData } = await qProj;
-          (projsData || []).forEach((p: any) => mapaProjetos.set(p.id_projeto, p));
-        } catch (errProjs) {
-          console.warn('Erro ao carregar projetos faltantes:', errProjs);
-        }
-      }
-
-      const mapaUsuarios = new Map<string, any>();
-      if (idsUsuariosFaltantes.length > 0) {
-        try {
-          let qUser: any = supabase
-            .from('usuarios')
-            .select('id_usuario, nome, email, papel');
-          if (typeof qUser.in === 'function') {
-            qUser = qUser.in('id_usuario', idsUsuariosFaltantes);
-          }
-          const { data: usersData } = await qUser;
-          (usersData || []).forEach((u: any) => mapaUsuarios.set(u.id_usuario, u));
-        } catch (errUsers) {
-          console.warn('Erro ao carregar usuarios faltantes:', errUsers);
-        }
-      }
-
-      const mapaRespostas = new Map<string, any[]>();
-      if (idsAvaliacoesSemRespostas.length > 0) {
-        try {
-          let qResp: any = supabase
-            .from('respostas_avaliacao')
-            .select('id_resposta, id_avaliacao, id_pergunta, nota_atribuida');
-          if (typeof qResp.in === 'function') {
-            qResp = qResp.in('id_avaliacao', idsAvaliacoesSemRespostas);
-          }
-          const { data: respostasData } = await qResp;
-          (respostasData || []).forEach((r: any) => {
-            const list = mapaRespostas.get(r.id_avaliacao) || [];
-            list.push(r);
-            mapaRespostas.set(r.id_avaliacao, list);
-          });
-        } catch (errResp) {
-          console.warn('Erro ao carregar respostas faltantes:', errResp);
-        }
-      }
-
-      // 6. Mescla final de todos os dados relacionais
-      let resultadoFinal: AvaliacaoDetalhada[] = avaliacoesCarregadas.map((av) => {
-        const projExistente = Array.isArray(av.projetos) ? av.projetos[0] : av.projetos;
-        const projEnriquecido = projExistente?.codigo_projeto
-          ? projExistente
-          : mapaProjetos.get(av.id_projeto) || projExistente || null;
-
-        const userExistente = Array.isArray(av.usuarios) ? av.usuarios[0] : av.usuarios;
-        const userEnriquecido = userExistente?.nome
-          ? userExistente
-          : mapaUsuarios.get(av.id_usuario) || userExistente || null;
-
-        let respostas =
-          av.respostas_avaliacao && av.respostas_avaliacao.length > 0
-            ? av.respostas_avaliacao
-            : mapaRespostas.get(av.id_avaliacao) || [];
-
-        respostas = respostas.map((r: any) => ({
-          ...r,
-          perguntas_questionario:
-            r.perguntas_questionario || mapaPerguntas.get(r.id_pergunta) || null,
-        }));
-
-        return {
-          ...av,
-          projetos: projEnriquecido,
-          usuarios: userEnriquecido,
-          respostas_avaliacao: respostas,
-        };
-      });
-
-      // 7. Filtragem estrita pelo Evento Ativo (oculta avaliações de outros eventos)
-      if (id_evento_ativo) {
-        resultadoFinal = resultadoFinal.filter((av) => {
-          const proj = Array.isArray(av.projetos) ? av.projetos[0] : av.projetos;
-          return !proj?.id_evento || proj.id_evento === id_evento_ativo;
-        });
+          .order('id_avaliacao', { ascending: true })
+          .range(inicio, inicio + TAMANHO_PAGINA - 1);
+        if (error) throw error;
+        resultadoFinal.push(...((data || []) as AvaliacaoDetalhada[]));
+        if (!data || data.length < TAMANHO_PAGINA) break;
       }
 
       setAvaliacoes(resultadoFinal);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Falha geral ao carregar avaliações para exclusão:', e);
+      setErro(`Não foi possível carregar as avaliações: ${e?.message || e}`);
       setAvaliacoes([]);
     } finally {
       setCarregando(false);
@@ -396,130 +231,80 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
     carregarAvaliacoes();
   }, [id_evento_ativo]);
 
-  // Executa o soft delete com status = 'CANCELADA' via RPC (com fallback resiliente)
+  // Cancela (soft delete) pela função do banco, que também recalcula a quarentena do projeto
   const executarSoftDelete = async (item: AvaliacaoDetalhada) => {
     setProcessandoAcao(true);
+    setErro(null);
     const id = item.id_avaliacao;
+    const proj = Array.isArray(item.projetos) ? item.projetos[0] : item.projetos;
+    const user = Array.isArray(item.usuarios) ? item.usuarios[0] : item.usuarios;
 
     try {
+      let saiuDaQuarentena = false;
       if (conexaoConfigurada) {
-        let rpcSucesso = false;
-        try {
-          if (typeof (supabase as any).rpc === 'function') {
-            const { data: rpcRes, error: rpcErr } = await supabase.rpc('excluir_avaliacao', {
-              p_id_avaliacao: id,
-            });
-            if (!rpcErr && rpcRes && rpcRes.sucesso !== false) {
-              rpcSucesso = true;
-            }
-          }
-        } catch (e) {
-          rpcSucesso = false;
-        }
-
-        // Se RPC falhar ou não estiver criada no banco, realiza fallback direto no Supabase
-        if (!rpcSucesso) {
-          const { error } = await supabase
-            .from('avaliacoes')
-            .update({
-              status: 'CANCELADA',
-              status_avaliacao: 'CANCELADA',
-              is_quarentena: false,
-            })
-            .eq('id_avaliacao', id);
-
-          if (error) {
-            console.warn('Erro ao atualizar status da avaliacao no Supabase:', error);
-          }
-        }
+        if (!(await garantirSessaoAdmin())) return;
+        const { data, error } = await supabase.rpc('excluir_avaliacao', { p_id_avaliacao: id });
+        if (error) throw error;
+        if (data?.sucesso === false) throw new Error(data.mensagem || 'Não foi possível cancelar a avaliação.');
+        saiuDaQuarentena = Boolean(item.is_quarentena) && data?.projeto_em_quarentena === false;
       }
 
-      // Atualização otimista imediata na lista local
       setAvaliacoes((prev) =>
-        prev.map((av) =>
-          av.id_avaliacao === id
-            ? { ...av, status: 'CANCELADA', status_avaliacao: 'CANCELADA', is_quarentena: false }
-            : av
-        )
+        prev.map((av) => {
+          if (av.id_avaliacao === id) return { ...av, status: 'CANCELADA', status_avaliacao: 'CANCELADA', is_quarentena: false };
+          return saiuDaQuarentena && av.id_projeto === item.id_projeto ? { ...av, is_quarentena: false } : av;
+        })
       );
-
-      // Fecha o modal de confirmação
       setAvaliacaoParaExcluir(null);
-
-      // Dispara callback para recalcular métricas do dashboard
       if (aoSucesso) aoSucesso();
 
-      // Ativa o Toast flutuante com opção de Desfazer (Undo)
-      const proj = Array.isArray(item.projetos) ? item.projetos[0] : item.projetos;
-      const user = Array.isArray(item.usuarios) ? item.usuarios[0] : item.usuarios;
-
       if (timeoutUndoRef.current) clearTimeout(timeoutUndoRef.current);
-
       setToastUndo({
         id_avaliacao: id,
         codigo_projeto: proj?.codigo_projeto || 'Projeto',
         nome_avaliador: user?.nome || 'Avaliador',
         visivel: true,
+        saiuDaQuarentena,
       });
-
-      timeoutUndoRef.current = setTimeout(() => {
-        setToastUndo(null);
-      }, 8000);
-    } catch (err: any) {
-      console.error('Falha ao excluir avaliação:', err);
-      alert(`Erro ao cancelar avaliação: ${err.message || err}`);
+      timeoutUndoRef.current = setTimeout(() => setToastUndo(null), 8000);
+    } catch (err) {
+      console.error('Falha ao cancelar avaliação:', err);
+      setErro(`Erro ao cancelar a avaliação: ${tratarErroEscritaAdmin(err)}`);
     } finally {
       setProcessandoAcao(false);
     }
   };
 
-  // Reverte o soft delete (Desfazer / Undo) via RPC (com fallback resiliente)
+  // Restaura (desfaz o cancelamento). O banco recusa se a vaga já foi ocupada por outra avaliação.
   const executarDesfazer = async (id: string) => {
     if (timeoutUndoRef.current) clearTimeout(timeoutUndoRef.current);
     setToastUndo(null);
+    setErro(null);
+    setProcessandoAcao(true);
 
     try {
       if (conexaoConfigurada) {
-        let rpcSucesso = false;
-        try {
-          if (typeof (supabase as any).rpc === 'function') {
-            const { data: rpcRes, error: rpcErr } = await supabase.rpc('restaurar_avaliacao', {
-              p_id_avaliacao: id,
-            });
-            if (!rpcErr && rpcRes && rpcRes.sucesso !== false) {
-              rpcSucesso = true;
-            }
-          }
-        } catch (e) {
-          rpcSucesso = false;
-        }
-
-        if (!rpcSucesso) {
-          await supabase
-            .from('avaliacoes')
-            .update({
-              status: 'CONCLUIDA',
-              status_avaliacao: 'concluida',
-            })
-            .eq('id_avaliacao', id);
-        }
+        if (!(await garantirSessaoAdmin())) return;
+        const { data, error } = await supabase.rpc('restaurar_avaliacao', { p_id_avaliacao: id });
+        if (error) throw error;
+        if (data?.sucesso === false) throw new Error(data.mensagem || 'Não foi possível restaurar a avaliação.');
       }
-
-      // Atualiza localmente
       setAvaliacoes((prev) =>
-        prev.map((av) =>
-          av.id_avaliacao === id
-            ? { ...av, status: 'CONCLUIDA', status_avaliacao: 'concluida' }
-            : av
-        )
+        prev.map((av) => (av.id_avaliacao === id ? { ...av, status: 'CONCLUIDA', status_avaliacao: 'concluida' } : av))
       );
-
-      // Recalcula métricas do painel
       if (aoSucesso) aoSucesso();
     } catch (err) {
-      console.error('Erro ao reverter cancelamento da avaliação:', err);
+      console.error('Erro ao restaurar a avaliação:', err);
+      setErro(`Erro ao restaurar a avaliação: ${tratarErroEscritaAdmin(err)}`);
+    } finally {
+      setProcessandoAcao(false);
     }
   };
+
+  const estaCancelada = (av: AvaliacaoDetalhada) =>
+    av.status?.toUpperCase() === 'CANCELADA' || av.status_avaliacao?.toUpperCase() === 'CANCELADA';
+  const totalCanceladas = avaliacoes.filter(estaCancelada).length;
+  const totalConcluidas = avaliacoes.length - totalCanceladas;
 
   // Filtragem
   const avaliacoesFiltradas = avaliacoes.filter((item) => {
@@ -549,8 +334,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
       areaProj.includes(termo) ||
       nomeAval.includes(termo) ||
       emailAval.includes(termo) ||
-      areasAval.includes(termo) ||
-      item.id_avaliacao.toLowerCase().includes(termo)
+      areasAval.includes(termo)
     );
   });
 
@@ -595,7 +379,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-3">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl w-[98vw] max-w-[98vw] h-[95vh] max-h-[95vh] shadow-2xl flex flex-col border border-slate-200 dark:border-slate-800 overflow-hidden relative">
+      <div role="dialog" aria-modal="true" aria-labelledby="titulo-exclusao-avaliacoes" className="bg-white dark:bg-slate-900 rounded-3xl w-[98vw] max-w-[98vw] h-[95vh] max-h-[95vh] shadow-2xl flex flex-col border border-slate-200 dark:border-slate-800 overflow-hidden relative">
         {/* Cabeçalho do Modal */}
         <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-rose-50/50 dark:bg-rose-950/20">
           <div className="flex items-center gap-3">
@@ -603,14 +387,19 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
               <FileX2 className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                Exclusão de Avaliações
+              <h2 id="titulo-exclusao-avaliacoes" className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                Excluir uma avaliação
               </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                A avaliação cancelada sai da nota do projeto e do ranking, libera a vaga para outro avaliador e pode ser restaurada.
+              </p>
             </div>
           </div>
           <button
             type="button"
             onClick={ao_fechar}
+            aria-label="Fechar"
+            title="Fechar"
             className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -625,16 +414,18 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
               type="text"
               value={termoBusca}
               onChange={(e) => setTermoBusca(e.target.value)}
-              placeholder="Buscar por código, título do projeto ou avaliador..."
+              aria-label="Buscar avaliações"
+              placeholder="Buscar por código, título do projeto, área ou avaliador..."
               className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
             />
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-slate-500 uppercase">Filtrar:</span>
-            <div className="inline-flex rounded-xl bg-slate-200/60 dark:bg-slate-800 p-0.5 text-xs font-bold">
+            <span id="rotulo-filtro-status" className="text-[11px] font-bold text-slate-500 uppercase">Filtrar:</span>
+            <div role="group" aria-labelledby="rotulo-filtro-status" className="inline-flex rounded-xl bg-slate-200/60 dark:bg-slate-800 p-0.5 text-xs font-bold">
               <button
                 type="button"
+                aria-pressed={filtroStatus === 'todas'}
                 onClick={() => setFiltroStatus('todas')}
                 className={`px-3 py-1.5 rounded-lg transition-all ${
                   filtroStatus === 'todas'
@@ -646,6 +437,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
               </button>
               <button
                 type="button"
+                aria-pressed={filtroStatus === 'concluidas'}
                 onClick={() => setFiltroStatus('concluidas')}
                 className={`px-3 py-1.5 rounded-lg transition-all ${
                   filtroStatus === 'concluidas'
@@ -653,10 +445,11 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
                 }`}
               >
-                Concluídas
+                Concluídas ({totalConcluidas})
               </button>
               <button
                 type="button"
+                aria-pressed={filtroStatus === 'canceladas'}
                 onClick={() => setFiltroStatus('canceladas')}
                 className={`px-3 py-1.5 rounded-lg transition-all ${
                   filtroStatus === 'canceladas'
@@ -664,11 +457,23 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
                 }`}
               >
-                Canceladas
+                Canceladas ({totalCanceladas})
               </button>
             </div>
           </div>
         </div>
+
+        {erro && (
+          <div role="alert" className="mx-4 sm:mx-6 mt-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs font-semibold flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <AlertTriangle aria-hidden="true" className="w-4 h-4 shrink-0" />
+              {erro}
+            </span>
+            <button type="button" onClick={() => setErro(null)} aria-label="Dispensar aviso" className="p-1 hover:opacity-75">
+              <X aria-hidden="true" className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Lista / Tabela de Avaliações */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
@@ -693,74 +498,14 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
               <table className="w-full text-left text-xs min-w-[900px]">
                 <thead className="bg-slate-100 dark:bg-slate-800/80 uppercase font-black text-[10px] text-slate-600 dark:text-slate-400 tracking-wider">
                   <tr>
-                    {/* 1. Código do Projeto */}
-                    <th
-                      onClick={() => alternarOrdenacao('codigo_projeto')}
-                      className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none w-32"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>Código</span>
-                        {renderIconeOrdenacao('codigo_projeto')}
-                      </div>
-                    </th>
-
-                    {/* 2. Nome do Projeto */}
-                    <th
-                      onClick={() => alternarOrdenacao('nome_projeto')}
-                      className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>Nome do Projeto</span>
-                        {renderIconeOrdenacao('nome_projeto')}
-                      </div>
-                    </th>
-
-                    {/* 3. Área do Projeto */}
-                    <th
-                      onClick={() => alternarOrdenacao('area_projeto')}
-                      className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none w-44"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>Área do Projeto</span>
-                        {renderIconeOrdenacao('area_projeto')}
-                      </div>
-                    </th>
-
-                    {/* 4. Nome do Avaliador */}
-                    <th
-                      onClick={() => alternarOrdenacao('nome_avaliador')}
-                      className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none w-48"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>Nome do Avaliador</span>
-                        {renderIconeOrdenacao('nome_avaliador')}
-                      </div>
-                    </th>
-
-                    {/* 5. Área do Avaliador */}
-                    <th
-                      onClick={() => alternarOrdenacao('area_avaliador')}
-                      className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none w-44"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>Área do Avaliador</span>
-                        {renderIconeOrdenacao('area_avaliador')}
-                      </div>
-                    </th>
-
-                    {/* 6. Critérios */}
-                    <th
-                      onClick={() => alternarOrdenacao('criterios')}
-                      className="px-4 py-3 text-center cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none w-36"
-                    >
-                      <div className="flex items-center justify-center gap-1.5">
-                        <span>Critérios</span>
-                        {renderIconeOrdenacao('criterios')}
-                      </div>
-                    </th>
-
+                    <CabecalhoOrdenavel coluna="codigo_projeto" rotulo="Código" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
+                    <CabecalhoOrdenavel coluna="nome_projeto" rotulo="Nome do Projeto" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
+                    <CabecalhoOrdenavel coluna="area_projeto" rotulo="Área do Projeto" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
+                    <CabecalhoOrdenavel coluna="nome_avaliador" rotulo="Nome do Avaliador" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
+                    <CabecalhoOrdenavel coluna="area_avaliador" rotulo="Área do Avaliador" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
+                    <CabecalhoOrdenavel coluna="criterios" rotulo="Nota" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
                     {/* 7. Excluir / Ações */}
-                    <th className="px-4 py-3 text-center w-24">Excluir</th>
+                    <th scope="col" className="px-4 py-3 text-center w-28">Ação</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -861,11 +606,19 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
                                   ? Number(av.nota_final).toFixed(1)
                                   : '-'}
                               </span>
+                              {isCancelada && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">Cancelada</span>
+                              )}
+                              {!isCancelada && av.is_quarentena && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">Quarentena</span>
+                              )}
                               <button
                                 type="button"
                                 onClick={() =>
                                   setIdExpandido(estaExpandido ? null : av.id_avaliacao)
                                 }
+                                aria-expanded={estaExpandido}
+                                aria-label={`Ver critérios da avaliação de ${nomeAval} no projeto ${codProj}`}
                                 title="Ver critérios avaliados"
                                 className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-[10px] transition-all inline-flex items-center gap-1 cursor-pointer"
                               >
@@ -885,6 +638,8 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
                               <button
                                 type="button"
                                 onClick={() => executarDesfazer(av.id_avaliacao)}
+                                disabled={processandoAcao}
+                                aria-label={`Restaurar avaliação de ${nomeAval} no projeto ${codProj}`}
                                 title="Restaurar avaliação cancelada"
                                 className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 font-bold text-[11px] transition-all inline-flex items-center gap-1 cursor-pointer"
                               >
@@ -895,6 +650,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setAvaliacaoParaExcluir(av)}
+                                aria-label={`Excluir avaliação de ${nomeAval} no projeto ${codProj}`}
                                 title="Excluir Avaliação"
                                 className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 transition-all hover:scale-105 inline-flex items-center justify-center cursor-pointer group"
                               >
@@ -974,17 +730,17 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
         {/* DIÁLOGO MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}
         {avaliacaoParaExcluir && (
           <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-60 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-rose-200 dark:border-rose-900/60 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div role="alertdialog" aria-modal="true" aria-labelledby="titulo-confirmar-exclusao" aria-describedby="texto-confirmar-exclusao" className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-rose-200 dark:border-rose-900/60 space-y-4 animate-in fade-in zoom-in-95 duration-150">
               <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
                 <div className="p-3 rounded-2xl bg-rose-100 dark:bg-rose-950/50">
                   <AlertTriangle className="w-6 h-6 text-rose-600 dark:text-rose-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    Confirmar Cancelamento?
+                  <h3 id="titulo-confirmar-exclusao" className="text-base font-bold text-slate-900 dark:text-white">
+                    Excluir esta avaliação?
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Ação reversível via Soft Delete.
+                    Ela não é apagada: fica como cancelada e pode ser restaurada.
                   </p>
                 </div>
               </div>
@@ -1058,8 +814,10 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
                 </div>
               </div>
 
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Esta avaliação será desativada do cômputo da premiação, e você terá a opção de desfazimento imediato.
+              <p id="texto-confirmar-exclusao" className="text-xs text-slate-500 dark:text-slate-400">
+                A nota deixa de contar no resultado e no ranking, e a vaga fica livre para outro avaliador. Se o projeto estava em
+                quarentena por causa desta nota, ele sai da quarentena. Você pode desfazer logo em seguida; depois, restaure pela lista
+                enquanto a vaga não for ocupada.
               </p>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -1091,11 +849,12 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
 
         {/* TOAST FLUTUANTE COM OPÇÃO DE DESFAZER (UNDO) */}
         {toastUndo && toastUndo.visivel && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-70 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-4 border border-slate-700 dark:border-slate-300 animate-in fade-in slide-in-from-bottom-5 duration-200">
+          <div role="status" className="absolute bottom-6 left-1/2 -translate-x-1/2 z-70 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-4 border border-slate-700 dark:border-slate-300 animate-in fade-in slide-in-from-bottom-5 duration-200">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 dark:text-emerald-600 shrink-0" />
               <span className="text-xs font-medium">
-                Avaliação de <strong>{toastUndo.codigo_projeto}</strong> cancelada.
+                Avaliação de <strong>{toastUndo.nome_avaliador}</strong> em <strong>{toastUndo.codigo_projeto}</strong> cancelada.
+                {toastUndo.saiuDaQuarentena && ' O projeto saiu da quarentena.'}
               </span>
             </div>
             <button
@@ -1109,6 +868,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
             <button
               type="button"
               onClick={() => setToastUndo(null)}
+              aria-label="Fechar aviso"
               className="p-1 rounded-md text-slate-400 hover:text-white dark:hover:text-slate-900"
             >
               <X className="w-3.5 h-3.5" />

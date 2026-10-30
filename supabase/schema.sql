@@ -485,32 +485,32 @@ CREATE OR REPLACE FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid")
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_id_projeto UUID;
-  v_id_usuario UUID;
-  v_status_antigo VARCHAR;
+  v_id_projeto uuid;
+  v_id_usuario uuid;
+  v_status_antigo varchar;
+  v_quarentena boolean;
 BEGIN
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
 
-  SELECT id_projeto, id_usuario, status
-  INTO v_id_projeto, v_id_usuario, v_status_antigo
-  FROM public.avaliacoes
-  WHERE id_avaliacao = p_id_avaliacao;
+  SELECT id_projeto, id_usuario, status INTO v_id_projeto, v_id_usuario, v_status_antigo
+  FROM public.avaliacoes WHERE id_avaliacao = p_id_avaliacao FOR UPDATE;
 
   IF NOT FOUND THEN
-    RETURN jsonb_build_object(
-      'sucesso', false,
-      'mensagem', 'Avaliação não encontrada no sistema.'
-    );
+    RETURN jsonb_build_object('sucesso', false, 'mensagem', 'Avaliação não encontrada no sistema.');
   END IF;
 
   UPDATE public.avaliacoes
-  SET
-    status = 'CANCELADA',
-    status_avaliacao = 'CANCELADA',
-    is_quarentena = false
+  SET status = 'CANCELADA',
+      status_avaliacao = 'CANCELADA',
+      is_quarentena = false,
+      cancelada_em = coalesce(cancelada_em, now()),
+      cancelada_por = coalesce(cancelada_por, (SELECT u.id_usuario FROM public.usuarios u
+                                               WHERE u.id_usuario = auth.uid() OR u.id_auth = auth.uid() LIMIT 1))
   WHERE id_avaliacao = p_id_avaliacao;
+
+  v_quarentena := public.fn_recalcular_quarentena(v_id_projeto);
 
   RETURN jsonb_build_object(
     'sucesso', true,
@@ -519,6 +519,7 @@ BEGIN
     'id_usuario', v_id_usuario,
     'status_anterior', v_status_antigo,
     'novo_status', 'CANCELADA',
+    'projeto_em_quarentena', v_quarentena,
     'mensagem', 'Avaliação cancelada com sucesso.'
   );
 END;
@@ -1067,6 +1068,37 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") RETURNS boolean
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_em_quarentena boolean;
+BEGIN
+  SELECT count(*) >= 2
+         AND max(a.nota_final) - min(a.nota_final) > 2.5
+         AND (p.quarentena_resolvida_em IS NULL OR max(a.created_at) > p.quarentena_resolvida_em)
+    INTO v_em_quarentena
+  FROM public.projetos p
+  JOIN public.avaliacoes a ON a.id_projeto = p.id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')
+  WHERE p.id_projeto = p_id_projeto
+  GROUP BY p.quarentena_resolvida_em;
+
+  v_em_quarentena := coalesce(v_em_quarentena, false);
+
+  UPDATE public.avaliacoes
+  SET is_quarentena = (v_em_quarentena AND (status IS NULL OR status <> 'CANCELADA'))
+  WHERE id_projeto = p_id_projeto
+    AND is_quarentena IS DISTINCT FROM (v_em_quarentena AND (status IS NULL OR status <> 'CANCELADA'));
+
+  RETURN v_em_quarentena;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_relatorio_ausencias_completo"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id_usuario" "uuid", "avaliador_nome" "text", "avaliador_email" "text", "total_ausencias" integer, "ausencias" "jsonb")
@@ -1802,30 +1834,56 @@ CREATE OR REPLACE FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_id_projeto UUID;
-  v_id_usuario UUID;
+  v_id_projeto uuid;
+  v_id_usuario uuid;
+  v_status varchar;
+  v_cota integer;
+  v_ocupadas integer;
+  v_codigo text;
+  v_quarentena boolean;
 BEGIN
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
 
-  SELECT id_projeto, id_usuario
-  INTO v_id_projeto, v_id_usuario
-  FROM public.avaliacoes
-  WHERE id_avaliacao = p_id_avaliacao;
+  SELECT id_projeto, id_usuario, status INTO v_id_projeto, v_id_usuario, v_status
+  FROM public.avaliacoes WHERE id_avaliacao = p_id_avaliacao;
 
   IF NOT FOUND THEN
-    RETURN jsonb_build_object(
-      'sucesso', false,
-      'mensagem', 'Avaliação não encontrada no sistema.'
-    );
+    RETURN jsonb_build_object('sucesso', false, 'mensagem', 'Avaliação não encontrada no sistema.');
+  END IF;
+
+  -- Serializa com o sorteio e a atribuição do mesmo projeto
+  SELECT coalesce(p.codigo_projeto, p.titulo), coalesce(p.cota_avaliacoes_customizada, e.cota_avaliacoes_padrao, 3)
+    INTO v_codigo, v_cota
+  FROM public.projetos p LEFT JOIN public.eventos e ON e.id_evento = p.id_evento
+  WHERE p.id_projeto = v_id_projeto
+  FOR UPDATE OF p;
+
+  IF v_status IS DISTINCT FROM 'CANCELADA' THEN
+    RETURN jsonb_build_object('sucesso', true, 'id_avaliacao', p_id_avaliacao, 'novo_status', v_status,
+                              'mensagem', 'A avaliação já estava ativa.');
+  END IF;
+
+  SELECT (SELECT count(*) FROM public.avaliacoes a
+          WHERE a.id_projeto = v_id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA'))::int
+       + (SELECT count(*) FROM public.locks_ativos l
+          WHERE l.id_projeto = v_id_projeto AND l.expira_em > now() AND l.id_usuario <> v_id_usuario)::int
+    INTO v_ocupadas;
+
+  IF v_ocupadas >= v_cota THEN
+    RAISE EXCEPTION 'O projeto % já está com a cota completa (% de % vagas ocupadas). Cancele outra avaliação dele antes de restaurar esta.',
+      v_codigo, v_ocupadas, v_cota USING ERRCODE = 'P0001';
   END IF;
 
   UPDATE public.avaliacoes
-  SET
-    status = 'CONCLUIDA',
-    status_avaliacao = 'concluida'
+  SET status = 'CONCLUIDA',
+      status_avaliacao = 'concluida',
+      cancelada_em = NULL,
+      cancelada_por = NULL
   WHERE id_avaliacao = p_id_avaliacao;
+
+  v_quarentena := public.fn_recalcular_quarentena(v_id_projeto);
 
   RETURN jsonb_build_object(
     'sucesso', true,
@@ -1833,6 +1891,7 @@ BEGIN
     'id_projeto', v_id_projeto,
     'id_usuario', v_id_usuario,
     'novo_status', 'CONCLUIDA',
+    'projeto_em_quarentena', v_quarentena,
     'mensagem', 'Avaliação restaurada com sucesso.'
   );
 END;
@@ -2019,11 +2078,21 @@ CREATE TABLE IF NOT EXISTS "public"."avaliacoes" (
     "created_at" timestamp with time zone DEFAULT "now"(),
     "status" character varying(30) DEFAULT 'CONCLUIDA'::character varying,
     "status_avaliacao" character varying(30) DEFAULT 'concluida'::character varying,
-    "tempo_submissao" timestamp with time zone DEFAULT "now"()
+    "tempo_submissao" timestamp with time zone DEFAULT "now"(),
+    "cancelada_em" timestamp with time zone,
+    "cancelada_por" "uuid"
 );
 
 
 ALTER TABLE "public"."avaliacoes" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."avaliacoes"."cancelada_em" IS 'Quando o Admin cancelou a avaliação (soft delete). NULL se ativa.';
+
+
+
+COMMENT ON COLUMN "public"."avaliacoes"."cancelada_por" IS 'Admin (usuarios.id_usuario) que cancelou a avaliação. Sem FK de propósito (embed do PostgREST).';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."avaliador_areas" (
@@ -2157,7 +2226,7 @@ CREATE TABLE IF NOT EXISTS "public"."locks_ativos" (
 ALTER TABLE "public"."locks_ativos" OWNER TO "postgres";
 
 
-COMMENT ON COLUMN "public"."locks_ativos"."atribuido_por" IS 'Admin que atribuiu o projeto (atribuição forçada). NULL = trava do sorteio. O celular retoma esta trava ao sortear.';
+COMMENT ON COLUMN "public"."locks_ativos"."atribuido_por" IS 'Admin (usuarios.id_usuario) que atribuiu o projeto. Sem FK de propósito: uma 2ª FK para usuarios quebra o embed usuarios(...) do PostgREST. NULL = trava do sorteio.';
 
 
 
@@ -2245,7 +2314,7 @@ COMMENT ON COLUMN "public"."projetos"."quarentena_resolvida_em" IS 'Quando o Adm
 
 
 
-COMMENT ON COLUMN "public"."projetos"."quarentena_resolvida_por" IS 'Admin (usuarios.id_usuario) que resolveu a quarentena.';
+COMMENT ON COLUMN "public"."projetos"."quarentena_resolvida_por" IS 'Admin (usuarios.id_usuario) que resolveu a quarentena. Sem FK de propósito (embed do PostgREST).';
 
 
 
@@ -2848,11 +2917,6 @@ ALTER TABLE ONLY "public"."instituicoes"
 
 
 ALTER TABLE ONLY "public"."locks_ativos"
-    ADD CONSTRAINT "locks_ativos_atribuido_por_fkey" FOREIGN KEY ("atribuido_por") REFERENCES "public"."usuarios"("id_usuario") ON DELETE SET NULL;
-
-
-
-ALTER TABLE ONLY "public"."locks_ativos"
     ADD CONSTRAINT "locks_ativos_id_projeto_fkey" FOREIGN KEY ("id_projeto") REFERENCES "public"."projetos"("id_projeto") ON DELETE CASCADE;
 
 
@@ -2909,11 +2973,6 @@ ALTER TABLE ONLY "public"."projetos"
 
 ALTER TABLE ONLY "public"."projetos"
     ADD CONSTRAINT "projetos_id_questionario_fixado_fkey" FOREIGN KEY ("id_questionario_fixado") REFERENCES "public"."questionarios"("id_questionario") ON DELETE SET NULL;
-
-
-
-ALTER TABLE ONLY "public"."projetos"
-    ADD CONSTRAINT "projetos_quarentena_resolvida_por_fkey" FOREIGN KEY ("quarentena_resolvida_por") REFERENCES "public"."usuarios"("id_usuario") ON DELETE SET NULL;
 
 
 
@@ -3350,6 +3409,11 @@ GRANT ALL ON FUNCTION "public"."fn_motivo_inelegivel"("p_id_projeto" "uuid", "p_
 REVOKE ALL ON FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") TO "service_role";
 
 
 

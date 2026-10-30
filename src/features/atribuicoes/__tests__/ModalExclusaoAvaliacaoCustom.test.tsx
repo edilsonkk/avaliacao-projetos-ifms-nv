@@ -1,368 +1,255 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ModalExclusaoAvaliacao } from '@/features/atribuicoes';
-
-// Mock do módulo supabase
-const mockRpc = vi.fn();
-const mockFrom = vi.fn();
-const mockUpdate = vi.fn();
+import { supabase } from '@/lib/supabase';
 
 vi.mock('@/lib/supabase', () => ({
-  verificar_conexao_configurada: () => true,
   supabase: {
-    rpc: (...args: any[]) => mockRpc(...args),
-    from: (...args: any[]) => mockFrom(...args),
+    from: vi.fn(),
+    rpc: vi.fn(),
+    auth: { getSession: vi.fn() },
   },
+  verificar_conexao_configurada: () => true,
 }));
 
-describe('ModalExclusaoAvaliacao - Testes Detalhados das Novas Especificações', () => {
-  const dadosAvaliacoes = [
-    {
-      id_avaliacao: 'av-101',
-      id_projeto: 'proj-1',
-      id_usuario: 'user-1',
-      nota_final: 9.5,
-      status: 'CONCLUIDA',
-      status_avaliacao: 'concluida',
-      parecer_final: 'Excelente trabalho na parte de hardware.',
-      is_quarentena: false,
-      projetos: {
-        id_projeto: 'proj-1',
-        codigo_projeto: 'AGRO-01',
-        titulo: 'Sistema de Irrigação Inteligente',
-        estande: 'E-12',
-        area_tematica: 'CIÊNCIAS AGRÁRIAS',
-      },
-      usuarios: {
-        id_usuario: 'user-1',
-        nome: 'Prof. Carlos Eduardo',
-        email: 'carlos.edu@ifms.edu.br',
-      },
-      respostas_avaliacao: [
-        {
-          id_resposta: 'resp-1',
-          id_pergunta: 'p-1',
-          nota_atribuida: 10.0,
-          perguntas_questionario: {
-            texto_pergunta: 'Domínio do Conteúdo',
-            peso_calculo: 1,
-          },
-        },
-        {
-          id_resposta: 'resp-2',
-          id_pergunta: 'p-2',
-          nota_atribuida: 9.0,
-          perguntas_questionario: {
-            texto_pergunta: 'Clareza na Apresentação',
-            peso_calculo: 1,
-          },
-        },
-      ],
-    },
-    {
-      id_avaliacao: 'av-102',
-      id_projeto: 'proj-2',
-      id_usuario: 'user-2',
-      nota_final: 7.0,
-      status: 'CONCLUIDA',
-      status_avaliacao: 'concluida',
-      parecer_final: null,
-      is_quarentena: false,
-      projetos: {
-        id_projeto: 'proj-2',
-        codigo_projeto: 'BIO-05',
-        titulo: 'Análise de Solo com Fungos Nativos',
-        estande: 'B-04',
-        area_conhecimento: 'CIÊNCIAS BIOLÓGICAS',
-      },
-      usuarios: {
-        id_usuario: 'user-2',
-        nome: 'Dra. Beatriz Santos',
-        email: 'beatriz.santos@ufms.br',
-      },
-      respostas_avaliacao: [],
-    },
-  ];
+const ID_EVENTO = 'evt-1';
 
-  const dadosAreasTematicas = [
-    { id_area: 'area-1', nome_area: 'CIÊNCIAS AGRÁRIAS' },
-    { id_area: 'area-2', nome_area: 'CIÊNCIAS BIOLÓGICAS' },
-    { id_area: 'area-3', nome_area: 'ENGENHARIAS' },
-  ];
+const avaliacao = (id: string, codigo: string, avaliador: string, nota: number, extra: Record<string, unknown> = {}) => ({
+  id_avaliacao: id,
+  id_projeto: `p-${codigo}`,
+  id_usuario: `u-${avaliador}`,
+  nota_final: nota,
+  status: 'CONCLUIDA',
+  status_avaliacao: 'concluida',
+  parecer_final: `Parecer de ${avaliador}`,
+  is_quarentena: false,
+  created_at: '2026-10-29T10:00:00Z',
+  projetos: { id_projeto: `p-${codigo}`, codigo_projeto: codigo, titulo: `Projeto ${codigo}`, estande: 'E-1', id_evento: ID_EVENTO, id_area: 'area-1' },
+  usuarios: { id_usuario: `u-${avaliador}`, nome: avaliador, email: `${avaliador.toLowerCase()}@ifms.edu.br` },
+  respostas_avaliacao: [
+    { id_resposta: `${id}-r1`, id_pergunta: 'q1', nota_atribuida: nota, perguntas_questionario: { texto_pergunta: 'Domínio do Conteúdo', peso_calculo: 1 } },
+  ],
+  ...extra,
+});
 
-  const dadosAvaliadorAreas = [
-    { id_usuario: 'user-1', id_area: 'area-1', id_evento: 'evt-2026' },
-    { id_usuario: 'user-1', id_area: 'area-3', id_evento: 'evt-2026' },
-    { id_usuario: 'user-2', id_area: 'area-2', id_evento: 'evt-2026' },
-  ];
+type Chamada = { tabela: string; metodo: string; args: unknown[] };
+let chamadas: Chamada[] = [];
+let paginas: unknown[][] = [];
+let dados: Record<string, unknown[]> = {};
 
-  const criarQueryChain = (resultado: any) => {
-    const chain: any = {
-      select: vi.fn(() => chain),
-      eq: vi.fn(() => chain),
-      in: vi.fn(() => chain),
-      order: vi.fn(() => chain),
-      limit: vi.fn(() => chain),
-      update: vi.fn((dados: any) => {
-        mockUpdate(dados);
+const mockarBanco = () => {
+  vi.mocked(supabase.from).mockImplementation(((tabela: string) => {
+    let pagina = 0;
+    const chain: any = {};
+    ['select', 'eq', 'order', 'update'].forEach((metodo) => {
+      chain[metodo] = vi.fn((...args: unknown[]) => {
+        chamadas.push({ tabela, metodo, args });
         return chain;
-      }),
-      then: (resolve: any, reject?: any) => Promise.resolve(resultado).then(resolve, reject),
+      });
+    });
+    chain.range = vi.fn((inicio: number, fim: number) => {
+      chamadas.push({ tabela, metodo: 'range', args: [inicio, fim] });
+      pagina = inicio / 1000;
+      return chain;
+    });
+    chain.then = (resolve: any, reject: any) => {
+      const data = tabela === 'avaliacoes' ? paginas[pagina] ?? [] : dados[tabela] ?? [];
+      return Promise.resolve({ data, error: null }).then(resolve, reject);
     };
     return chain;
-  };
+  }) as never);
+};
 
+const chamadasDe = (tabela: string, metodo: string) => chamadas.filter((c) => c.tabela === tabela && c.metodo === metodo);
+
+const renderizar = (aoSucesso = vi.fn()) =>
+  render(<ModalExclusaoAvaliacao id_evento_ativo={ID_EVENTO} ao_fechar={vi.fn()} aoSucesso={aoSucesso} />);
+
+describe('ModalExclusaoAvaliacao', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    chamadas = [];
+    paginas = [[
+      avaliacao('av-1', 'AGRO-01', 'Carlos', 9.5),
+      avaliacao('av-2', 'AGRO-01', 'Bruna', 4.0, { is_quarentena: true }),
+      avaliacao('av-3', 'ROBO-02', 'Ana', 8.0, { status: 'CANCELADA', status_avaliacao: 'CANCELADA' }),
+    ]];
+    dados = {
+      areas_tematicas: [{ id_area: 'area-1', nome_area: 'CIÊNCIAS AGRÁRIAS', id_evento: ID_EVENTO }],
+      avaliador_areas: [{ id_usuario: 'u-Carlos', id_area: 'area-1', id_evento: ID_EVENTO }],
+    };
+    mockarBanco();
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: { sucesso: true, projeto_em_quarentena: false }, error: null } as never);
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: { access_token: 'jwt' } }, error: null } as never);
+  });
 
-    mockRpc.mockResolvedValue({
-      data: { sucesso: true, mensagem: 'Operação realizada com sucesso.' },
-      error: null,
+  describe('carregamento', () => {
+    it('deve buscar só avaliações do evento ativo, no banco', async () => {
+      // Arrange / Act
+      renderizar();
+      await screen.findByText('Carlos');
+
+      // Assert
+      expect(chamadasDe('avaliacoes', 'eq').map((c) => c.args)).toContainEqual(['projetos.id_evento', ID_EVENTO]);
+      expect(String(chamadasDe('avaliacoes', 'select')[0].args[0])).toContain('projetos!inner');
     });
 
-    mockFrom.mockImplementation((tabela: string) => {
-      if (tabela === 'areas_tematicas') {
-        return criarQueryChain({ data: dadosAreasTematicas, error: null });
-      }
-      if (tabela === 'avaliador_areas') {
-        return criarQueryChain({ data: dadosAvaliadorAreas, error: null });
-      }
-      if (tabela === 'avaliacoes') {
-        return criarQueryChain({ data: dadosAvaliacoes, error: null });
-      }
-      return criarQueryChain({ data: [], error: null });
+    it('deve trazer todas as avaliações, mesmo acima de 1000 (paginado)', async () => {
+      // Arrange: 1000 na primeira página e 1 na segunda
+      paginas = [
+        Array.from({ length: 1000 }, (_, i) => avaliacao(`av-${i}`, `P-${i}`, `Aval ${i}`, 8)),
+        [avaliacao('av-ultima', 'P-ULTIMA', 'Última Pessoa', 7)],
+      ];
+
+      // Act
+      renderizar();
+
+      // Assert
+      expect(await screen.findByText('Última Pessoa')).toBeInTheDocument();
+      expect(chamadasDe('avaliacoes', 'range').map((c) => c.args)).toEqual([[0, 999], [1000, 1999]]);
+      expect(screen.getByRole('button', { name: /todas \(1001\)/i })).toBeInTheDocument();
+    });
+
+    it('deve mostrar quantas estão concluídas e canceladas e filtrar por status', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      renderizar();
+      await screen.findByText('Carlos');
+
+      // Act
+      await user.click(screen.getByRole('button', { name: /canceladas \(1\)/i }));
+
+      // Assert
+      expect(screen.getByRole('button', { name: /concluídas \(2\)/i })).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByText('Ana')).toBeInTheDocument();
+      expect(screen.queryByText('Carlos')).not.toBeInTheDocument();
+    });
+
+    it('deve mostrar os critérios ao abrir os detalhes', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      renderizar();
+      await screen.findByText('Carlos');
+
+      // Act
+      const botao = screen.getByRole('button', { name: 'Ver critérios da avaliação de Carlos no projeto AGRO-01' });
+      await user.click(botao);
+
+      // Assert
+      expect(botao).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByText('Domínio do Conteúdo')).toBeInTheDocument();
+      expect(screen.getByText(/Parecer de Carlos/)).toBeInTheDocument();
+    });
+
+    it('deve ordenar pelo teclado no cabeçalho', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      renderizar();
+      await screen.findByText('Carlos');
+
+      // Act
+      screen.getByRole('button', { name: /^nota/i }).focus();
+      await user.keyboard('{Enter}');
+
+      // Assert
+      expect(screen.getByRole('columnheader', { name: /nota/i })).toHaveAttribute('aria-sort', 'ascending');
+      const primeira = screen.getAllByRole('row')[1];
+      expect(within(primeira).getByText('Bruna')).toBeInTheDocument();
     });
   });
 
-  it('1. Limpeza Visual: não deve conter o texto "SOFT DELETE & AUDITORIA" e o placeholder não deve ter "(FETEC-001)"', async () => {
-    render(<ModalExclusaoAvaliacao ao_fechar={vi.fn()} />);
+  describe('cancelar', () => {
+    it('deve pedir confirmação com os dados da avaliação', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      renderizar();
+      await screen.findByText('Carlos');
 
-    await waitFor(() => {
-      expect(screen.getByText('Exclusão de Avaliações')).toBeDefined();
+      // Act
+      await user.click(screen.getByRole('button', { name: 'Excluir avaliação de Carlos no projeto AGRO-01' }));
+
+      // Assert
+      const dialogo = screen.getByRole('alertdialog', { name: 'Excluir esta avaliação?' });
+      expect(within(dialogo).getByText('AGRO-01')).toBeInTheDocument();
+      expect(within(dialogo).getAllByText('CIÊNCIAS AGRÁRIAS')).toHaveLength(2); // área do projeto e do avaliador
+      expect(within(dialogo).getByText('9.5')).toBeInTheDocument();
+      expect(supabase.rpc).not.toHaveBeenCalled();
     });
 
-    // Badge "Soft Delete & Auditoria" não deve existir no cabeçalho
-    expect(screen.queryByText(/Soft Delete & Auditoria/i)).toBeNull();
+    it('deve cancelar pela função do banco e avisar quando o projeto sai da quarentena', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      const aoSucesso = vi.fn();
+      renderizar(aoSucesso);
+      await screen.findByText('Bruna');
 
-    // Placeholder do filtro deve estar limpo
-    const inputBusca = screen.getByPlaceholderText('Buscar por código, título do projeto ou avaliador...');
-    expect(inputBusca).toBeDefined();
-    expect(inputBusca.getAttribute('placeholder')).not.toContain('(FETEC-001)');
-  });
+      // Act
+      await user.click(screen.getByRole('button', { name: 'Excluir avaliação de Bruna no projeto AGRO-01' }));
+      await user.click(screen.getByRole('button', { name: /confirmar exclusão/i }));
 
-  it('2. Colunas da Listagem: exibe corretamente código, nome e área do projeto, nome e área do avaliador, critérios e excluir', async () => {
-    const { container } = render(<ModalExclusaoAvaliacao ao_fechar={vi.fn()} />);
-
-    await waitFor(() => {
-      expect(screen.queryByText(/Carregando avaliações/i)).toBeNull();
+      // Assert
+      expect(supabase.rpc).toHaveBeenCalledWith('excluir_avaliacao', { p_id_avaliacao: 'av-2' });
+      expect(chamadasDe('avaliacoes', 'update')).toHaveLength(0);
+      expect(await screen.findByText(/o projeto saiu da quarentena/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Restaurar avaliação de Bruna no projeto AGRO-01' })).toBeInTheDocument();
+      expect(aoSucesso).toHaveBeenCalled();
     });
 
-    await waitFor(() => {
-      // Cabeçalhos de coluna na tabela
-      const ths = within(container).getAllByRole('columnheader');
-      expect(ths.length).toBe(7);
-      expect(screen.getByText('Nome do Projeto')).toBeDefined();
-      expect(screen.getByText('Área do Projeto')).toBeDefined();
-      expect(screen.getByText('Nome do Avaliador')).toBeDefined();
-      expect(screen.getByText('Área do Avaliador')).toBeDefined();
-      expect(screen.getAllByText('Critérios')[0]).toBeDefined();
-      expect(screen.getByText('Excluir')).toBeDefined();
+    it('não deve mostrar sucesso quando o banco recusa', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      vi.mocked(supabase.rpc).mockResolvedValue({ data: null, error: { code: '42501', message: 'permission denied' } } as never);
+      renderizar();
+      await screen.findByText('Carlos');
+
+      // Act
+      await user.click(screen.getByRole('button', { name: 'Excluir avaliação de Carlos no projeto AGRO-01' }));
+      await user.click(screen.getByRole('button', { name: /confirmar exclusão/i }));
+
+      // Assert
+      expect(await screen.findByRole('alert')).toHaveTextContent(/erro ao cancelar a avaliação/i);
+      expect(screen.queryByRole('button', { name: /desfazer/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Excluir avaliação de Carlos no projeto AGRO-01' })).toBeInTheDocument();
+      expect(chamadasDe('avaliacoes', 'update')).toHaveLength(0);
     });
 
-    // Dados das linhas
-    await waitFor(() => {
-      expect(screen.getByText('AGRO-01')).toBeDefined();
-      expect(screen.getByText('Sistema de Irrigação Inteligente')).toBeDefined();
-      expect(screen.getAllByText('CIÊNCIAS AGRÁRIAS').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText('Prof. Carlos Eduardo')).toBeDefined();
-      // Avaliador user-1 tem duas áreas vinculadas: CIÊNCIAS AGRÁRIAS e ENGENHARIAS
-      expect(screen.getByText('ENGENHARIAS')).toBeDefined();
-      expect(screen.getByText('9.5')).toBeDefined();
-    });
-  });
+    it('deve desfazer logo após cancelar', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      renderizar();
+      await screen.findByText('Carlos');
+      await user.click(screen.getByRole('button', { name: 'Excluir avaliação de Carlos no projeto AGRO-01' }));
+      await user.click(screen.getByRole('button', { name: /confirmar exclusão/i }));
 
-  it('3. Ordenamento de Colunas: permite alternar ordenação por código, nome, área, avaliador e critérios', async () => {
-    render(<ModalExclusaoAvaliacao ao_fechar={vi.fn()} />);
+      // Act
+      await user.click(await screen.findByRole('button', { name: /desfazer/i }));
 
-    await waitFor(() => {
-      expect(screen.getByText('AGRO-01')).toBeDefined();
-    });
-
-    const thNomeProjeto = screen.getByText('Nome do Projeto').closest('th');
-    expect(thNomeProjeto).toBeDefined();
-
-    // Clica para ordenar por Nome do Projeto
-    fireEvent.click(thNomeProjeto!);
-    // Clica novamente para inverter ordem desc
-    fireEvent.click(thNomeProjeto!);
-
-    // Clica para ordenar por Critérios
-    const thCriterios = screen.getAllByText('Critérios')[0].closest('th');
-    expect(thCriterios).toBeDefined();
-    fireEvent.click(thCriterios!);
-
-    // Clica para ordenar por Área do Projeto
-    const thAreaProjeto = screen.getByText('Área do Projeto').closest('th');
-    expect(thAreaProjeto).toBeDefined();
-    fireEvent.click(thAreaProjeto!);
-  });
-
-  it('4. Detalhamento de Critérios: expande accordion exibindo notas por critério e parecer', async () => {
-    render(<ModalExclusaoAvaliacao ao_fechar={vi.fn()} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('AGRO-01')).toBeDefined();
-    });
-
-    // Localiza e clica no botão "Critérios" da primeira avaliação
-    const botoesCriterios = screen.getAllByRole('button', { name: /Critérios/i });
-    fireEvent.click(botoesCriterios[0]);
-
-    await waitFor(() => {
-      expect(screen.getByText(/Detalhamento dos Critérios Avaliados/i)).toBeDefined();
-      expect(screen.getByText(/Domínio do Conteúdo/i)).toBeDefined();
-      expect(screen.getByText('10.0')).toBeDefined();
-      expect(screen.getByText(/Clareza na Apresentação/i)).toBeDefined();
-      expect(screen.getByText('9.0')).toBeDefined();
-      expect(screen.getByText(/Excelente trabalho na parte de hardware/i)).toBeDefined();
+      // Assert
+      expect(supabase.rpc).toHaveBeenCalledWith('restaurar_avaliacao', { p_id_avaliacao: 'av-1' });
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Excluir avaliação de Carlos no projeto AGRO-01' })).toBeInTheDocument()
+      );
     });
   });
 
-  it('5. Tela de Confirmação: exibe modal detalhado de alerta antes da exclusão com todas as informações', async () => {
-    render(<ModalExclusaoAvaliacao ao_fechar={vi.fn()} />);
+  describe('restaurar', () => {
+    it('deve explicar quando a vaga já foi ocupada e manter a avaliação cancelada', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      vi.mocked(supabase.rpc).mockResolvedValue({
+        data: null,
+        error: { code: 'P0001', message: 'O projeto ROBO-02 já está com a cota completa (3 de 3 vagas ocupadas).' },
+      } as never);
+      renderizar();
+      await screen.findByText('Ana');
 
-    await waitFor(() => {
-      expect(screen.getByText('AGRO-01')).toBeDefined();
-    });
+      // Act
+      await user.click(screen.getByRole('button', { name: 'Restaurar avaliação de Ana no projeto ROBO-02' }));
 
-    // Clica no ícone de lixeira da linha AGRO-01
-    const botoesLixeira = screen.getAllByTitle('Excluir Avaliação');
-    fireEvent.click(botoesLixeira[0]);
-
-    // Modal de confirmação surge com os dados da avaliação
-    await waitFor(() => {
-      expect(screen.getByText('Confirmar Cancelamento?')).toBeDefined();
-      expect(screen.getByText('Código do Projeto:')).toBeDefined();
-      expect(screen.getByText('Área do Projeto:')).toBeDefined();
-      expect(screen.getByText('Área(s) do Avaliador:')).toBeDefined();
-      expect(screen.getByRole('button', { name: /Confirmar Exclusão/i })).toBeDefined();
-      expect(screen.getByRole('button', { name: /Cancelar/i })).toBeDefined();
-    });
-
-    // Clica em Cancelar
-    const btnCancelar = screen.getByRole('button', { name: /Cancelar/i });
-    fireEvent.click(btnCancelar);
-
-    // O modal deve fechar
-    await waitFor(() => {
-      expect(screen.queryByText('Confirmar Cancelamento?')).toBeNull();
-    });
-  });
-
-  it('6. Execução via RPC: confirmação chama excluir_avaliacao e exibe toast com opção de Desfazer', async () => {
-    const mockSucesso = vi.fn();
-    render(<ModalExclusaoAvaliacao ao_fechar={vi.fn()} aoSucesso={mockSucesso} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('AGRO-01')).toBeDefined();
-    });
-
-    // Abre diálogo de confirmação
-    const botoesLixeira = screen.getAllByTitle('Excluir Avaliação');
-    fireEvent.click(botoesLixeira[0]);
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Confirmar Exclusão/i })).toBeDefined();
-    });
-
-    // Confirma exclusão
-    const btnConfirmar = screen.getByRole('button', { name: /Confirmar Exclusão/i });
-    fireEvent.click(btnConfirmar);
-
-    // Verifica que RPC foi disparada
-    await waitFor(() => {
-      expect(mockRpc).toHaveBeenCalledWith('excluir_avaliacao', {
-        p_id_avaliacao: 'av-101',
-      });
-      expect(mockSucesso).toHaveBeenCalled();
-      expect(screen.getByRole('button', { name: /Desfazer/i })).toBeDefined();
-    });
-
-    // Clica em Desfazer
-    const btnDesfazer = screen.getByRole('button', { name: /Desfazer/i });
-    fireEvent.click(btnDesfazer);
-
-    await waitFor(() => {
-      expect(mockRpc).toHaveBeenCalledWith('restaurar_avaliacao', {
-        p_id_avaliacao: 'av-101',
-      });
-    });
-  });
-
-  it('7. Blindagem contra N/I: se o join inicial vier cru sem objetos embutidos, enriquece em lote por IDs', async () => {
-    // Simula avaliações cruas sem objetos 'projetos' ou 'usuarios' aninhados
-    const avaliacoesCruas = [
-      {
-        id_avaliacao: 'av-raw-1',
-        id_projeto: 'proj-raw-1',
-        id_usuario: 'user-raw-1',
-        nota_final: 8.8,
-        status: 'CONCLUIDA',
-        status_avaliacao: 'concluida',
-        parecer_final: null,
-      },
-    ];
-
-    const projetosBanco = [
-      {
-        id_projeto: 'proj-raw-1',
-        codigo_projeto: 'ENGI-03',
-        titulo: 'Robô Seguidor de Linha para Automação',
-        estande: 'C-08',
-        id_area: 'area-3',
-        id_evento: 'evt-2026',
-      },
-    ];
-
-    const usuariosBanco = [
-      {
-        id_usuario: 'user-raw-1',
-        nome: 'Prof. Rafael Mendonça',
-        email: 'rafael.mendonca@ifms.edu.br',
-      },
-    ];
-
-    mockFrom.mockImplementation((tabela: string) => {
-      if (tabela === 'avaliacoes') {
-        return criarQueryChain({ data: avaliacoesCruas, error: null });
-      }
-      if (tabela === 'projetos') {
-        return criarQueryChain({ data: projetosBanco, error: null });
-      }
-      if (tabela === 'usuarios') {
-        return criarQueryChain({ data: usuariosBanco, error: null });
-      }
-      if (tabela === 'areas_tematicas') {
-        return criarQueryChain({ data: dadosAreasTematicas, error: null });
-      }
-      if (tabela === 'avaliador_areas') {
-        return criarQueryChain({ data: dadosAvaliadorAreas, error: null });
-      }
-      return criarQueryChain({ data: [], error: null });
-    });
-
-    render(<ModalExclusaoAvaliacao id_evento_ativo="evt-2026" ao_fechar={vi.fn()} />);
-
-    // Deve resolver os dados enriquecidos sem exibir 'N/I' ou 'Título não especificado'
-    await waitFor(() => {
-      expect(screen.getByText('ENGI-03')).toBeDefined();
-      expect(screen.getByText('Robô Seguidor de Linha para Automação')).toBeDefined();
-      expect(screen.getByText('Prof. Rafael Mendonça')).toBeDefined();
-      expect(screen.queryByText('N/I')).toBeNull();
-      expect(screen.queryByText('Título não especificado')).toBeNull();
-      expect(screen.queryByText('Avaliador não identificado')).toBeNull();
+      // Assert
+      expect(await screen.findByRole('alert')).toHaveTextContent('cota completa');
+      expect(screen.getByRole('button', { name: 'Restaurar avaliação de Ana no projeto ROBO-02' })).toBeInTheDocument();
     });
   });
 });
-

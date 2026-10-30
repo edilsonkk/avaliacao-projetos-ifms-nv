@@ -19,6 +19,7 @@ vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: mockFrom,
     rpc: mockRpc,
+    auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'jwt' } }, error: null }) },
   },
   verificar_conexao_configurada: vi.fn(() => true),
 }));
@@ -44,6 +45,7 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
       lte: vi.fn(() => chain),
       order: vi.fn(() => chain),
       limit: vi.fn(() => chain),
+      range: vi.fn(() => chain),
       ilike: vi.fn(() => chain),
       in: vi.fn(() => chain),
       delete: mockDelete,
@@ -334,7 +336,7 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
     unmount();
   });
 
-  it('7. MODAL EXCLUSÃO DE AVALIAÇÃO: executa soft delete com confirmação e suporte a desfazer (undo)', async () => {
+  it('7. MODAL EXCLUSÃO DE AVALIAÇÃO: cancela pela função do banco com confirmação e suporte a desfazer (undo)', async () => {
     const mockSucesso = vi.fn();
     const mockFechar = vi.fn();
 
@@ -347,7 +349,7 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Exclusão de Avaliações')).toBeDefined();
+      expect(screen.getByText('Excluir uma avaliação')).toBeDefined();
       expect(screen.getByText('FETEC-001')).toBeDefined();
       expect(screen.getByText('Prof. Carlos Santos')).toBeDefined();
     });
@@ -374,8 +376,8 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
 
     // 3. Modal de confirmação surge
     await waitFor(() => {
-      expect(screen.getByText('Confirmar Cancelamento?')).toBeDefined();
-      expect(screen.getByText(/Ação reversível via Soft Delete/i)).toBeDefined();
+      expect(screen.getByText('Excluir esta avaliação?')).toBeDefined();
+      expect(screen.getByText(/fica como cancelada e pode ser restaurada/i)).toBeDefined();
     });
 
     // 4. Confirma exclusão (soft delete)
@@ -383,13 +385,8 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
     fireEvent.click(btnConfirmar);
 
     await waitFor(() => {
-      expect(mockFrom).toHaveBeenCalledWith('avaliacoes');
-      expect(mockUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: 'CANCELADA',
-          status_avaliacao: 'CANCELADA',
-        })
-      );
+      expect(mockRpc).toHaveBeenCalledWith('excluir_avaliacao', { p_id_avaliacao: expect.any(String) });
+      expect(mockUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'CANCELADA' }));
       expect(mockSucesso).toHaveBeenCalled();
       // Toast flutuante com Desfazer
       expect(screen.getByRole('button', { name: /Desfazer/i })).toBeDefined();
@@ -400,13 +397,9 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
     fireEvent.click(btnDesfazer);
 
     await waitFor(() => {
-      expect(mockUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: 'CONCLUIDA',
-          status_avaliacao: 'concluida',
-        })
-      );
+      expect(mockRpc).toHaveBeenCalledWith('restaurar_avaliacao', { p_id_avaliacao: expect.any(String) });
     });
+    expect(mockUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'CONCLUIDA' }));
 
     unmount();
   });
