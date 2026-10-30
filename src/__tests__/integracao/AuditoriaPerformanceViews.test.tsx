@@ -254,12 +254,38 @@ describe('Auditoria de Desempenho, Ausência de Loop Infinito e Integração de 
     });
   });
 
-  it('5. INTEGRAÇÃO RELATÓRIOS (view_relatorio_projetos e view_relatorio_avaliadores): deve consumir as duas views no Supabase', async () => {
-    render(<RelatoriosAdmin />);
+  it('5. INTEGRAÇÃO RELATÓRIOS (fn_relatorio_projetos_completo e fn_relatorio_avaliadores_completo): deve consumir as funções do banco do evento ativo', async () => {
+    const respostas: Record<string, unknown[]> = {
+      fn_relatorio_projetos_completo: [
+        {
+          id_projeto: 'proj-rel-1',
+          codigo_projeto: 'FETEC-200',
+          titulo: 'Biotecnologia Pantaneira',
+          estande: 'EST-B02',
+          modalidade: 'Iniciação Científica',
+          area_conhecimento: 'Biológicas',
+          nome_instituicao: 'IFMS Câmpus Corumbá',
+          total_avaliacoes: 3,
+          media_geral: 9.65,
+        },
+      ],
+      fn_relatorio_avaliadores_completo: [
+        {
+          id_usuario: 'usr-rel-1',
+          avaliador_nome: 'Prof. Carlos Santos',
+          avaliador_email: 'carlos.santos@ifms.edu.br',
+          avaliacoes: [
+            { id_avaliacao: 'av-1', codigo_projeto: 'FETEC-200', projeto_titulo: 'Biotecnologia Pantaneira', nota_final: 9.7, parecer_comentario: 'Excelente rigor metodológico.' },
+          ],
+        },
+      ],
+    };
+    mockRpc.mockImplementation((funcao: string) => criarQueryChain({ data: respostas[funcao] ?? [], error: null }));
+    render(<RelatoriosAdmin id_evento_ativo="evt-1" />);
 
     await waitFor(() => {
-      expect(mockFrom).toHaveBeenCalledWith('view_relatorio_projetos');
-      expect(mockFrom).toHaveBeenCalledWith('view_relatorio_avaliadores');
+      expect(mockRpc).toHaveBeenCalledWith('fn_relatorio_projetos_completo', { p_id_evento: 'evt-1' });
+      expect(mockRpc).toHaveBeenCalledWith('fn_relatorio_avaliadores_completo', { p_id_evento: 'evt-1' });
       // Lista de projetos e médias
       expect(screen.getByText('Biotecnologia Pantaneira')).toBeDefined();
       expect(screen.getByText('9.65 pts')).toBeDefined();

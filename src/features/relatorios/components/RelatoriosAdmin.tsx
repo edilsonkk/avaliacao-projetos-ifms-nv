@@ -8,9 +8,6 @@ import {
   Printer,
   Users,
   FolderGit2,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   UserX,
   Building2,
   BarChart3,
@@ -28,6 +25,10 @@ import {
   X
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
+import { buscarTodas } from '@/lib/buscarTodas';
+import { baixarCsv } from '@/lib/csv';
+import { tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
+import { CabecalhoOrdenavel, compararNatural } from '@/components/ui/CabecalhoOrdenavel';
 
 // ==============================================================================
 // INTERFACES DOS RELATÓRIOS
@@ -79,6 +80,7 @@ export interface RelatorioAvaliadorItem {
   tempo_presenca?: string | null;
   tempo_submissao?: string | null;
   data_avaliacao?: string | null;
+  duracao_segundos: number;
   duracao_formatada: string;
 }
 
@@ -252,7 +254,8 @@ export const formatarDataDDMMYYYY = (dataStr?: string | null): string => {
 export const RelatoriosAdmin: React.FC<{
   id_evento_ativo?: string;
   aoFechar?: () => void;
-}> = ({ id_evento_ativo: prop_id_evento_ativo, aoFechar }) => {
+}> = ({ id_evento_ativo, aoFechar }) => {
+  const idEvento = id_evento_ativo || '';
   // Navegação das 5 Abas
   const [aba_ativa, set_aba_ativa] = useState<
     'projetos' | 'avaliadores' | 'ausencias' | 'instituicoes' | 'indicadores'
@@ -263,6 +266,7 @@ export const RelatoriosAdmin: React.FC<{
   const [dados_avaliadores, set_dados_avaliadores] = useState<RelatorioAvaliadorItem[]>([]);
   const [dados_ausencias, set_dados_ausencias] = useState<RelatorioAusenciaItem[]>([]);
   const [carregando, set_carregando] = useState<boolean>(true);
+  const [mensagem_erro, set_mensagem_erro] = useState<string | null>(null);
   const [termo_busca, set_termo_busca] = useState<string>('');
 
   // Accordion de Notas Individuais na Tabela de Projetos (id_projeto expandido)
@@ -278,7 +282,7 @@ export const RelatoriosAdmin: React.FC<{
   const [instituicoesExpandidas, setInstituicoesExpandidas] = useState<Set<string>>(new Set());
 
   // Ordenação de Projetos
-  const [colunaProj, setColunaProj] = useState<'estande' | 'titulo' | 'modalidade' | 'avaliacoes' | 'media'>('estande');
+  const [colunaProj, setColunaProj] = useState<'codigo' | 'titulo' | 'modalidade' | 'avaliacoes' | 'media'>('codigo');
   const [direcaoProj, setDirecaoProj] = useState<'asc' | 'desc'>('asc');
 
   // Ordenação de Avaliadores
@@ -410,11 +414,12 @@ export const RelatoriosAdmin: React.FC<{
     window.print();
   };
 
-  // BUSCA COMPLETA E RESILIENTE DE TODOS OS DADOS
+  // Dados só do evento ativo, direto das funções de relatório do banco (sem consultas alternativas)
   const buscar_relatorios = async () => {
     set_carregando(true);
+    set_mensagem_erro(null);
 
-    if (!conexao_banco) {
+    if (!conexao_banco || !idEvento) {
       set_dados_projetos([]);
       set_dados_avaliadores([]);
       set_dados_ausencias([]);
@@ -424,378 +429,97 @@ export const RelatoriosAdmin: React.FC<{
     }
 
     try {
-      const eventoIdResolvido =
-        prop_id_evento_ativo || localStorage.getItem('evento_ativo_id') || undefined;
+      const rpc = supabase.rpc as any;
+      const { data: infoEvento, error: erroEvento } = await supabase
+        .from('eventos')
+        .select('nome_evento, data_evento, horario_inicio, horario_fim, cota_avaliacoes_padrao')
+        .eq('id_evento', idEvento)
+        .maybeSingle();
+      if (erroEvento) throw erroEvento;
 
-      // 1. Consulta Evento Ativo para parâmetros e horários
-      let infoEvento: any = null;
-      try {
-        let qEvt = supabase.from('eventos').select('*');
-        if (eventoIdResolvido) {
-          qEvt = qEvt.eq('id_evento', eventoIdResolvido);
-        } else {
-          qEvt = qEvt.eq('is_ativo', true);
-        }
-        const { data: evData } = await qEvt.maybeSingle();
-        infoEvento = evData;
-      } catch (_eEvt) {
-        // Fallback silencioso
-      }
+      const [rpcProjs, rpcAvals, rpcAus, avaliadoresEvento, quarentena] = await Promise.all([
+        buscarTodas<any>(() => rpc('fn_relatorio_projetos_completo', { p_id_evento: idEvento }).order('id_projeto')),
+        buscarTodas<any>(() => rpc('fn_relatorio_avaliadores_completo', { p_id_evento: idEvento }).order('id_usuario')),
+        buscarTodas<any>(() => rpc('fn_relatorio_ausencias_completo', { p_id_evento: idEvento }).order('id_usuario')),
+        buscarTodas<{ is_credenciado: boolean | null }>(() =>
+          supabase.from('avaliadores_evento').select('id_usuario, is_credenciado').eq('id_evento', idEvento).order('id_usuario')
+        ),
+        supabase.from('view_projetos_quarentena').select('id_projeto', { count: 'exact', head: true }).eq('id_evento', idEvento),
+      ]);
+      if (quarentena.error) throw quarentena.error;
 
-      // 2. Consulta 1: Tenta RPC fn_relatorio_projetos_completo (com fallback para view/tabela)
-      let projsCarregados: RelatorioProjetoItem[] = [];
-      let rpcProjetosSucesso = false;
-      try {
-        const { data: rpcProjs, error: rpcErr } = await (supabase.rpc as any)(
-          'fn_relatorio_projetos_completo',
-          { p_id_evento: eventoIdResolvido || null }
-        );
-        if (!rpcErr && rpcProjs && Array.isArray(rpcProjs) && rpcProjs.length > 0) {
-          projsCarregados = rpcProjs.map((p: any) => ({
-            id_projeto: p.id_projeto || p.id,
-            id_evento: p.id_evento,
-            codigo_projeto: p.codigo_projeto || null,
-            titulo: p.titulo || 'Projeto Sem Título',
-            estande: p.estande || 'EST-00',
-            corredor: p.corredor || null,
-            modalidade: p.modalidade || 'Geral',
-            area_conhecimento: p.area_conhecimento || 'Multidisciplinar',
-            nome_instituicao: p.nome_instituicao || 'Não informada',
-            id_instituicao: p.id_instituicao || null,
-            total_avaliacoes: Number(p.total_avaliacoes ?? 0),
-            media_geral: Number(p.media_geral ?? 0),
-            notas: Array.isArray(p.notas) ? p.notas.map(Number) : [],
-            is_check_in_realizado: p.is_check_in_realizado ?? true,
-            is_fora_da_competicao: p.is_fora_da_competicao ?? false,
-            detalhes_avaliacoes: Array.isArray(p.detalhes_avaliacoes) ? p.detalhes_avaliacoes : [],
-          }));
-          rpcProjetosSucesso = true;
-        }
-      } catch (_rpcE) {
-        // Fallback silencioso para consulta via view_relatorio_projetos
-      }
+      const projsCarregados: RelatorioProjetoItem[] = rpcProjs.map((p: any) => ({
+        id_projeto: p.id_projeto,
+        id_evento: p.id_evento,
+        codigo_projeto: p.codigo_projeto || null,
+        titulo: p.titulo || 'Projeto sem título',
+        estande: p.estande || '',
+        corredor: p.corredor || null,
+        modalidade: p.modalidade,
+        area_conhecimento: p.area_conhecimento,
+        nome_instituicao: p.nome_instituicao,
+        id_instituicao: p.id_instituicao || null,
+        total_avaliacoes: Number(p.total_avaliacoes ?? 0),
+        media_geral: Number(p.media_geral ?? 0),
+        notas: Array.isArray(p.notas) ? p.notas.map(Number) : [],
+        is_check_in_realizado: p.is_check_in_realizado === true,
+        is_fora_da_competicao: p.is_fora_da_competicao === true,
+        detalhes_avaliacoes: (Array.isArray(p.detalhes_avaliacoes) ? p.detalhes_avaliacoes : []).map((d: any) => ({
+          ...d,
+          nota_final: Number(d.nota_final),
+        })),
+      }));
 
-      if (!rpcProjetosSucesso) {
-        try {
-          let qProj = supabase.from('view_relatorio_projetos').select('*');
-          if (eventoIdResolvido) {
-            qProj = qProj.eq('id_evento', eventoIdResolvido);
-          }
-          const { data: dataProjetos, error: errProjetos } = await qProj;
-
-          if (!errProjetos && dataProjetos && dataProjetos.length > 0) {
-            projsCarregados = dataProjetos.map((p: any) => ({
-              id_projeto: p.id_projeto || p.id,
-              id_evento: p.id_evento,
-              codigo_projeto: p.codigo_projeto || null,
-              titulo: p.titulo || p.titulo_projeto || 'Projeto Sem Título',
-              estande: p.estande || p.estande_numero || 'EST-00',
-              corredor: p.corredor || null,
-              modalidade: p.modalidade || 'Geral',
-              area_conhecimento: p.area_conhecimento || p.area_tematica || 'Multidisciplinar',
-              nome_instituicao: p.nome_instituicao || 'Não informada',
-              id_instituicao: p.id_instituicao || null,
-              total_avaliacoes: Number(p.total_avaliacoes ?? 0),
-              media_geral: Number(p.media_geral ?? 0),
-              notas: Array.isArray(p.notas) ? p.notas.map(Number) : [],
-              is_check_in_realizado: p.is_check_in_realizado ?? true,
-              is_fora_da_competicao: p.is_fora_da_competicao ?? false,
-            }));
-          } else {
-            // Fallback na tabela projetos
-            let qProjFallback = supabase.from('projetos').select('*, instituicoes(nome_exibicao), modalidades(nome_modalidade)');
-            if (eventoIdResolvido) qProjFallback = qProjFallback.eq('id_evento', eventoIdResolvido);
-            const { data: dFb } = await qProjFallback;
-            projsCarregados = (dFb || []).map((p: any) => ({
-              id_projeto: p.id_projeto || p.id,
-              id_evento: p.id_evento,
-              codigo_projeto: p.codigo_projeto || null,
-              titulo: p.titulo || p.titulo_projeto || 'Projeto Sem Título',
-              estande: p.estande || p.estande_numero || 'EST-00',
-              corredor: p.corredor || null,
-              modalidade: p.modalidades?.nome_modalidade || p.modalidade || 'Geral',
-              area_conhecimento: p.area_conhecimento || p.area_tematica || 'Multidisciplinar',
-              nome_instituicao: p.instituicoes?.nome_exibicao || p.nome_instituicao || 'Não informada',
-              id_instituicao: p.id_instituicao || null,
-              total_avaliacoes: 0,
-              media_geral: 0,
-              notas: [],
-              is_check_in_realizado: p.is_check_in_realizado ?? true,
-              is_fora_da_competicao: p.is_fora_da_competicao ?? false,
-            }));
-          }
-        } catch (errP) {
-          console.warn('Erro ao carregar projetos:', errP);
-        }
-      }
-
-      // 3. Consulta 2: Tenta RPC fn_relatorio_avaliadores_completo (com fallback para view/tabela)
-      let avalsCarregados: RelatorioAvaliadorItem[] = [];
-      let rpcAvaliadoresSucesso = false;
-      try {
-        const { data: rpcAvals, error: rpcAvalErr } = await (supabase.rpc as any)(
-          'fn_relatorio_avaliadores_completo',
-          { p_id_evento: eventoIdResolvido || null }
-        );
-        if (!rpcAvalErr && rpcAvals && Array.isArray(rpcAvals) && rpcAvals.length > 0) {
-          rpcAvals.forEach((g: any) => {
-            const lista = Array.isArray(g.avaliacoes) ? g.avaliacoes : [];
-            lista.forEach((item: any) => {
-              const tIni = item.tempo_presenca || null;
-              const tFim = item.tempo_submissao || item.data_avaliacao || null;
-              avalsCarregados.push({
-                id_avaliacao: item.id_avaliacao || crypto.randomUUID(),
-                id_usuario: g.id_usuario || '',
-                avaliador_nome: g.avaliador_nome || 'Avaliador',
-                avaliador_email: g.avaliador_email || '',
-                id_projeto: item.id_projeto,
-                id_evento: item.id_evento,
-                codigo_projeto: item.codigo_projeto || null,
-                projeto_titulo: item.projeto_titulo || 'Projeto',
-                projeto_estande: item.projeto_estande || null,
-                projeto_modalidade: item.projeto_modalidade || null,
-                projeto_area: item.projeto_area || null,
-                nota_final: Number(item.nota_final ?? 0),
-                parecer_comentario: item.parecer_comentario || null,
-                tempo_presenca: tIni,
-                tempo_submissao: tFim,
-                data_avaliacao: item.data_avaliacao || null,
-                duracao_formatada: formatarDuracao(tIni, tFim),
-              });
-            });
+      const avalsCarregados: RelatorioAvaliadorItem[] = [];
+      rpcAvals.forEach((g: any) => {
+        (Array.isArray(g.avaliacoes) ? g.avaliacoes : []).forEach((item: any) => {
+          avalsCarregados.push({
+            id_avaliacao: item.id_avaliacao,
+            id_usuario: g.id_usuario,
+            avaliador_nome: g.avaliador_nome || '',
+            avaliador_email: g.avaliador_email || '',
+            id_projeto: item.id_projeto,
+            id_evento: item.id_evento,
+            codigo_projeto: item.codigo_projeto || null,
+            projeto_titulo: item.projeto_titulo || 'Projeto sem título',
+            projeto_estande: item.projeto_estande || null,
+            projeto_modalidade: item.projeto_modalidade || null,
+            projeto_area: item.projeto_area || null,
+            nota_final: Number(item.nota_final ?? 0),
+            parecer_comentario: item.parecer_comentario || null,
+            tempo_presenca: item.tempo_presenca || null,
+            tempo_submissao: item.tempo_submissao || null,
+            data_avaliacao: item.data_avaliacao || null,
+            duracao_segundos: Number(item.duracao_segundos ?? 0),
+            duracao_formatada: formatarDuracao(item.tempo_presenca, item.tempo_submissao),
           });
-          rpcAvaliadoresSucesso = true;
-        }
-      } catch (_rpcAvalE) {
-        // Fallback silencioso
-      }
-
-      if (!rpcAvaliadoresSucesso) {
-        try {
-          let qAval = supabase.from('view_relatorio_avaliadores').select('*');
-          if (eventoIdResolvido) {
-            qAval = qAval.eq('id_evento', eventoIdResolvido);
-          }
-          const { data: dataAvaliadores, error: errAvaliadores } = await qAval;
-
-          if (!errAvaliadores && dataAvaliadores && dataAvaliadores.length > 0) {
-            avalsCarregados = dataAvaliadores.map((a: any) => {
-              const tIni = a.tempo_presenca || null;
-              const tFim = a.tempo_submissao || a.created_at || a.data_avaliacao || null;
-              return {
-                id_avaliacao: a.id_avaliacao || crypto.randomUUID(),
-                id_usuario: a.id_usuario || '',
-                avaliador_nome: a.avaliador_nome || a.nome || 'Avaliador',
-                avaliador_email: a.avaliador_email || a.email || '',
-                id_projeto: a.id_projeto,
-                id_evento: a.id_evento,
-                codigo_projeto: a.codigo_projeto || null,
-                projeto_titulo: a.projeto_titulo || a.titulo || 'Projeto',
-                projeto_estande: a.projeto_estande || a.estande || null,
-                projeto_modalidade: a.projeto_modalidade || null,
-                projeto_area: a.projeto_area || null,
-                nota_final: Number(a.nota_final ?? 0),
-                parecer_comentario: a.parecer_final || a.parecer_comentario || null,
-                tempo_presenca: tIni,
-                tempo_submissao: tFim,
-                data_avaliacao: a.data_avaliacao || a.created_at || null,
-                duracao_formatada: formatarDuracao(tIni, tFim),
-              };
-            });
-          } else {
-            // Fallback em avaliacoes com join
-            let qAvalFb = supabase
-              .from('avaliacoes')
-              .select('*, usuarios(nome, email), projetos(codigo_projeto, titulo, estande, modalidade, area_conhecimento, id_evento)')
-              .neq('status', 'CANCELADA');
-            const { data: dAfb } = await qAvalFb;
-            avalsCarregados = (dAfb || [])
-              .filter((a: any) => !eventoIdResolvido || a.projetos?.id_evento === eventoIdResolvido)
-              .map((a: any) => {
-                const tIni = a.tempo_presenca || null;
-                const tFim = a.tempo_submissao || a.created_at || null;
-                return {
-                  id_avaliacao: a.id_avaliacao,
-                  id_usuario: a.id_usuario,
-                  avaliador_nome: a.usuarios?.nome || 'Avaliador',
-                  avaliador_email: a.usuarios?.email || '',
-                  id_projeto: a.id_projeto,
-                  id_evento: a.projetos?.id_evento,
-                  codigo_projeto: a.projetos?.codigo_projeto || null,
-                  projeto_titulo: a.projetos?.titulo || 'Projeto',
-                  projeto_estande: a.projetos?.estande || null,
-                  projeto_modalidade: a.projetos?.modalidade || null,
-                  projeto_area: a.projetos?.area_conhecimento || null,
-                  nota_final: Number(a.nota_final ?? 0),
-                  parecer_comentario: a.parecer_final || null,
-                  tempo_presenca: tIni,
-                  tempo_submissao: tFim,
-                  data_avaliacao: a.created_at || null,
-                  duracao_formatada: formatarDuracao(tIni, tFim),
-                };
-              });
-          }
-        } catch (errA) {
-          console.warn('Erro ao carregar avaliações:', errA);
-        }
-      }
-
-      // Enriquecimento dos Projetos com os detalhes de suas avaliações
-      const mapaAvaliacoesPorProjeto = new Map<string, DetalheAvaliacaoProjeto[]>();
-      avalsCarregados.forEach((av) => {
-        if (av.id_projeto) {
-          const list = mapaAvaliacoesPorProjeto.get(av.id_projeto) || [];
-          list.push({
-            id_avaliacao: av.id_avaliacao,
-            id_usuario: av.id_usuario,
-            avaliador_nome: av.avaliador_nome,
-            nota_final: av.nota_final,
-            parecer: av.parecer_comentario,
-            data: av.data_avaliacao,
-          });
-          mapaAvaliacoesPorProjeto.set(av.id_projeto, list);
-        }
+        });
       });
 
-      projsCarregados = projsCarregados.map((p) => {
-        const dets = mapaAvaliacoesPorProjeto.get(p.id_projeto) || p.detalhes_avaliacoes || [];
-        const notasCalc = dets.map((d) => d.nota_final);
-        const total = dets.length > 0 ? dets.length : p.total_avaliacoes;
-        const media =
-          dets.length > 0
-            ? Number((notasCalc.reduce((a, b) => a + b, 0) / dets.length).toFixed(2))
-            : p.media_geral;
-        return {
-          ...p,
-          total_avaliacoes: total,
-          media_geral: media,
-          notas: notasCalc.length > 0 ? notasCalc : p.notas,
-          detalhes_avaliacoes: dets,
-        };
+      const ausenciasCarregadas: RelatorioAusenciaItem[] = [];
+      rpcAus.forEach((g: any) => {
+        (Array.isArray(g.ausencias) ? g.ausencias : []).forEach((item: any) => {
+          ausenciasCarregadas.push({
+            id_usuario: g.id_usuario,
+            avaliador_nome: g.avaliador_nome || '',
+            avaliador_email: g.avaliador_email || '',
+            id_projeto: item.id_projeto,
+            id_evento: item.id_evento,
+            codigo_projeto: item.codigo_projeto || null,
+            projeto_titulo: item.projeto_titulo || 'Projeto sem título',
+            projeto_estande: item.projeto_estande || null,
+            projeto_modalidade: item.projeto_modalidade || null,
+            projeto_area: item.projeto_area || null,
+            projeto_instituicao: item.projeto_instituicao || null,
+            data_ausencia: item.data_ausencia || null,
+            total_avaliacoes_atuais: Number(item.total_avaliacoes_atuais ?? 0),
+          });
+        });
       });
 
-      // 4. Consulta 3: Tenta RPC fn_relatorio_ausencias_completo (com fallback para view/tabela)
-      let ausenciasCarregadas: RelatorioAusenciaItem[] = [];
-      let rpcAusenciasSucesso = false;
-      try {
-        const { data: rpcAus, error: rpcAusErr } = await (supabase.rpc as any)(
-          'fn_relatorio_ausencias_completo',
-          { p_id_evento: eventoIdResolvido || null }
-        );
-        if (!rpcAusErr && rpcAus && Array.isArray(rpcAus) && rpcAus.length > 0) {
-          rpcAus.forEach((g: any) => {
-            const lista = Array.isArray(g.ausencias) ? g.ausencias : [];
-            lista.forEach((item: any) => {
-              ausenciasCarregadas.push({
-                id_usuario: g.id_usuario,
-                avaliador_nome: g.avaliador_nome || 'Avaliador',
-                avaliador_email: g.avaliador_email || '',
-                id_projeto: item.id_projeto,
-                id_evento: item.id_evento,
-                codigo_projeto: item.codigo_projeto || null,
-                projeto_titulo: item.projeto_titulo || 'Projeto',
-                projeto_estande: item.projeto_estande || null,
-                projeto_modalidade: item.projeto_modalidade || null,
-                projeto_area: item.projeto_area || null,
-                projeto_instituicao: item.projeto_instituicao || null,
-                data_ausencia: item.data_ausencia || null,
-                total_avaliacoes_atuais: Number(item.total_avaliacoes_atuais ?? 0),
-              });
-            });
-          });
-          rpcAusenciasSucesso = true;
-        }
-      } catch (_rpcAusE) {
-        // Fallback silencioso
-      }
-
-      if (!rpcAusenciasSucesso) {
-        try {
-          let qAus = supabase.from('view_relatorio_ausencias').select('*');
-          if (eventoIdResolvido) {
-            qAus = qAus.eq('id_evento', eventoIdResolvido);
-          }
-          const { data: dataAus, error: errAus } = await qAus;
-
-          if (!errAus && dataAus && dataAus.length > 0) {
-            ausenciasCarregadas = dataAus.map((a: any) => ({
-              id_usuario: a.id_usuario,
-              avaliador_nome: a.avaliador_nome || 'Avaliador',
-              avaliador_email: a.avaliador_email || '',
-              id_projeto: a.id_projeto,
-              id_evento: a.id_evento,
-              codigo_projeto: a.codigo_projeto || null,
-              projeto_titulo: a.projeto_titulo || 'Projeto',
-              projeto_estande: a.projeto_estande || null,
-              projeto_modalidade: a.projeto_modalidade || null,
-              projeto_area: a.projeto_area || null,
-              projeto_instituicao: a.projeto_instituicao || null,
-              data_ausencia: a.data_ausencia || null,
-              total_avaliacoes_atuais: Number(a.total_avaliacoes_atuais ?? 0),
-            }));
-          } else {
-            // Fallback em historico_impedimentos
-            let qHi = supabase
-              .from('historico_impedimentos')
-              .select('*, usuarios(nome, email), projetos(codigo_projeto, titulo, estande, modalidade, area_conhecimento, nome_instituicao, id_evento)')
-              .eq('tipo', 'ausencia');
-            const { data: dHi } = await qHi;
-            ausenciasCarregadas = (dHi || [])
-              .filter((h: any) => !eventoIdResolvido || h.projetos?.id_evento === eventoIdResolvido)
-              .map((h: any) => {
-                const totalAtuais = (mapaAvaliacoesPorProjeto.get(h.id_projeto) || []).length;
-                return {
-                  id_usuario: h.id_usuario,
-                  avaliador_nome: h.usuarios?.nome || 'Avaliador',
-                  avaliador_email: h.usuarios?.email || '',
-                  id_projeto: h.id_projeto,
-                  id_evento: h.projetos?.id_evento,
-                  codigo_projeto: h.projetos?.codigo_projeto || null,
-                  projeto_titulo: h.projetos?.titulo || 'Projeto',
-                  projeto_estande: h.projetos?.estande || null,
-                  projeto_modalidade: h.projetos?.modalidade || null,
-                  projeto_area: h.projetos?.area_conhecimento || null,
-                  projeto_instituicao: h.projetos?.nome_instituicao || null,
-                  data_ausencia: h.created_at || null,
-                  total_avaliacoes_atuais: totalAtuais,
-                };
-              });
-          }
-        } catch (errAus) {
-          console.warn('Erro ao carregar ausências:', errAus);
-        }
-      }
-
-      // 5. Consulta 4: Avaliadores Cadastrados e Credenciados do Evento
-      let totalAvalCadastrados = 0;
-      let totalAvalCredenciados = 0;
-      try {
-        let qAe = supabase.from('avaliadores_evento').select('id_usuario, is_credenciado');
-        if (eventoIdResolvido) qAe = qAe.eq('id_evento', eventoIdResolvido);
-        const { data: dataAe } = await qAe;
-        if (dataAe && dataAe.length > 0) {
-          totalAvalCadastrados = dataAe.length;
-          totalAvalCredenciados = dataAe.filter((a: any) => a.is_credenciado).length;
-        } else {
-          // Fallback usuarios papel AVALIADOR
-          const { data: usData } = await supabase.from('usuarios').select('id_usuario, papel').eq('papel', 'AVALIADOR');
-          totalAvalCadastrados = usData?.length || 0;
-          totalAvalCredenciados = totalAvalCadastrados;
-        }
-      } catch (_eAe) {
-        // Fallback
-      }
-
-      // 6. Consulta 5: Projetos em Quarentena
-      let countQuarentena = 0;
-      try {
-        let qQ = supabase.from('view_projetos_quarentena').select('*', { count: 'exact', head: true });
-        if (eventoIdResolvido) qQ = qQ.eq('id_evento', eventoIdResolvido);
-        const { count } = await qQ;
-        countQuarentena = count || 0;
-      } catch (_eQ) {
-        // Fallback
-      }
+      const totalAvalCadastrados = avaliadoresEvento.length;
+      const totalAvalCredenciados = avaliadoresEvento.filter((a) => a.is_credenciado).length;
+      const countQuarentena = quarentena.count ?? 0;
 
       // ========================================================================
       // CÁLCULO CONSOLIDADO DOS INDICADORES GERENCIAIS
@@ -908,7 +632,7 @@ export const RelatoriosAdmin: React.FC<{
       // Distribuição por Modalidade
       const mapaModalidades = new Map<string, { projs: number; avals: number; notas: number[] }>();
       projsCarregados.forEach((p) => {
-        const mNome = p.modalidade || 'Geral';
+        const mNome = p.modalidade || 'Sem modalidade';
         const cur = mapaModalidades.get(mNome) || { projs: 0, avals: 0, notas: [] };
         cur.projs += 1;
         cur.avals += p.total_avaliacoes;
@@ -926,7 +650,7 @@ export const RelatoriosAdmin: React.FC<{
       // Distribuição por Área Temática
       const mapaAreas = new Map<string, { projs: number; avals: number; notas: number[] }>();
       projsCarregados.forEach((p) => {
-        const aNome = p.area_conhecimento || 'Multidisciplinar';
+        const aNome = p.area_conhecimento || 'Sem área temática';
         const cur = mapaAreas.get(aNome) || { projs: 0, avals: 0, notas: [] };
         cur.projs += 1;
         cur.avals += p.total_avaliacoes;
@@ -942,7 +666,7 @@ export const RelatoriosAdmin: React.FC<{
       }));
 
       setIndicadores({
-        nome_evento: infoEvento?.nome_evento || 'FETEC MS 2026',
+        nome_evento: infoEvento?.nome_evento || '',
         data_evento: infoEvento?.data_evento || null,
         horario_inicio: infoEvento?.horario_inicio || null,
         horario_fim: infoEvento?.horario_fim || null,
@@ -976,6 +700,7 @@ export const RelatoriosAdmin: React.FC<{
       set_dados_ausencias(ausenciasCarregadas);
     } catch (e) {
       console.error('Erro ao buscar relatórios:', e);
+      set_mensagem_erro(`Não foi possível carregar os relatórios: ${tratarErroEscritaAdmin(e)}`);
       set_dados_projetos([]);
       set_dados_avaliadores([]);
       set_dados_ausencias([]);
@@ -987,7 +712,7 @@ export const RelatoriosAdmin: React.FC<{
 
   useEffect(() => {
     buscar_relatorios();
-  }, [conexao_banco, prop_id_evento_ativo]);
+  }, [conexao_banco, idEvento]);
 
   // ============================================================================
   // FILTRAGEM E ORDENAÇÃO POR ABA
@@ -1019,9 +744,9 @@ export const RelatoriosAdmin: React.FC<{
     return [...projetos_filtrados].sort((a, b) => {
       let valA: any = '';
       let valB: any = '';
-      if (colunaProj === 'estande') {
-        valA = a.estande || '';
-        valB = b.estande || '';
+      if (colunaProj === 'codigo') {
+        valA = a.codigo_projeto || '';
+        valB = b.codigo_projeto || '';
       } else if (colunaProj === 'titulo') {
         valA = a.titulo || '';
         valB = b.titulo || '';
@@ -1038,9 +763,8 @@ export const RelatoriosAdmin: React.FC<{
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoProj === 'asc' ? valA - valB : valB - valA;
       }
-      return direcaoProj === 'asc'
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+      const comp = compararNatural(String(valA), String(valB));
+      return direcaoProj === 'asc' ? comp : -comp;
     });
   }, [projetos_filtrados, colunaProj, direcaoProj]);
 
@@ -1049,9 +773,9 @@ export const RelatoriosAdmin: React.FC<{
     return [...dados_projetos].sort((a, b) => {
       let valA: any = '';
       let valB: any = '';
-      if (colunaProj === 'estande') {
-        valA = a.estande || '';
-        valB = b.estande || '';
+      if (colunaProj === 'codigo') {
+        valA = a.codigo_projeto || '';
+        valB = b.codigo_projeto || '';
       } else if (colunaProj === 'titulo') {
         valA = a.titulo || '';
         valB = b.titulo || '';
@@ -1068,9 +792,8 @@ export const RelatoriosAdmin: React.FC<{
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoProj === 'asc' ? valA - valB : valB - valA;
       }
-      return direcaoProj === 'asc'
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+      const comp = compararNatural(String(valA), String(valB));
+      return direcaoProj === 'asc' ? comp : -comp;
     });
   }, [dados_projetos, colunaProj, direcaoProj]);
 
@@ -1116,8 +839,8 @@ export const RelatoriosAdmin: React.FC<{
         valA = a.tempo_submissao || a.data_avaliacao || '';
         valB = b.tempo_submissao || b.data_avaliacao || '';
       } else if (colunaAval === 'duracao') {
-        valA = a.duracao_formatada;
-        valB = b.duracao_formatada;
+        valA = a.duracao_segundos;
+        valB = b.duracao_segundos;
       } else if (colunaAval === 'parecer') {
         valA = a.parecer_comentario || '';
         valB = b.parecer_comentario || '';
@@ -1125,9 +848,8 @@ export const RelatoriosAdmin: React.FC<{
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoAval === 'asc' ? valA - valB : valB - valA;
       }
-      return direcaoAval === 'asc'
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+      const comp = compararNatural(String(valA), String(valB));
+      return direcaoAval === 'asc' ? comp : -comp;
     });
   }, [avaliadores_filtrados, colunaAval, direcaoAval]);
 
@@ -1224,9 +946,8 @@ export const RelatoriosAdmin: React.FC<{
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoAval === 'asc' ? valA - valB : valB - valA;
       }
-      return direcaoAval === 'asc'
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+      const comp = compararNatural(String(valA), String(valB));
+      return direcaoAval === 'asc' ? comp : -comp;
     });
   }, [avaliadoresNotas_filtrados, colunaAval, direcaoAval]);
 
@@ -1248,9 +969,8 @@ export const RelatoriosAdmin: React.FC<{
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoAval === 'asc' ? valA - valB : valB - valA;
       }
-      return direcaoAval === 'asc'
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+      const comp = compararNatural(String(valA), String(valB));
+      return direcaoAval === 'asc' ? comp : -comp;
     });
   }, [avaliadoresNotasAgrupados, colunaAval, direcaoAval]);
 
@@ -1296,9 +1016,8 @@ export const RelatoriosAdmin: React.FC<{
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoAus === 'asc' ? valA - valB : valB - valA;
       }
-      return direcaoAus === 'asc'
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+      const comp = compararNatural(String(valA), String(valB));
+      return direcaoAus === 'asc' ? comp : -comp;
     });
   }, [ausencias_filtradas, colunaAus, direcaoAus]);
 
@@ -1369,9 +1088,8 @@ export const RelatoriosAdmin: React.FC<{
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoAus === 'asc' ? valA - valB : valB - valA;
       }
-      return direcaoAus === 'asc'
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+      const comp = compararNatural(String(valA), String(valB));
+      return direcaoAus === 'asc' ? comp : -comp;
     });
   }, [avaliadoresAusencias_filtrados, colunaAus, direcaoAus]);
 
@@ -1390,9 +1108,8 @@ export const RelatoriosAdmin: React.FC<{
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoAus === 'asc' ? valA - valB : valB - valA;
       }
-      return direcaoAus === 'asc'
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+      const comp = compararNatural(String(valA), String(valB));
+      return direcaoAus === 'asc' ? comp : -comp;
     });
   }, [avaliadoresAusenciasAgrupados, colunaAus, direcaoAus]);
 
@@ -1488,9 +1205,8 @@ export const RelatoriosAdmin: React.FC<{
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoInst === 'asc' ? valA - valB : valB - valA;
       }
-      return direcaoInst === 'asc'
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+      const comp = compararNatural(String(valA), String(valB));
+      return direcaoInst === 'asc' ? comp : -comp;
     });
   }, [instituicoes_filtradas, colunaInst, direcaoInst]);
 
@@ -1518,9 +1234,8 @@ export const RelatoriosAdmin: React.FC<{
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoInst === 'asc' ? valA - valB : valB - valA;
       }
-      return direcaoInst === 'asc'
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+      const comp = compararNatural(String(valA), String(valB));
+      return direcaoInst === 'asc' ? comp : -comp;
     });
   }, [instituicoesAgrupadas, colunaInst, direcaoInst]);
 
@@ -1528,73 +1243,94 @@ export const RelatoriosAdmin: React.FC<{
   // EXPORTAÇÃO CSV MULTI-ABA
   // ============================================================================
   const exportar_csv = () => {
-    let csv = '';
+    let linhas: unknown[][] = [];
     let nomeArquivo = '';
 
     if (aba_ativa === 'projetos') {
-      csv = 'Código do Projeto,Título do Projeto,Instituição,Modalidade,Área Temática,Avaliações,Média Geral,Notas Individuais\n';
+      linhas = [['Código do Projeto', 'Título do Projeto', 'Instituição', 'Modalidade', 'Área Temática', 'Avaliações', 'Média Geral', 'Notas Individuais']];
       projetos_ordenados.forEach((p) => {
-        const notasStr = p.notas && p.notas.length > 0 ? p.notas.join(';') : '';
-        csv += `"${p.codigo_projeto || 'N/I'}","${p.titulo.replace(/"/g, '""')}","${(p.nome_instituicao || '').replace(/"/g, '""')}","${p.modalidade}","${p.area_conhecimento}",${p.total_avaliacoes},${p.media_geral},"${notasStr}"\n`;
+        linhas.push([
+          p.codigo_projeto || '',
+          p.titulo,
+          p.nome_instituicao || '',
+          p.modalidade,
+          p.area_conhecimento,
+          p.total_avaliacoes,
+          p.media_geral.toFixed(2),
+          p.notas.map((n) => n.toFixed(2)).join('; '),
+        ]);
       });
-      nomeArquivo = 'relatorio_projetos_e_medias_ifms.csv';
+      nomeArquivo = 'relatorio_projetos_e_medias.csv';
     } else if (aba_ativa === 'avaliadores') {
-      csv = 'Avaliador,E-mail,Código Projeto,Título do Projeto,Nota Atribuída,Tempo Inicial,Tempo Final,Duração,Parecer\n';
+      linhas = [['Avaliador', 'E-mail', 'Código Projeto', 'Título do Projeto', 'Nota Atribuída', 'Tempo Inicial', 'Tempo Final', 'Duração', 'Parecer']];
       avaliadores_ordenados.forEach((a) => {
-        csv += `"${a.avaliador_nome}","${a.avaliador_email}","${a.codigo_projeto || 'N/I'}","${a.projeto_titulo.replace(/"/g, '""')}",${a.nota_final},"${formatarHorario(a.tempo_presenca)}","${formatarHorario(a.tempo_submissao)}","${a.duracao_formatada}","${(a.parecer_comentario || '').replace(/"/g, '""')}"\n`;
+        linhas.push([
+          a.avaliador_nome,
+          a.avaliador_email,
+          a.codigo_projeto || '',
+          a.projeto_titulo,
+          a.nota_final.toFixed(2),
+          formatarHorario(a.tempo_presenca),
+          formatarHorario(a.tempo_submissao),
+          a.duracao_formatada,
+          a.parecer_comentario || '',
+        ]);
       });
-      nomeArquivo = 'relatorio_avaliadores_e_notas_ifms.csv';
+      nomeArquivo = 'relatorio_avaliadores_e_notas.csv';
     } else if (aba_ativa === 'ausencias') {
-      csv = 'Avaliador,E-mail,Código Projeto,Título do Projeto,Modalidade,Área Temática,Instituição,Data/Hora Ausência,Status Projeto\n';
+      linhas = [['Avaliador', 'E-mail', 'Código Projeto', 'Título do Projeto', 'Modalidade', 'Área Temática', 'Instituição', 'Data/Hora Ausência', 'Status Projeto']];
       ausencias_ordenadas.forEach((a) => {
-        const statusTexto = a.total_avaliacoes_atuais > 0 ? `Avaliado (${a.total_avaliacoes_atuais} aval.)` : 'Sem avaliação';
-        csv += `"${a.avaliador_nome}","${a.avaliador_email}","${a.codigo_projeto || 'N/I'}","${a.projeto_titulo.replace(/"/g, '""')}","${a.projeto_modalidade || ''}","${a.projeto_area || ''}","${(a.projeto_instituicao || '').replace(/"/g, '""')}","${formatarDataHora(a.data_ausencia)}","${statusTexto}"\n`;
+        linhas.push([
+          a.avaliador_nome,
+          a.avaliador_email,
+          a.codigo_projeto || '',
+          a.projeto_titulo,
+          a.projeto_modalidade || '',
+          a.projeto_area || '',
+          a.projeto_instituicao || '',
+          formatarDataHora(a.data_ausencia),
+          a.total_avaliacoes_atuais > 0 ? `Avaliado (${a.total_avaliacoes_atuais} aval.)` : 'Sem avaliação',
+        ]);
       });
-      nomeArquivo = 'relatorio_avaliadores_e_ausencias_ifms.csv';
+      nomeArquivo = 'relatorio_avaliadores_e_ausencias.csv';
     } else if (aba_ativa === 'instituicoes') {
-      csv = 'Instituição,Código Projeto,Título do Projeto,Modalidade,Área Temática,Status/Média\n';
+      linhas = [['Instituição', 'Código Projeto', 'Título do Projeto', 'Modalidade', 'Área Temática', 'Status/Média']];
       instituicoes_ordenadas.forEach((inst) => {
         inst.projetos.forEach((p) => {
           let statusProj = 'Aguardando Avaliação';
           if (!p.is_check_in_realizado) statusProj = 'Não Credenciado';
           else if (p.total_avaliacoes > 0) statusProj = `${p.media_geral.toFixed(2)} pts (${p.total_avaliacoes} aval.)`;
-          csv += `"${inst.nome_instituicao.replace(/"/g, '""')}","${p.codigo_projeto || 'N/I'}","${p.titulo.replace(/"/g, '""')}","${p.modalidade}","${p.area_conhecimento}","${statusProj}"\n`;
+          linhas.push([inst.nome_instituicao, p.codigo_projeto || '', p.titulo, p.modalidade, p.area_conhecimento, statusProj]);
         });
       });
-      nomeArquivo = 'relatorio_instituicoes_e_projetos_ifms.csv';
+      nomeArquivo = 'relatorio_instituicoes_e_projetos.csv';
     } else if (aba_ativa === 'indicadores' && indicadores) {
-      csv = 'Indicador,Valor\n';
-      csv += `"Evento","${indicadores.nome_evento}"\n`;
-      csv += `"Data do Evento","${formatarDataDDMMYYYY(indicadores.data_evento)}"\n`;
-      csv += `"Horário Inicial","${indicadores.horario_inicio || 'Não configurado'}"\n`;
-      csv += `"Horário Final","${indicadores.horario_fim || 'Não configurado'}"\n`;
-      csv += `"Projetos Submetidos",${indicadores.total_projetos}\n`;
-      csv += `"Projetos Credenciados",${indicadores.projetos_credenciados}\n`;
-      csv += `"Projetos Ausentes",${indicadores.projetos_ausentes}\n`;
-      csv += `"Taxa de Presença Projetos","${indicadores.taxa_presenca_projetos}%"\n`;
-      csv += `"Avaliadores Cadastrados",${indicadores.total_avaliadores}\n`;
-      csv += `"Avaliadores Credenciados",${indicadores.avaliadores_credenciados}\n`;
-      csv += `"Avaliadores Ausentes",${indicadores.avaliadores_ausentes}\n`;
-      csv += `"Taxa de Comparecimento Avaliadores","${indicadores.taxa_comparecimento_avaliadores}%"\n`;
-      csv += `"Avaliações Realizadas",${indicadores.total_avaliacoes_realizadas}\n`;
-      csv += `"Meta de Avaliações",${indicadores.cota_esperada_total}\n`;
-      csv += `"% Conclusão da Feira","${indicadores.porcentagem_conclusao}%"\n`;
-      csv += `"Tempo Médio de Avaliação","${indicadores.tempo_medio_formatado}"\n`;
-      csv += `"Média Geral de Notas",${indicadores.media_geral_notas}\n`;
-      csv += `"Projetos em Quarentena",${indicadores.projetos_quarentena}\n`;
-      nomeArquivo = 'relatorio_indicadores_gerenciais_ifms.csv';
+      linhas = [
+        ['Indicador', 'Valor'],
+        ['Evento', indicadores.nome_evento],
+        ['Data do Evento', formatarDataDDMMYYYY(indicadores.data_evento)],
+        ['Horário Inicial', indicadores.horario_inicio || 'Não configurado'],
+        ['Horário Final', indicadores.horario_fim || 'Não configurado'],
+        ['Projetos Submetidos', indicadores.total_projetos],
+        ['Projetos Credenciados', indicadores.projetos_credenciados],
+        ['Projetos Ausentes', indicadores.projetos_ausentes],
+        ['Taxa de Presença Projetos', `${indicadores.taxa_presenca_projetos}%`],
+        ['Avaliadores Cadastrados', indicadores.total_avaliadores],
+        ['Avaliadores Credenciados', indicadores.avaliadores_credenciados],
+        ['Avaliadores Ausentes', indicadores.avaliadores_ausentes],
+        ['Taxa de Comparecimento Avaliadores', `${indicadores.taxa_comparecimento_avaliadores}%`],
+        ['Avaliações Realizadas', indicadores.total_avaliacoes_realizadas],
+        ['Meta de Avaliações', indicadores.cota_esperada_total],
+        ['% Conclusão da Feira', `${indicadores.porcentagem_conclusao}%`],
+        ['Tempo Médio de Avaliação', indicadores.tempo_medio_formatado],
+        ['Média Geral de Notas', indicadores.media_geral_notas.toFixed(2)],
+        ['Projetos em Quarentena', indicadores.projetos_quarentena],
+      ];
+      nomeArquivo = 'relatorio_indicadores_gerenciais.csv';
     }
 
-    if (!csv) return;
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', nomeArquivo);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (linhas.length === 0) return;
+    baixarCsv(nomeArquivo, linhas);
   };
 
   return (
@@ -1724,7 +1460,8 @@ export const RelatoriosAdmin: React.FC<{
           <button
             type="button"
             onClick={buscar_relatorios}
-            disabled={carregando}
+            disabled={carregando || !idEvento}
+            aria-label="Atualizar relatórios"
             className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 transition-all cursor-pointer"
             title="Atualizar Relatórios"
           >
@@ -1756,6 +1493,7 @@ export const RelatoriosAdmin: React.FC<{
             <button
               type="button"
               onClick={aoFechar}
+              aria-label="Fechar Relatórios"
               className="p-2.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
               title="Fechar Relatórios"
             >
@@ -1877,12 +1615,25 @@ export const RelatoriosAdmin: React.FC<{
         )}
       </div>
 
+      {!idEvento && (
+        <div role="alert" className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl text-xs sm:text-sm text-amber-800 dark:text-amber-200 font-semibold print:hidden">
+          Não há evento ativo. Os relatórios são de cada evento: ative um evento para vê-los.
+        </div>
+      )}
+
+      {mensagem_erro && (
+        <div role="alert" className="p-4 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-2xl flex items-center gap-2 text-xs sm:text-sm text-red-800 dark:text-red-200 font-semibold print:hidden">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+          {mensagem_erro}
+        </div>
+      )}
+
       {/* CARREGAMENTO */}
       {carregando && (
         <div className="p-12 text-center space-y-2">
           <Loader2 className="w-8 h-8 text-emerald-600 animate-spin mx-auto" />
           <p className="text-xs font-semibold text-slate-500">
-            Carregando relatórios e indicadores do Supabase...
+            Carregando relatórios e indicadores...
           </p>
         </div>
       )}
@@ -1897,72 +1648,11 @@ export const RelatoriosAdmin: React.FC<{
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 dark:bg-slate-900/60 text-slate-500 uppercase font-extrabold border-b border-slate-200 dark:border-slate-700">
                 <tr>
-                  <th
-                    onClick={() => alternarOrdenacaoProj('estande')}
-                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Código do Projeto</span>
-                      {colunaProj === 'estande' ? (
-                        direcaoProj === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-emerald-600" /> : <ArrowDown className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      )}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => alternarOrdenacaoProj('titulo')}
-                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Título do Projeto</span>
-                      {colunaProj === 'titulo' ? (
-                        direcaoProj === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-emerald-600" /> : <ArrowDown className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      )}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => alternarOrdenacaoProj('modalidade')}
-                    className="px-4 py-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Modalidade / Área</span>
-                      {colunaProj === 'modalidade' ? (
-                        direcaoProj === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-emerald-600" /> : <ArrowDown className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      )}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => alternarOrdenacaoProj('avaliacoes')}
-                    className="px-4 py-3 text-center cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
-                    title="Clique para ver todas as notas recebidas"
-                  >
-                    <div className="flex items-center justify-center gap-1.5">
-                      <span>Avaliações</span>
-                      {colunaProj === 'avaliacoes' ? (
-                        direcaoProj === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-emerald-600" /> : <ArrowDown className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      )}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => alternarOrdenacaoProj('media')}
-                    className="px-4 py-3 text-right cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-colors select-none"
-                  >
-                    <div className="flex items-center justify-end gap-1.5">
-                      <span>Média Geral</span>
-                      {colunaProj === 'media' ? (
-                        direcaoProj === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-emerald-600" /> : <ArrowDown className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      )}
-                    </div>
-                  </th>
+                  <CabecalhoOrdenavel coluna="codigo" rotulo="Código do Projeto" ativa={colunaProj} direcao={direcaoProj} aoOrdenar={alternarOrdenacaoProj} />
+                  <CabecalhoOrdenavel coluna="titulo" rotulo="Título do Projeto" ativa={colunaProj} direcao={direcaoProj} aoOrdenar={alternarOrdenacaoProj} />
+                  <CabecalhoOrdenavel coluna="modalidade" rotulo="Modalidade / Área" ativa={colunaProj} direcao={direcaoProj} aoOrdenar={alternarOrdenacaoProj} />
+                  <CabecalhoOrdenavel coluna="avaliacoes" rotulo="Avaliações" ativa={colunaProj} direcao={direcaoProj} aoOrdenar={alternarOrdenacaoProj} />
+                  <CabecalhoOrdenavel coluna="media" rotulo="Média Geral" ativa={colunaProj} direcao={direcaoProj} aoOrdenar={alternarOrdenacaoProj} />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -2534,10 +2224,10 @@ export const RelatoriosAdmin: React.FC<{
                               </td>
                               <td className="px-4 py-3">
                                 <span className="font-semibold text-slate-800 dark:text-slate-200 block">
-                                  {item.projeto_modalidade || 'Geral'}
+                                  {item.projeto_modalidade || 'Sem modalidade'}
                                 </span>
                                 <span className="text-[10px] text-slate-500">
-                                  {item.projeto_area || 'Multidisciplinar'}
+                                  {item.projeto_area || 'Sem área temática'}
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-center font-mono text-[11px] text-slate-600 dark:text-slate-300">
