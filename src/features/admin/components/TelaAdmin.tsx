@@ -229,65 +229,10 @@ export const TelaAdmin: React.FC = () => {
   // Notificação flutuante (Toast)
   const [mensagem_notificacao, set_mensagem_notificacao] = useState<string | null>(null);
 
-  // Estado para Modal de Relatórios em Acordeão (view_relatorio_admin)
+  // Modal de Relatórios
   const [mostrar_modal_relatorio_acordeao, set_mostrar_modal_relatorio_acordeao] = useState<boolean>(false);
-  const [dados_relatorio_view, set_dados_relatorio_view] = useState<any[]>([]);
-  const [carregando_relatorio_view, set_carregando_relatorio_view] = useState<boolean>(false);
 
   const eventoAtivo = { id_evento: metricas_admin.evento_ativo_id };
-
-  // Fetch obrigatório na view_relatorio_admin para o relatório em acordeão
-  const buscar_view_relatorio_admin = async () => {
-    set_carregando_relatorio_view(true);
-    try {
-      const { data, error } = await supabase
-        .from('view_relatorio_admin')
-        .select('*')
-        .order('media_notas', { ascending: false });
-
-      if (error || !data) {
-        console.warn('view_relatorio_admin:', error?.message);
-        set_dados_relatorio_view([
-          {
-            id_projeto: 'proj-101',
-            codigo_projeto: 'FETEC-001',
-            estande: 'EST-A01',
-            titulo: 'Dispositivo IoT para Monitoramento Agrícola com Energia Solar',
-            qtd_avaliacoes: 3,
-            modalidade: 'Pesquisa Aplicada',
-            area_tematica: 'Engenharias e Exatas',
-            media_notas: 9.85
-          },
-          {
-            id_projeto: 'proj-102',
-            codigo_projeto: 'FETEC-002',
-            estande: 'EST-A02',
-            titulo: 'Sistema Web de Gestão de Resíduos Orgânicos Escolares',
-            qtd_avaliacoes: 2,
-            modalidade: 'Pesquisa Aplicada',
-            area_tematica: 'Engenharias e Exatas',
-            media_notas: 8.70
-          },
-          {
-            id_projeto: 'proj-103',
-            codigo_projeto: 'FETEC-003',
-            estande: 'EST-B05',
-            titulo: 'Análise Fisico-Química de Extratos Botânicos do Pantanal',
-            qtd_avaliacoes: 3,
-            modalidade: 'Iniciação Científica',
-            area_tematica: 'Ciências Biológicas e Saúde',
-            media_notas: 9.20
-          }
-        ]);
-      } else {
-        set_dados_relatorio_view(data);
-      }
-    } catch (err) {
-      console.error('Erro ao consultar view_relatorio_admin:', err);
-    } finally {
-      set_carregando_relatorio_view(false);
-    }
-  };
 
   const conexao_banco_configurada = verificar_conexao_configurada();
 
@@ -1853,14 +1798,6 @@ export const TelaAdmin: React.FC = () => {
       {mostrar_modal_relatorio_acordeao && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:static print:inset-auto print:z-auto print:bg-transparent print:backdrop-blur-none print:p-0 print:m-0 print:overflow-visible print:block print:w-full print:h-auto">
           <div className="w-[98vw] max-w-[98vw] h-[95vh] max-h-[95vh] my-auto overflow-y-auto bg-white dark:bg-slate-900 rounded-3xl p-6 relative border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col print:w-full print:max-w-none print:h-auto print:max-h-none print:overflow-visible print:border-none print:shadow-none print:rounded-none print:p-0 print:m-0 print:bg-white print:static print:block">
-            <button
-              type="button"
-              onClick={() => set_mostrar_modal_relatorio_acordeao(false)}
-              className="absolute top-6 right-6 p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 z-10 print:hidden"
-              title="Fechar Relatórios"
-            >
-              <X className="w-5 h-5" />
-            </button>
             <RelatoriosAdmin
               id_evento_ativo={metricas_admin.evento_ativo_id}
               aoFechar={() => set_mostrar_modal_relatorio_acordeao(false)}

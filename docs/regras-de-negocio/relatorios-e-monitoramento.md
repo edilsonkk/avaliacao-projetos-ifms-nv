@@ -1,7 +1,10 @@
 # Relatórios, Classificação e Telão
 
 Código: `src/features/relatorios/` (`RelatoriosAdmin`, `RankingPremiacao`, `TelaoAoVivo`).
-Dados: funções `fn_relatorio_*` com fallback para views e tabelas ([funções](../banco-de-dados/funcoes-e-rpcs.md#relatórios)).
+Dados: funções `fn_relatorio_projetos_completo`, `fn_relatorio_avaliadores_completo` e `fn_relatorio_ausencias_completo`,
+sempre com o `id_evento` do evento ativo ([funções](../banco-de-dados/funcoes-e-rpcs.md#relatórios)). Não há consultas
+alternativas: se uma função falhar, a tela mostra o erro (não um relatório vazio). Sem evento ativo, a tela avisa e não
+consulta nada (o id de evento guardado no navegador não é usado).
 
 ## Relatórios (`RelatoriosAdmin`)
 
@@ -22,9 +25,13 @@ Card **Relatórios** no Bloco 3, com cinco abas:
    avaliações), quarentena, top 5 avaliadores mais produtivos e distribuição por modalidade e grande área.
 
 Regras comuns:
+- Na aba Projetos, a coluna **Código do Projeto** ordena pelo código em ordem natural (PROJ-2 antes de PROJ-10); os
+  cabeçalhos funcionam pelo teclado.
+- Indicadores: avaliadores cadastrados/credenciados vêm de `avaliadores_evento` do evento (sem estimativa).
 - Grupos começam recolhidos, com `Expandir Todos` / `Recolher Todos`.
 - Datas no formato `DD-MM-YYYY`.
-- **Exportar CSV** exporta a aba ativa (sem estande).
+- **Exportar CSV** exporta a aba ativa (sem estande), em UTF-8 com BOM e com campos protegidos contra fórmulas
+  (`src/lib/csv.ts`).
 - Duração de avaliação = `tempo_submissao − tempo_presenca`, formatada `Xm Ys`.
 
 ## Impressão em PDF

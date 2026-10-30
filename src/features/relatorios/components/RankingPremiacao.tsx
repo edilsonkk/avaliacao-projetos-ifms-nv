@@ -13,6 +13,7 @@ import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { buscarTodas } from '@/lib/buscarTodas';
 import { tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { baixarCsv } from '@/lib/csv';
 
 export interface ItemRankingTop3 {
   id_projeto: string;
@@ -60,13 +61,6 @@ const MEDALHAS: Record<number, { icone: string; classe: string }> = {
     icone: '🥉',
     classe: 'bg-gradient-to-br from-orange-100 via-orange-50 to-orange-100/80 dark:from-orange-950/60 dark:to-orange-900/40 border-orange-300 dark:border-orange-800',
   },
-};
-
-/** Campo de CSV entre aspas; fórmulas (=, +, -, @) viram texto para o Excel não executá-las. */
-const campoCsv = (valor: unknown) => {
-  let texto = String(valor ?? '');
-  if (/^[=+\-@\t\r]/.test(texto)) texto = `'${texto}`;
-  return `"${texto.replace(/"/g, '""')}"`;
 };
 
 export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_evento_ativo }) => {
@@ -181,15 +175,7 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
           });
         });
     });
-    const csv = '﻿' + linhas.map((l) => l.map(campoCsv).join(',')).join('\n') + '\n';
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'classificacao_premiacao.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    baixarCsv('classificacao_premiacao.csv', linhas);
   };
 
   const total_em_quarentena = projetos_ranking.filter((p) => p.em_quarentena && p.posicao <= 3).length;

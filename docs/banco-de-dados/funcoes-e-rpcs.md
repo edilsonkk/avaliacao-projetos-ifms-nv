@@ -87,14 +87,15 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 
 ## Relatórios
 
-Todas recebem `p_id_evento uuid` e agregam com `json_agg`. O front-end tenta a RPC primeiro e, se falhar, usa as
-views e depois as tabelas (`RelatoriosAdmin.tsx`).
+Todas recebem `p_id_evento uuid` (nulo não devolve nada) e são `SECURITY INVOKER`. As três primeiras são
+`LANGUAGE sql` (colunas conferidas ao criar a função) e são as únicas fontes de `RelatoriosAdmin.tsx`, que não tem
+consultas alternativas e mostra o erro se uma falhar.
 
 | Função | Retorna |
 |---|---|
 | `fn_relatorio_projetos_completo` | Projetos com `detalhes_avaliacoes` |
-| `fn_relatorio_avaliadores_completo` | Avaliadores com contagem, média, tempo médio e `avaliacoes` |
-| `fn_relatorio_ausencias_completo` | Avaliadores com `ausencias` (de `avaliacoes` e `historico_impedimentos`) |
+| `fn_relatorio_avaliadores_completo` | Avaliadores com contagem, média, tempo médio e `avaliacoes` (cada uma com `duracao_segundos`) |
+| `fn_relatorio_ausencias_completo` | Avaliadores com `ausencias` (de `historico_impedimentos` com `tipo = 'ausencia'`) |
 | `fn_relatorio_instituicoes_completo` | Instituições com `projetos`, status e médias |
 | `fn_relatorio_indicadores_gerenciais` | Métricas globais e distribuições do evento |
 

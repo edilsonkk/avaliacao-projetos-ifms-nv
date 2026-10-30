@@ -50,6 +50,7 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
       upsert: vi.fn(() => Promise.resolve({ error: null })),
       single: vi.fn(() => Promise.resolve(resultado)),
       maybeSingle: vi.fn(() => Promise.resolve(resultado)),
+      range: vi.fn(() => Promise.resolve(resultado)),
       then: (resolve: any, reject?: any) => Promise.resolve(resultado).then(resolve, reject),
     };
     return chain;
@@ -147,9 +148,39 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
     },
   ];
 
+  // Formato devolvido pelas funções fn_relatorio_*_completo (agrupadas por avaliador)
+  const agruparPorAvaliador = (itens: any[], campo: string) => {
+    const grupos = new Map<string, any>();
+    itens.forEach(({ id_usuario, avaliador_nome, avaliador_email, ...resto }) => {
+      const g = grupos.get(id_usuario) || { id_usuario, avaliador_nome, avaliador_email, [campo]: [] };
+      g[campo].push(resto);
+      grupos.set(id_usuario, g);
+    });
+    return [...grupos.values()];
+  };
+
+  const respostasRpc = (): Record<string, any[]> => ({
+    fn_relatorio_projetos_completo: dadosMockProjetos.map((p) => ({
+      ...p,
+      detalhes_avaliacoes: dadosMockAvaliadores
+        .filter((a) => a.id_projeto === p.id_projeto)
+        .map((a) => ({ id_avaliacao: a.id_avaliacao, id_usuario: a.id_usuario, avaliador_nome: a.avaliador_nome, nota_final: a.nota_final, parecer: a.parecer_comentario, data: a.data_avaliacao })),
+    })),
+    fn_relatorio_avaliadores_completo: agruparPorAvaliador(
+      dadosMockAvaliadores.map((a) => ({
+        ...a,
+        duracao_segundos: (new Date(a.tempo_submissao).getTime() - new Date(a.tempo_presenca).getTime()) / 1000,
+      })),
+      'avaliacoes'
+    ),
+    fn_relatorio_ausencias_completo: agruparPorAvaliador(dadosMockAusencias, 'ausencias'),
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockFromCalls.length = 0;
+
+    mockRpc.mockImplementation((funcao: string) => criarQueryChain({ data: respostasRpc()[funcao] ?? [], error: null }));
 
     mockFrom.mockImplementation((tabela: string) => {
       mockFromCalls.push(tabela);
