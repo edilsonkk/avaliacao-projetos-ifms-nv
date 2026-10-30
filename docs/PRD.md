@@ -74,7 +74,7 @@ Os critérios de aceite referenciam as suítes de teste (`src/**/__tests__/`) qu
 | RF-15 | Áreas temáticas são normalizadas para as 9 grandes áreas do CNPq (com fallback em maiúsculas sem acento) | `areasTematicasNormalizer.test` |
 | RF-16 | Instituições inexistentes na importação de projetos são cadastradas uma única vez por lote | `AutoCadastroEAreasTematicasEvento.test` |
 | RF-17 | Projeto guarda evento, instituição, área, modalidade, estande, corredor, orientador, estudantes, cota customizada, "fora da competição" e "forçar topo da fila" | `GestorProjetos.test` |
-| RF-18 | Avaliador guarda instituição, várias áreas de atuação e modalidades bloqueadas; o bloqueio é alternado com um clique na tabela | `GestorAvaliadoresAreas.test`, `GestorAvaliadoresBloqueios.test`, `GestorAvaliadoresColunasEBloqueios.test` |
+| RF-18 | Avaliador guarda instituição, várias áreas de atuação e modalidades bloqueadas; o bloqueio é alternado com um clique na tabela | `GestorAvaliadores.test`, `GestorAvaliadoresBloqueios.test`, `10_gestor_avaliadores_test.sql` |
 | RF-19 | Questionário tem escala, perguntas ordenadas, `peso_calculo` e `peso_desempate`; o projeto pode fixar um questionário | — |
 | RF-20 | Formatos aceitos: `.xlsx` e `.csv` | `.xls` é recusado com mensagem orientando a conversão (`excelUtils.ts`) |
 

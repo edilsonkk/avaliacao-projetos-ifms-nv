@@ -29,8 +29,24 @@ Código: `src/features/staff/` (`TelaStaff`, `GestorStaff`), `src/features/avali
   ([bloqueio por modalidade](sorteio-e-atribuicao.md#bloqueio-por-modalidade)).
 - Áreas: badges das áreas de afinidade.
 
-Cadastro e edição: nome, e-mail, instituição, modalidades bloqueadas e áreas. Importação: ver
+**Escopo:** a lista mostra só quem está inscrito no evento ativo (`avaliadores_evento`), sem Staff nem Admin. Sem
+evento ativo, a tela avisa e não deixa cadastrar nem importar.
+
+**Credenciar/Descredenciar** grava em `avaliadores_evento.is_credenciado` do evento ativo. O status vem sempre do
+banco; erro do banco aparece na tela e o status não muda.
+
+**Cadastro e importação** (`admin_salvar_avaliadores`, uma transação): nome, e-mail, instituição, modalidades
+bloqueadas e áreas. Se o e-mail já existe como avaliador, a pessoa é inscrita no evento (e o nome é atualizado). Se o
+e-mail é de um Admin ou Staff, a linha é ignorada e o motivo aparece; a conta nunca é rebaixada. Importação: ver
 [importação](importacao-de-planilhas.md).
+
+**Edição** (`admin_atualizar_avaliador`) grava tudo de uma vez e recusa e-mail de outra pessoa. Bloquear uma
+modalidade (no chip ou na edição) tira as travas e a fila do avaliador nos projetos dela.
+
+**Remover** (lixeira) pede confirmação e tira a pessoa **só do evento ativo**
+(`admin_remover_avaliador_evento`). Se ela já avaliou algum projeto do evento, a remoção é recusada: use
+Descredenciar, e as notas continuam valendo. O cadastro só é apagado quando não sobra nenhum evento nem avaliação.
+Nunca apague a linha de `usuarios` direto: as FKs de avaliações são `ON DELETE CASCADE` e as notas sumiriam.
 
 ## Gestor de Staff (Admin)
 
