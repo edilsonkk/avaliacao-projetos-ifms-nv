@@ -59,6 +59,7 @@ export interface RelatorioProjetoItem {
   notas: number[];
   is_check_in_realizado?: boolean;
   is_fora_da_competicao?: boolean;
+  cota_avaliacoes?: number;
   contagem_ausencia?: number;
   detalhes_avaliacoes?: DetalheAvaliacaoProjeto[];
 }
@@ -138,6 +139,7 @@ export interface IndicadoresGerenciais {
   total_projetos: number;
   projetos_credenciados: number;
   projetos_ausentes: number;
+  projetos_nao_credenciados: number;
   taxa_presenca_projetos: number;
   // Avaliadores
   total_avaliadores: number;
@@ -146,6 +148,7 @@ export interface IndicadoresGerenciais {
   taxa_comparecimento_avaliadores: number;
   // Avaliações
   total_avaliacoes_realizadas: number;
+  avaliacoes_na_meta: number;
   cota_esperada_total: number;
   porcentagem_conclusao: number;
   tempo_medio_segundos: number;
@@ -153,8 +156,7 @@ export interface IndicadoresGerenciais {
   media_geral_notas: number;
   // Distribuição de cotas
   projetos_zero_avaliacoes: number;
-  projetos_uma_avaliacao: number;
-  projetos_duas_avaliacoes: number;
+  projetos_abaixo_cota: number;
   projetos_cota_concluida: number;
   // Alertas
   projetos_quarentena: number;
@@ -468,6 +470,7 @@ export const RelatoriosAdmin: React.FC<{
         notas: Array.isArray(p.notas) ? p.notas.map(Number) : [],
         is_check_in_realizado: p.is_check_in_realizado === true,
         is_fora_da_competicao: p.is_fora_da_competicao === true,
+        cota_avaliacoes: Number(p.cota_avaliacoes) || undefined,
         detalhes_avaliacoes: (Array.isArray(p.detalhes_avaliacoes) ? p.detalhes_avaliacoes : []).map((d: any) => ({
           ...d,
           nota_final: Number(d.nota_final),
@@ -536,10 +539,11 @@ export const RelatoriosAdmin: React.FC<{
       const totalProjetos = projsCarregados.length;
       const projsCredenciados = projsCarregados.filter((p) => p.is_check_in_realizado).length;
 
-      // Projetos Ausentes: sem check-in realizado OU com histórico de ausência e sem avaliação
+      // Não credenciados: sem check-in. Ausentes: com check-in, marcados ausentes no estande e sem avaliação.
       const idsProjetosComAusencia = new Set(ausenciasCarregadas.map((a) => a.id_projeto));
+      const projsNaoCredenciados = totalProjetos - projsCredenciados;
       const projsAusentes = projsCarregados.filter(
-        (p) => !p.is_check_in_realizado || (idsProjetosComAusencia.has(p.id_projeto) && p.total_avaliacoes === 0)
+        (p) => p.is_check_in_realizado && idsProjetosComAusencia.has(p.id_projeto) && p.total_avaliacoes === 0
       ).length;
 
       const taxaPresencaProjetos =
@@ -549,13 +553,14 @@ export const RelatoriosAdmin: React.FC<{
       const taxaComparecimentoAval =
         totalAvalCadastrados > 0 ? Math.round((totalAvalCredenciados / totalAvalCadastrados) * 100) : 0;
 
+      // Meta (mesma regra do Telão): cota de cada projeto presente e na competição; cada um conta até a sua cota
       const cotaPadrao = infoEvento?.cota_avaliacoes_padrao || 3;
-      const cotaEsperadaTotal = projsCredenciados * cotaPadrao;
+      const cotaDe = (p: RelatorioProjetoItem) => p.cota_avaliacoes || cotaPadrao;
+      const projsNaMeta = projsCarregados.filter((p) => p.is_check_in_realizado && !p.is_fora_da_competicao);
+      const cotaEsperadaTotal = projsNaMeta.reduce((soma, p) => soma + cotaDe(p), 0);
+      const avaliacoesNaMeta = projsNaMeta.reduce((soma, p) => soma + Math.min(p.total_avaliacoes, cotaDe(p)), 0);
       const totalAvalRealizadas = avalsCarregados.length;
-      const pctConclusao =
-        cotaEsperadaTotal > 0
-          ? Math.min(100, Math.round((totalAvalRealizadas / cotaEsperadaTotal) * 100))
-          : 0;
+      const pctConclusao = cotaEsperadaTotal > 0 ? Math.round((avaliacoesNaMeta / cotaEsperadaTotal) * 100) : 0;
 
       // Cálculo de Tempos
       const duracoesSegundos: number[] = [];
@@ -593,16 +598,9 @@ export const RelatoriosAdmin: React.FC<{
           : 0;
 
       // Distribuição de Cotas por Projeto
-      let qZero = 0;
-      let qUm = 0;
-      let qDois = 0;
-      let qTresMais = 0;
-      projsCarregados.forEach((p) => {
-        if (p.total_avaliacoes === 0) qZero++;
-        else if (p.total_avaliacoes === 1) qUm++;
-        else if (p.total_avaliacoes === 2) qDois++;
-        else qTresMais++;
-      });
+      const qZero = projsNaMeta.filter((p) => p.total_avaliacoes === 0).length;
+      const qCotaConcluida = projsNaMeta.filter((p) => p.total_avaliacoes >= cotaDe(p)).length;
+      const qAbaixoCota = projsNaMeta.length - qZero - qCotaConcluida;
 
       // Top Avaliadores Mais Produtivos
       const contagemPorAvaliador = new Map<string, { nome: string; email: string; total: number; duracoes: number[] }>();
@@ -683,21 +681,22 @@ export const RelatoriosAdmin: React.FC<{
         total_projetos: totalProjetos,
         projetos_credenciados: projsCredenciados,
         projetos_ausentes: projsAusentes,
+        projetos_nao_credenciados: projsNaoCredenciados,
         taxa_presenca_projetos: taxaPresencaProjetos,
         total_avaliadores: totalAvalCadastrados,
         avaliadores_credenciados: totalAvalCredenciados,
         avaliadores_ausentes: avalAusentes,
         taxa_comparecimento_avaliadores: taxaComparecimentoAval,
         total_avaliacoes_realizadas: totalAvalRealizadas,
+        avaliacoes_na_meta: avaliacoesNaMeta,
         cota_esperada_total: cotaEsperadaTotal,
         porcentagem_conclusao: pctConclusao,
         tempo_medio_segundos: tempoMedioSeg,
         tempo_medio_formatado: formatarSegundos(tempoMedioSeg),
         media_geral_notas: mediaGeralNotas,
         projetos_zero_avaliacoes: qZero,
-        projetos_uma_avaliacao: qUm,
-        projetos_duas_avaliacoes: qDois,
-        projetos_cota_concluida: qTresMais,
+        projetos_abaixo_cota: qAbaixoCota,
+        projetos_cota_concluida: qCotaConcluida,
         projetos_quarentena: countQuarentena,
         top_avaliadores: topAvaliadores,
         modalidades_distribuicao: modalidadesDistribuicao,
@@ -1323,12 +1322,14 @@ export const RelatoriosAdmin: React.FC<{
         ['Projetos Submetidos', indicadores.total_projetos],
         ['Projetos Credenciados', indicadores.projetos_credenciados],
         ['Projetos Ausentes', indicadores.projetos_ausentes],
+        ['Projetos Não Credenciados', indicadores.projetos_nao_credenciados],
         ['Taxa de Presença Projetos', `${indicadores.taxa_presenca_projetos}%`],
         ['Avaliadores Cadastrados', indicadores.total_avaliadores],
         ['Avaliadores Credenciados', indicadores.avaliadores_credenciados],
         ['Avaliadores Ausentes', indicadores.avaliadores_ausentes],
         ['Taxa de Comparecimento Avaliadores', `${indicadores.taxa_comparecimento_avaliadores}%`],
         ['Avaliações Realizadas', indicadores.total_avaliacoes_realizadas],
+        ['Avaliações na Meta', indicadores.avaliacoes_na_meta],
         ['Meta de Avaliações', indicadores.cota_esperada_total],
         ['% Conclusão da Feira', `${indicadores.porcentagem_conclusao}%`],
         ['Tempo Médio de Avaliação', indicadores.tempo_medio_formatado],
@@ -2707,7 +2708,7 @@ export const RelatoriosAdmin: React.FC<{
               </div>
               <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-700">
                 <span>Ausentes: <strong className="text-rose-600">{indicadores.projetos_ausentes}</strong></span>
-                <span>Não credenciados: <strong>{indicadores.total_projetos - indicadores.projetos_credenciados - indicadores.projetos_ausentes}</strong></span>
+                <span>Não credenciados: <strong>{indicadores.projetos_nao_credenciados}</strong></span>
               </div>
             </div>
 
@@ -2740,7 +2741,7 @@ export const RelatoriosAdmin: React.FC<{
               </div>
               <div className="flex items-baseline justify-between">
                 <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">
-                  {indicadores.total_avaliacoes_realizadas}{' '}
+                  {indicadores.avaliacoes_na_meta}{' '}
                   <span className="text-xs sm:text-sm font-normal text-slate-400">/ {indicadores.cota_esperada_total}</span>
                 </span>
                 <span className="text-xs font-bold text-emerald-600">
@@ -2749,6 +2750,7 @@ export const RelatoriosAdmin: React.FC<{
               </div>
               <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-700">
                 <span>Média das notas: <strong className="text-emerald-700 dark:text-emerald-300 font-mono">{indicadores.media_geral_notas.toFixed(2)} pts</strong></span>
+                <span>Enviadas: <strong>{indicadores.total_avaliacoes_realizadas}</strong></span>
               </div>
             </div>
 
@@ -2777,7 +2779,7 @@ export const RelatoriosAdmin: React.FC<{
             <div className="flex items-center justify-between text-xs font-bold">
               <span className="text-slate-700 dark:text-slate-300">Progresso Global das Avaliações</span>
               <span className="text-emerald-600 dark:text-emerald-400 font-mono">
-                {indicadores.total_avaliacoes_realizadas} de {indicadores.cota_esperada_total} avaliações ({indicadores.porcentagem_conclusao}%)
+                {indicadores.avaliacoes_na_meta} de {indicadores.cota_esperada_total} avaliações ({indicadores.porcentagem_conclusao}%)
               </span>
             </div>
             <div className="w-full h-3 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
@@ -2794,23 +2796,19 @@ export const RelatoriosAdmin: React.FC<{
             <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
               <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-2">
                 <Layers className="w-4 h-4 text-emerald-600" />
-                Cotas de Avaliações por Projeto
+                Cotas por projeto presente na competição
               </h4>
               <div className="space-y-2">
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-xs font-semibold">
-                  <span className="text-slate-600 dark:text-slate-300">0 Avaliações (Pendente)</span>
+                  <span className="text-slate-600 dark:text-slate-300">Sem avaliação</span>
                   <span className="font-mono font-black text-rose-600">{indicadores.projetos_zero_avaliacoes} proj.</span>
                 </div>
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-xs font-semibold">
-                  <span className="text-slate-600 dark:text-slate-300">1 Avaliação Realizada</span>
-                  <span className="font-mono font-black text-amber-600">{indicadores.projetos_uma_avaliacao} proj.</span>
-                </div>
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-xs font-semibold">
-                  <span className="text-slate-600 dark:text-slate-300">2 Avaliações Realizadas</span>
-                  <span className="font-mono font-black text-indigo-600">{indicadores.projetos_duas_avaliacoes} proj.</span>
+                  <span className="text-slate-600 dark:text-slate-300">Abaixo da cota</span>
+                  <span className="font-mono font-black text-amber-600">{indicadores.projetos_abaixo_cota} proj.</span>
                 </div>
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/40 text-xs font-semibold border border-emerald-100 dark:border-emerald-900/40">
-                  <span className="text-emerald-800 dark:text-emerald-300 font-bold">Cota Concluída (3+ aval.)</span>
+                  <span className="text-emerald-800 dark:text-emerald-300 font-bold">Cota concluída</span>
                   <span className="font-mono font-black text-emerald-700 dark:text-emerald-400">{indicadores.projetos_cota_concluida} proj.</span>
                 </div>
               </div>

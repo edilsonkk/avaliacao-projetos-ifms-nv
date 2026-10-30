@@ -93,7 +93,7 @@ consultas alternativas e mostra o erro se uma falhar.
 
 | Função | Retorna |
 |---|---|
-| `fn_relatorio_projetos_completo` | Projetos com `detalhes_avaliacoes` |
+| `fn_relatorio_projetos_completo` | Projetos com `detalhes_avaliacoes` e `cota_avaliacoes` (cota do projeto ou a padrão do evento) |
 | `fn_relatorio_avaliadores_completo` | Avaliadores com contagem, média, tempo médio e `avaliacoes` (cada uma com `duracao_segundos`) |
 | `fn_relatorio_ausencias_completo` | Avaliadores com `ausencias` (de `historico_impedimentos` com `tipo = 'ausencia'`) |
 | `fn_relatorio_instituicoes_completo` | Instituições com `projetos`, status e médias |

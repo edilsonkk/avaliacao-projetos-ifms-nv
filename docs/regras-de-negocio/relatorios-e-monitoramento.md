@@ -21,13 +21,19 @@ Card **Relatórios** no Bloco 3, com cinco abas:
    área, modalidade e média (ou "Ausente"/"Não Credenciado").
 5. **Indicadores do evento: NOME DO EVENTO**: horário inicial e final, status, barra de conclusão global, KPIs de
    projetos (total, presentes, ausentes, não credenciados), de avaliadores (cadastrados, credenciados, ausentes) e de
-   eficiência (avaliações, média geral, tempo médio por projeto). Inclui distribuição por cota (0, 1, 2, 3+
-   avaliações), quarentena, top 5 avaliadores mais produtivos e distribuição por modalidade e grande área.
+   eficiência (avaliações, média geral, tempo médio por projeto). Inclui distribuição por cota (sem avaliação,
+   abaixo da cota, cota concluída), quarentena, top 5 avaliadores mais produtivos e distribuição por modalidade e
+   grande área.
 
 Regras comuns:
 - Na aba Projetos, a coluna **Código do Projeto** ordena pelo código em ordem natural (PROJ-2 antes de PROJ-10); os
   cabeçalhos funcionam pelo teclado.
 - Indicadores: avaliadores cadastrados/credenciados vêm de `avaliadores_evento` do evento, só com papel Avaliador (sem o Staff; sem estimativa).
+- Indicadores, meta e conclusão (mesma regra do Telão): a meta soma a cota de cada projeto **presente e na competição**
+  (`cota_avaliacoes` de `fn_relatorio_projetos_completo`: a customizada do projeto ou a padrão do evento); cada projeto
+  conta no máximo até a sua cota. A distribuição por cota considera só esses projetos.
+- Indicadores, projetos: **não credenciados** = sem check-in; **ausentes** = com check-in, marcados ausentes no
+  estande e sem avaliação.
 - Grupos começam recolhidos, com `Expandir Todos` / `Recolher Todos`.
 - Datas no formato `DD-MM-YYYY`.
 - **Exportar CSV** exporta a aba ativa (sem estande), em UTF-8 com BOM e com campos protegidos contra fórmulas
