@@ -29,27 +29,35 @@ Card no Bloco 3. Visão do pavilhão para acompanhamento em tempo real.
 - Seletor de densidade: **Cards Grandes** (detalhes completos) ou **Cards Compactos** (mais projetos por linha).
   Grade responsiva de 1 coluna (celular) até 6 (expandido) ou 8 (compacto) em telas ultrawide.
 - Agrupado por corredor (ordem alfabética); estandes em ordem natural (`A-1`, `A-2`, …, `A-10`, via
-  `localeCompare(..., { numeric: true })`). Projetos sem estande ficam na seção "Sem Estande Atribuído".
+  `compararNatural`). Projetos sem estande ficam na seção "Sem Estande Atribuído". Sem corredor cadastrado, o corredor
+  só é deduzido quando o estande é "letra + número" (`A-01`, `B12` → Corredor A/B); os demais (ex.: `EST-12`) ficam
+  em "Corredor não informado".
+- Só o **evento ativo**: sem evento ativo, a tela avisa e não consulta nada.
 
 **Cores de status**
 
 | Status | Cor | Regra |
 |---|---|---|
-| Não Credenciado | Cinza | `is_check_in_realizado = false` |
+| Não Credenciado | Cinza | `is_check_in_realizado` diferente de `true` (vazio conta como não credenciado) |
 | Credenciado / Aguardando | Azul | Presente, 0 avaliações |
 | Faltando Avaliações | Âmbar | `0 < avaliações < cota` |
 | Avaliado / Cota Completa | Verde | `avaliações >= cota` |
 
-Indicadores extras: ícone pulsante de **trava ativa** (avaliador no estande) e **quarentena**.
+A **cota** é a do projeto (`cota_avaliacoes_customizada`) ou, se vazia, a padrão do evento. Contam só avaliações não
+canceladas dos projetos do evento (paginadas, sem o limite de 1000 linhas).
+
+Indicadores extras: ícone pulsante de **trava ativa** (só travas não vencidas: as vencidas só são apagadas no próximo
+sorteio), **quarentena** (a mesma lista pendente da tela Quarentena, `view_projetos_quarentena`: projeto resolvido
+deixa de aparecer) e etiqueta **Fora da competição**.
 
 **Notas**: cada card mostra `Média Geral: 9.45 pts` (ou `-`) e as notas individuais em badges
 (`[ 9.5 ] [ 8.5 ] [ 9.0 ]`), para ver a dispersão de relance.
 
-**Auditoria**: clicar num card abre o histórico de avaliações (notas, pareceres, dados do projeto) com botão
-"Editar Dados do Projeto".
+**Auditoria**: clicar num card abre o histórico de avaliações não canceladas (notas, pareceres, dados do projeto)
+com botão "Editar Dados do Projeto".
 
 **Consulta**: usa os relacionamentos do PostgREST (`modalidades(...)`, `areas_tematicas(...)`, `instituicoes(...)`).
-Se falhar por schema cache, cai para as colunas nativas de `projetos`, para o mapa nunca ficar em branco.
+Se alguma leitura falhar, a tela mostra o erro (não um mapa incompleto com cores erradas).
 
 Testes: `src/features/projetos/__tests__/` (`GestorProjetos`,
 `MapaEstandesVisualEStatus`).
