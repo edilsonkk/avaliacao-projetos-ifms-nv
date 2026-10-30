@@ -135,14 +135,8 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
 
   const conexao_banco = verificar_conexao_configurada();
 
-  const obterEventoAtivoId = (): string | undefined => {
-    if (id_evento_ativo) return id_evento_ativo;
-    if (typeof window !== 'undefined') {
-      const arm = localStorage.getItem('evento_ativo_id');
-      if (arm && arm.trim()) return arm.trim();
-    }
-    return undefined;
-  };
+  // Só o evento ativo recebido do painel (nunca um id guardado neste navegador, que pode ser de outro evento)
+  const obterEventoAtivoId = (): string | undefined => id_evento_ativo || undefined;
 
   const adicionarLog = (tipo: 'info' | 'success' | 'error', mensagem: string) => {
     set_logs_importacao((prev) => [...prev, { tipo, mensagem }]);
@@ -197,6 +191,12 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
     }
 
     const idEvt = obterEventoAtivoId();
+    if (!idEvt) {
+      set_projetos([]);
+      set_mensagem_erro(MENSAGEM_SEM_EVENTO_ATIVO);
+      set_carregando(false);
+      return;
+    }
 
     try {
       // Migração retroativa: vincula projetos legados sem evento ao evento ativo atual

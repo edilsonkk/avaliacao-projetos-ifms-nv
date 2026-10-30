@@ -61,7 +61,8 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({ aoFechar
   const [direcao, set_direcao] = useState<'asc' | 'desc'>('desc');
 
   const conexao_banco = verificar_conexao_configurada();
-  const idEvento = id_evento_ativo || (typeof window !== 'undefined' ? localStorage.getItem('evento_ativo_id') : null) || null;
+  // Só o evento ativo recebido do painel (nunca um id guardado neste navegador, que pode ser de outro evento)
+  const idEvento = id_evento_ativo || null;
 
   const carregar_quarentenas = useCallback(async () => {
     set_carregando(true);
@@ -71,13 +72,19 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({ aoFechar
       set_carregando(false);
       return;
     }
+    if (!idEvento) {
+      set_projetos([]);
+      set_mensagem_erro('Não há evento ativo: ative um evento para ver a quarentena.');
+      set_carregando(false);
+      return;
+    }
     try {
       let consulta: any = supabase
         .from('view_projetos_quarentena')
         .select(
           'id_projeto, codigo_projeto, titulo, estande, corredor, modalidade, area_tematica, nome_instituicao, total_avaliacoes, nota_minima, nota_maxima, diferenca_notas, tem_flag_quarentena'
         );
-      if (idEvento) consulta = consulta.eq('id_evento', idEvento);
+      consulta = consulta.eq('id_evento', idEvento);
       const { data, error } = await consulta;
       if (error) throw error;
       set_projetos((data || []) as ProjetoQuarentena[]);

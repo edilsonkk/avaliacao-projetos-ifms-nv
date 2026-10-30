@@ -258,24 +258,25 @@ export const TelaStaff: React.FC = () => {
     }
 
     try {
-      // 1. Identificar Evento Ativo
-      let idEvt = localStorage.getItem('evento_ativo_id') || '';
-      try {
-        const { data: eventoDb } = await supabase
-          .from('eventos')
-          .select('id_evento')
-          .eq('is_ativo', true)
-          .limit(1)
-          .maybeSingle();
+      // 1. Identificar Evento Ativo: sempre o do banco (um id guardado neste navegador pode ser de outro evento)
+      const { data: eventoDb, error: erroEvento } = await supabase
+        .from('eventos')
+        .select('id_evento')
+        .eq('is_ativo', true)
+        .limit(1)
+        .maybeSingle();
+      if (erroEvento) throw erroEvento;
 
-        if (eventoDb?.id_evento) {
-          idEvt = eventoDb.id_evento;
-          set_evento_ativo_id(idEvt);
-          localStorage.setItem('evento_ativo_id', idEvt);
-        }
-      } catch (errEvt) {
-        console.warn('Aviso ao obter evento ativo:', errEvt);
+      const idEvt: string = eventoDb?.id_evento || '';
+      set_evento_ativo_id(idEvt);
+      if (!idEvt) {
+        set_projetos_lista([]);
+        set_avaliadores_lista([]);
+        set_mensagem_erro_banco('Não há evento ativo: peça ao Admin para ativar o evento.');
+        set_carregando_dados(false);
+        return;
       }
+      localStorage.setItem('evento_ativo_id', idEvt);
 
       // 2. Buscar Tabelas de Referência
       let qInst: any = supabase.from('instituicoes').select('id_instituicao, nome_exibicao');
@@ -489,7 +490,7 @@ export const TelaStaff: React.FC = () => {
     }
 
     try {
-      const idEvt = evento_ativo_id || localStorage.getItem('evento_ativo_id');
+      const idEvt = evento_ativo_id;
       if (!idEvt) throw new Error('Evento ativo não selecionado.');
 
       const { error } = await supabase
@@ -552,7 +553,7 @@ export const TelaStaff: React.FC = () => {
 
     if (conexao_banco_configurada) {
       try {
-        const idEvt = evento_ativo_id || localStorage.getItem('evento_ativo_id');
+        const idEvt = evento_ativo_id;
         if (!idEvt) throw new Error('Evento ativo não definido.');
 
         if (estaBloqueada) {
@@ -690,7 +691,7 @@ export const TelaStaff: React.FC = () => {
     }
 
     try {
-      const idEvt = evento_ativo_id || localStorage.getItem('evento_ativo_id');
+      const idEvt = evento_ativo_id;
 
       // 1. Atualizar usuários
       const { error: errUser } = await supabase
@@ -961,7 +962,7 @@ export const TelaStaff: React.FC = () => {
 
       {/* Alerta de Erro Visual */}
       {mensagem_erro_banco && (
-        <div className="bg-red-50 dark:bg-red-950/50 border border-red-300 dark:border-red-800 p-4 rounded-2xl flex items-center justify-between gap-3 text-red-800 dark:text-red-200 text-xs sm:text-sm font-semibold">
+        <div role="alert" className="bg-red-50 dark:bg-red-950/50 border border-red-300 dark:border-red-800 p-4 rounded-2xl flex items-center justify-between gap-3 text-red-800 dark:text-red-200 text-xs sm:text-sm font-semibold">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0" />
             <span>{mensagem_erro_banco}</span>

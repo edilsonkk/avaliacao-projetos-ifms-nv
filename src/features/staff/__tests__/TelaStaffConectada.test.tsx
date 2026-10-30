@@ -79,4 +79,20 @@ describe('TelaStaff conectada ao banco', () => {
     expect(await screen.findByRole('dialog', { name: /aparelho de maria souza/i })).toBeInTheDocument();
     expect(supabase.rpc).toHaveBeenCalledWith('fn_situacao_vinculos', { p_id_evento: ID_EVENTO });
   });
+
+  it('sem evento ativo no banco deve avisar e não carregar dados de outro evento, nem do guardado no navegador', async () => {
+    // Arrange (beforeEach guardou um evento no navegador; o banco não tem evento ativo)
+    const eventoAtivo = dados.eventos;
+    dados.eventos = null;
+
+    // Act
+    render(<TelaStaff />);
+
+    // Assert
+    expect(await screen.findByRole('alert')).toHaveTextContent(/não há evento ativo/i);
+    const tabelas = vi.mocked(supabase.from).mock.calls.map((c) => c[0]);
+    expect(tabelas).not.toContain('projetos');
+    expect(tabelas).not.toContain('avaliadores_evento');
+    dados.eventos = eventoAtivo;
+  });
 });

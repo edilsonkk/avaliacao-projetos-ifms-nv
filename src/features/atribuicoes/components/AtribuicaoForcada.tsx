@@ -135,15 +135,17 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
     setCarregandoDados(true);
     if (!manterAviso) setToast(null);
 
-    if (!conexaoConfigurada) {
+    // Só o evento ativo recebido do painel (nunca um id guardado neste navegador, que pode ser de outro evento)
+    const eventoIdResolvido = id_evento_ativo || undefined;
+    if (!conexaoConfigurada || !eventoIdResolvido) {
       setListaProjetosElegiveis([]);
       setListaAvaliadoresElegiveis([]);
+      if (conexaoConfigurada) exibirFeedback('erro', 'Não há evento ativo: ative um evento para atribuir projetos.');
       setCarregandoDados(false);
       return;
     }
 
     try {
-      const eventoIdResolvido = id_evento_ativo || localStorage.getItem('evento_ativo_id') || undefined;
 
       // Resolução dinâmica da cota de avaliações do evento ativo
       let cotaCalculada = cota_padrao_evento || 3;

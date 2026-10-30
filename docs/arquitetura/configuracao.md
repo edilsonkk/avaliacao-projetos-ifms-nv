@@ -115,7 +115,7 @@ O navegador guarda sessão e dados de contingência nestas chaves:
 | `sessao_email` / `usuario_email` | `string` | E-mail do usuário em sessão |
 | `avaliador_id_usuario`, `avaliador_email`, `avaliador_nome` | `string` | Dados do avaliador logado |
 | `staff_id_usuario` | UUID | Membro do staff logado |
-| `evento_ativo_id` | UUID | Evento ativo |
+| `evento_ativo_id` | UUID | Só registro: as telas usam o evento ativo do banco (ou o recebido do painel), nunca este valor, que pode ser de outro evento |
 | `evento_ativo_nome` | `string` | Nome do evento exibido no cabeçalho (ex.: `FETEC MS 2026`) |
 | `evento_ativo_data` | `string` | Data do evento ativo |
 | `avaliadores_credenciados_local` | JSON `{ [id_usuario]: boolean }` | Fallback de credenciamento de avaliadores |

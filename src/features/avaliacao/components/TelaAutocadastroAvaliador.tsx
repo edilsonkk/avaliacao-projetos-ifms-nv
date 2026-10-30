@@ -59,7 +59,8 @@ export const TelaAutocadastroAvaliador: React.FC<TelaAutocadastroAvaliadorProps>
 
       try {
         const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-        let idEvento = params?.get('evento') || localStorage.getItem('evento_ativo_id') || '';
+        // Evento do link de cadastro; sem ele, o ativo do banco (nunca um id guardado neste navegador)
+        let idEvento = params?.get('evento') || '';
 
         if (!conexaoConfigurada) {
           setIdEventoAtivo(idEvento || 'evento-contingencia');
@@ -78,7 +79,7 @@ export const TelaAutocadastroAvaliador: React.FC<TelaAutocadastroAvaliadorProps>
           return;
         }
 
-        // Se idEvento não foi passado pela URL ou localStorage, busca o evento ativo no banco
+        // Se idEvento não foi passado pela URL, busca o evento ativo no banco
         if (!idEvento) {
           const { data: eventoDb } = await supabase
             .from('eventos')
@@ -105,15 +106,17 @@ export const TelaAutocadastroAvaliador: React.FC<TelaAutocadastroAvaliadorProps>
         }
 
         setIdEventoAtivo(idEvento);
+        if (!idEvento) {
+          setMensagemErro('Não há evento ativo: o cadastro abre quando o evento estiver ativo.');
+          return;
+        }
 
         // Busca instituições e áreas do evento
         let queryInst: any = supabase.from('instituicoes').select('id_instituicao, nome_exibicao').order('nome_exibicao');
         let queryAreas: any = supabase.from('areas_tematicas').select('id_area, nome_area').order('nome_area');
 
-        if (idEvento) {
-          queryInst = queryInst.eq('id_evento', idEvento);
-          queryAreas = queryAreas.eq('id_evento', idEvento);
-        }
+        queryInst = queryInst.eq('id_evento', idEvento);
+        queryAreas = queryAreas.eq('id_evento', idEvento);
 
         const [resInst, resAreas] = await Promise.all([queryInst, queryAreas]);
 
