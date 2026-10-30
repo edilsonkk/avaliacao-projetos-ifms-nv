@@ -23,7 +23,7 @@ gestores de cada feature. Modelos estáticos: `public/modelos/`.
 | `GestorStaff` | RPC `admin_salvar_staff` (uma chamada) | Nome, E-mail, Papel (`STAFF`/`MONITOR`) | `email` (sem diferenciar maiúsculas); e-mails de Admin/Avaliador são ignorados |
 | `GestorInstituicoes` | `instituicoes` | Nome / Nome de Exibição, Sigla, Campus | `nome_normalizado` |
 | `GestorModalidades` | `modalidades` | Código, Modalidade, Nível, Área Temática, Descrição | por evento |
-| `GestorQuestionarios` | `questionarios`, `perguntas_questionario` | Pergunta/Critério, Lembrete/Descrição, Peso (padrão 1.0) | vinculado ao questionário |
+| `GestorQuestionarios` | Preenche o formulário; grava por `admin_salvar_questionario` ao salvar | Pergunta/Critério, Lembrete/Descrição, Peso (padrão 1.0) | vinculado ao questionário |
 
 ### Importação de projetos
 

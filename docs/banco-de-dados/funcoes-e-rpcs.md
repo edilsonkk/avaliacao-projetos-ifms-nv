@@ -72,6 +72,9 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `admin_salvar_staff(p_id_evento uuid, p_itens jsonb)` → `jsonb` | Cadastro manual e importação da equipe Staff (`papel` `STAFF`/`MONITOR`); ignora e-mails de Admin/Avaliador; inscreve no evento sem mexer no credenciamento. Devolve `{cadastrados, atualizados, ignorados}` |
 | `admin_atualizar_staff(p_id_usuario, p_nome, p_email)` | Edição de membro do Staff; recusa e-mail de outra pessoa |
 | `admin_excluir_staff(p_id_usuario)` | Exclui membro do Staff/Monitor (recusa outros papéis) |
+| `admin_salvar_questionario(p_id_questionario, p_id_evento, p_titulo, p_escala_minima, p_escala_maxima, p_perguntas jsonb)` → `uuid` | Cria (`p_id_questionario` nulo) ou edita o questionário numa transação; perguntas atualizadas no lugar. Questionário já usado só muda o título |
+| `admin_excluir_questionario(p_id_questionario)` | Exclui questionário nunca usado em avaliação |
+| `fn_avaliacoes_do_questionario(p_id_questionario)` → `integer` | Quantas avaliações usaram o questionário (trava a edição na tela) |
 | `fn_expurgar_modalidades_bloqueadas(p_id_usuario, p_id_evento)` | Interna: remove travas e fila do avaliador em projetos das modalidades bloqueadas |
 | `fn_recalcular_quarentena(p_id_projeto uuid)` | Interna: marca/desmarca `is_quarentena` das avaliações ativas pela regra da view |
 | `is_admin()` → `boolean` | Usuário autenticado tem papel `ADMIN` |

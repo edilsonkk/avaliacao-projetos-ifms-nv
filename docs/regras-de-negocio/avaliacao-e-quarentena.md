@@ -30,6 +30,18 @@ trava e sorteia outro projeto. Esse projeto não volta a ser sorteado para o mes
 - Cada nota deve estar dentro de `escala_minima`–`escala_maxima` do questionário.
 - O projeto usa o questionário em `projetos.id_questionario_fixado`, fixado na primeira avaliação, se ainda não houver.
 
+## Gestor de Questionários (Admin)
+
+- Lista os questionários do **evento ativo** (título, escala e número de perguntas). Sem evento ativo, não cria.
+- Cada pergunta tem texto, texto de ajuda opcional (aparece para o avaliador), peso e prioridade de desempate. Os
+  pesos ficam registrados, mas a nota final hoje é a **média simples** e o desempate não os usa (a tela avisa).
+- Criar e editar passam por `admin_salvar_questionario`, numa transação. A edição atualiza as perguntas no lugar
+  (mesmo `id_pergunta`), sem apagar e recriar.
+- **Questionário já usado em avaliação:** só o título pode mudar. Perguntas, pesos e escala ficam travados, e excluir
+  é recusado, porque apagar perguntas apagaria as notas por critério.
+- Importação de planilha: coluna `pergunta`/`critério` (e opcionais `lembrete`/`descrição` e `peso`). Se o formulário
+  já tem perguntas, a tela pergunta se anexa ou começa um questionário novo. Nada é gravado até clicar em salvar.
+
 ## Quarentena
 
 - Um projeto entra em quarentena quando a diferença entre a **maior e a menor nota ativa** passa de **2,5 pontos**

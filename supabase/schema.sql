@@ -373,6 +373,32 @@ $$;
 ALTER FUNCTION "public"."admin_enfileirar_projetos"("p_id_usuario" "uuid", "p_ids_projetos" "uuid"[]) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_usos integer;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  PERFORM 1 FROM public.questionarios WHERE id_questionario = p_id_questionario FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Questionário não encontrado.';
+  END IF;
+  v_usos := public.fn_avaliacoes_do_questionario(p_id_questionario);
+  IF v_usos > 0 THEN
+    RAISE EXCEPTION 'Este questionário já foi usado em % avaliação(ões) e não pode ser excluído: as notas por critério seriam apagadas.', v_usos;
+  END IF;
+  DELETE FROM public.questionarios WHERE id_questionario = p_id_questionario;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -757,6 +783,118 @@ $_$;
 ALTER FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_salvar_questionario"("p_id_questionario" "uuid", "p_id_evento" "uuid", "p_titulo" "text", "p_escala_minima" numeric, "p_escala_maxima" numeric, "p_perguntas" "jsonb") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_titulo   text := btrim(regexp_replace(coalesce(p_titulo, ''), '\s+', ' ', 'g'));
+  v_id       uuid := p_id_questionario;
+  v_atual    public.questionarios;
+  v_usos     integer;
+  v_item     jsonb;
+  v_ordem    integer := 0;
+  v_ids      uuid[] := '{}';
+  v_id_perg  uuid;
+  v_mudou    boolean;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  IF length(v_titulo) < 3 OR length(v_titulo) > 255 THEN
+    RAISE EXCEPTION 'Informe o título do questionário (3 a 255 caracteres).';
+  END IF;
+  IF p_escala_minima IS NULL OR p_escala_maxima IS NULL OR p_escala_minima < 0 OR p_escala_maxima > 100
+     OR p_escala_minima >= p_escala_maxima THEN
+    RAISE EXCEPTION 'Escala inválida: a mínima precisa ser menor que a máxima (entre 0 e 100).';
+  END IF;
+  IF jsonb_typeof(p_perguntas) IS DISTINCT FROM 'array' OR jsonb_array_length(p_perguntas) = 0 THEN
+    RAISE EXCEPTION 'O questionário precisa de pelo menos uma pergunta.';
+  END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_perguntas) e WHERE btrim(coalesce(e->>'texto_pergunta', '')) = '') THEN
+    RAISE EXCEPTION 'Preencha o texto de todas as perguntas.';
+  END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_perguntas) e
+             WHERE coalesce((e->>'peso_calculo')::numeric, 1) <= 0 OR coalesce((e->>'peso_desempate')::numeric, 1) < 0) THEN
+    RAISE EXCEPTION 'Os pesos precisam ser positivos.';
+  END IF;
+
+  IF v_id IS NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM public.eventos WHERE id_evento = p_id_evento) THEN
+      RAISE EXCEPTION 'Não há evento ativo para vincular o questionário.';
+    END IF;
+    INSERT INTO public.questionarios (id_evento, titulo, escala_minima, escala_maxima)
+    VALUES (p_id_evento, v_titulo, p_escala_minima, p_escala_maxima)
+    RETURNING id_questionario INTO v_id;
+  ELSE
+    SELECT * INTO v_atual FROM public.questionarios WHERE id_questionario = v_id FOR UPDATE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Questionário não encontrado.';
+    END IF;
+    v_usos := public.fn_avaliacoes_do_questionario(v_id);
+    IF v_usos > 0 THEN
+      -- Já usado: só o título pode mudar; perguntas, pesos e escala ficam como estão
+      SELECT v_atual.escala_minima IS DISTINCT FROM p_escala_minima
+          OR v_atual.escala_maxima IS DISTINCT FROM p_escala_maxima
+          OR (SELECT count(*) FROM public.perguntas_questionario WHERE id_questionario = v_id) <> jsonb_array_length(p_perguntas)
+          OR EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(p_perguntas) WITH ORDINALITY e(item, n)
+            LEFT JOIN public.perguntas_questionario pq
+              ON pq.id_pergunta::text = e.item->>'id_pergunta' AND pq.id_questionario = v_id
+            WHERE pq.id_pergunta IS NULL
+               OR pq.texto_pergunta IS DISTINCT FROM btrim(e.item->>'texto_pergunta')
+               OR coalesce(pq.descricao_lembrete, '') IS DISTINCT FROM btrim(coalesce(e.item->>'descricao_lembrete', ''))
+               OR pq.peso_calculo IS DISTINCT FROM coalesce((e.item->>'peso_calculo')::numeric, 1)
+               OR pq.peso_desempate IS DISTINCT FROM coalesce((e.item->>'peso_desempate')::numeric, 1)
+               OR pq.ordem IS DISTINCT FROM e.n::integer
+          )
+        INTO v_mudou;
+      IF v_mudou THEN
+        RAISE EXCEPTION 'Este questionário já foi usado em % avaliação(ões): só o título pode ser alterado. Para mudar perguntas, pesos ou escala, crie um questionário novo.', v_usos;
+      END IF;
+      UPDATE public.questionarios SET titulo = v_titulo WHERE id_questionario = v_id;
+      RETURN v_id;
+    END IF;
+    UPDATE public.questionarios
+    SET titulo = v_titulo, escala_minima = p_escala_minima, escala_maxima = p_escala_maxima
+    WHERE id_questionario = v_id;
+  END IF;
+
+  -- Perguntas: atualiza as existentes, insere as novas, apaga as retiradas
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_perguntas) LOOP
+    v_ordem := v_ordem + 1;
+    v_id_perg := NULL;
+    IF nullif(v_item->>'id_pergunta', '') IS NOT NULL THEN
+      UPDATE public.perguntas_questionario
+      SET ordem = v_ordem,
+          texto_pergunta = btrim(v_item->>'texto_pergunta'),
+          descricao_lembrete = nullif(btrim(coalesce(v_item->>'descricao_lembrete', '')), ''),
+          peso_calculo = coalesce((v_item->>'peso_calculo')::numeric, 1),
+          peso_desempate = coalesce((v_item->>'peso_desempate')::numeric, v_ordem)
+      WHERE id_pergunta = (v_item->>'id_pergunta')::uuid AND id_questionario = v_id
+      RETURNING id_pergunta INTO v_id_perg;
+    END IF;
+    IF v_id_perg IS NULL THEN
+      INSERT INTO public.perguntas_questionario (id_questionario, ordem, texto_pergunta, descricao_lembrete, peso_calculo, peso_desempate)
+      VALUES (v_id, v_ordem, btrim(v_item->>'texto_pergunta'),
+              nullif(btrim(coalesce(v_item->>'descricao_lembrete', '')), ''),
+              coalesce((v_item->>'peso_calculo')::numeric, 1),
+              coalesce((v_item->>'peso_desempate')::numeric, v_ordem))
+      RETURNING id_pergunta INTO v_id_perg;
+    END IF;
+    v_ids := v_ids || v_id_perg;
+  END LOOP;
+
+  DELETE FROM public.perguntas_questionario WHERE id_questionario = v_id AND id_pergunta <> ALL (v_ids);
+  RETURN v_id;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_salvar_questionario"("p_id_questionario" "uuid", "p_id_evento" "uuid", "p_titulo" "text", "p_escala_minima" numeric, "p_escala_maxima" numeric, "p_perguntas" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_salvar_staff"("p_id_evento" "uuid", "p_itens" "jsonb") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1009,6 +1147,23 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_avaliacoes_ativas_do_projeto"("p_id_projeto" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_avaliacoes_do_questionario"("p_id_questionario" "uuid") RETURNS integer
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT count(DISTINCT x.id_avaliacao)::integer FROM (
+    SELECT a.id_avaliacao FROM public.avaliacoes a WHERE a.id_questionario = p_id_questionario
+    UNION
+    SELECT r.id_avaliacao FROM public.respostas_avaliacao r
+    JOIN public.perguntas_questionario pq ON pq.id_pergunta = r.id_pergunta
+    WHERE pq.id_questionario = p_id_questionario
+  ) x;
+$$;
+
+
+ALTER FUNCTION "public"."fn_avaliacoes_do_questionario"("p_id_questionario" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_check_in_projeto"("p_id_projeto" "uuid", "p_check_in" boolean) RETURNS "void"
@@ -2682,11 +2837,16 @@ CREATE TABLE IF NOT EXISTS "public"."perguntas_questionario" (
     "texto_pergunta" "text" NOT NULL,
     "peso_calculo" numeric(5,2) DEFAULT 1.00,
     "peso_desempate" numeric(5,2) DEFAULT 1.00,
-    "created_at" timestamp with time zone DEFAULT "now"()
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "descricao_lembrete" "text"
 );
 
 
 ALTER TABLE "public"."perguntas_questionario" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."perguntas_questionario"."descricao_lembrete" IS 'Texto de ajuda mostrado ao avaliador abaixo do critério (opcional).';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."projetos" (
@@ -3720,6 +3880,12 @@ GRANT ALL ON FUNCTION "public"."admin_enfileirar_projetos"("p_id_usuario" "uuid"
 
 
 
+REVOKE ALL ON FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") TO "service_role";
@@ -3759,6 +3925,12 @@ GRANT ALL ON FUNCTION "public"."admin_reset_global"("p_id_evento" "uuid") TO "se
 REVOKE ALL ON FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_salvar_questionario"("p_id_questionario" "uuid", "p_id_evento" "uuid", "p_titulo" "text", "p_escala_minima" numeric, "p_escala_maxima" numeric, "p_perguntas" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_salvar_questionario"("p_id_questionario" "uuid", "p_id_evento" "uuid", "p_titulo" "text", "p_escala_minima" numeric, "p_escala_maxima" numeric, "p_perguntas" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_salvar_questionario"("p_id_questionario" "uuid", "p_id_evento" "uuid", "p_titulo" "text", "p_escala_minima" numeric, "p_escala_maxima" numeric, "p_perguntas" "jsonb") TO "service_role";
 
 
 
@@ -3803,6 +3975,12 @@ GRANT ALL ON FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "uuid",
 REVOKE ALL ON FUNCTION "public"."fn_avaliacoes_ativas_do_projeto"("p_id_projeto" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_avaliacoes_ativas_do_projeto"("p_id_projeto" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_avaliacoes_ativas_do_projeto"("p_id_projeto" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_avaliacoes_do_questionario"("p_id_questionario" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_avaliacoes_do_questionario"("p_id_questionario" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_avaliacoes_do_questionario"("p_id_questionario" "uuid") TO "service_role";
 
 
 

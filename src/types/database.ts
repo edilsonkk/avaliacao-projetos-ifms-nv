@@ -169,6 +169,7 @@ export interface PerguntaQuestionario {
   id_questionario?: string;
   ordem: number;
   texto_pergunta: string;
+  descricao_lembrete?: string | null;
   peso_calculo: number;
   peso_desempate: number;
 }
