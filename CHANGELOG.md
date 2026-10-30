@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.5](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.4...v0.6.5) (2026-10-30)
+
+
+### Correções
+
+* **banco:** remove FKs de auditoria que quebraram a tela Projetos Bloqueados ([#30](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/30)) ([a482004](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/a482004cb0e2d1aa0908e2765bf9c284470a60bd))
+
 ## [0.6.4](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.3...v0.6.4) (2026-10-29)
 
 
