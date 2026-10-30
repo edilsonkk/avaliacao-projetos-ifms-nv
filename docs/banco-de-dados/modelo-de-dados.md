@@ -50,7 +50,8 @@ Os limites ficam em `CHECK` no banco e são editados nas Configurações do even
 ### `instituicoes`
 Instituições de ensino de projetos e avaliadores. Base do bloqueio de conflito de interesse.
 `id_instituicao`, `id_evento`, `nome_exibicao`, `nome_normalizado`, `sigla`, `campus`, `cidade`, `estado`.
-Único por `(id_evento, nome_normalizado)`.
+Único por `(id_evento, nome_normalizado)`. O trigger `instituicoes_normalizar` calcula `nome_normalizado`
+(`fn_normalizar_nome`) e põe a sigla em maiúsculas em todo insert/update.
 
 ### `modalidades`
 `id_modalidade`, `id_evento`, `codigo`, `nome_modalidade`, `nivel` (Fundamental, Médio, Médio/Técnico, Técnico,

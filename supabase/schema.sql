@@ -373,6 +373,34 @@ $$;
 ALTER FUNCTION "public"."admin_enfileirar_projetos"("p_id_usuario" "uuid", "p_ids_projetos" "uuid"[]) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_excluir_instituicao"("p_id_instituicao" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_projetos   integer;
+  v_avaliadores integer;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  PERFORM 1 FROM public.instituicoes WHERE id_instituicao = p_id_instituicao FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Instituição não encontrada.';
+  END IF;
+  SELECT count(*) INTO v_projetos FROM public.projetos WHERE id_instituicao = p_id_instituicao;
+  SELECT count(*) INTO v_avaliadores FROM public.avaliadores_evento WHERE id_instituicao = p_id_instituicao;
+  IF v_projetos + v_avaliadores > 0 THEN
+    RAISE EXCEPTION 'A instituição está vinculada a % projeto(s) e % avaliador(es). Troque a instituição deles antes de excluir; senão a regra de conflito de instituição deixaria de valer para eles.', v_projetos, v_avaliadores;
+  END IF;
+  DELETE FROM public.instituicoes WHERE id_instituicao = p_id_instituicao;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_excluir_instituicao"("p_id_instituicao" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -781,6 +809,68 @@ $_$;
 
 
 ALTER FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_salvar_instituicoes"("p_id_evento" "uuid", "p_itens" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_item        jsonb;
+  v_nome        text;
+  v_sigla       text;
+  v_campus      text;
+  v_id          uuid;
+  v_cadastradas integer := 0;
+  v_atualizadas integer := 0;
+  v_ignoradas   jsonb := '[]'::jsonb;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.eventos WHERE id_evento = p_id_evento) THEN
+    RAISE EXCEPTION 'Não há evento ativo para vincular as instituições.';
+  END IF;
+  IF jsonb_typeof(p_itens) IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'Lista de instituições inválida.';
+  END IF;
+
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_itens) LOOP
+    v_nome   := btrim(regexp_replace(coalesce(v_item->>'nome', ''), '\s+', ' ', 'g'));
+    v_sigla  := nullif(upper(btrim(coalesce(v_item->>'sigla', ''))), '');
+    v_campus := nullif(btrim(coalesce(v_item->>'campus', '')), '');
+
+    IF length(v_nome) < 2 OR length(v_nome) > 255 THEN
+      v_ignoradas := v_ignoradas || jsonb_build_object('nome', v_nome, 'motivo', 'Nome ausente ou muito longo.');
+      CONTINUE;
+    END IF;
+    IF length(coalesce(v_sigla, '')) > 50 OR length(coalesce(v_campus, '')) > 150 THEN
+      v_ignoradas := v_ignoradas || jsonb_build_object('nome', v_nome, 'motivo', 'Sigla (até 50) ou câmpus (até 150) muito longos.');
+      CONTINUE;
+    END IF;
+
+    SELECT id_instituicao INTO v_id FROM public.instituicoes
+    WHERE id_evento = p_id_evento AND nome_normalizado = public.fn_normalizar_nome(v_nome)
+    LIMIT 1;
+
+    IF v_id IS NULL THEN
+      INSERT INTO public.instituicoes (id_evento, nome_exibicao, nome_normalizado, sigla, campus)
+      VALUES (p_id_evento, v_nome, public.fn_normalizar_nome(v_nome), v_sigla, v_campus);
+      v_cadastradas := v_cadastradas + 1;
+    ELSE
+      UPDATE public.instituicoes
+      SET sigla = coalesce(v_sigla, sigla), campus = coalesce(v_campus, campus)
+      WHERE id_instituicao = v_id;
+      v_atualizadas := v_atualizadas + 1;
+    END IF;
+  END LOOP;
+
+  RETURN jsonb_build_object('cadastradas', v_cadastradas, 'atualizadas', v_atualizadas, 'ignoradas', v_ignoradas);
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_salvar_instituicoes"("p_id_evento" "uuid", "p_itens" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_salvar_questionario"("p_id_questionario" "uuid", "p_id_evento" "uuid", "p_titulo" "text", "p_escala_minima" numeric, "p_escala_maxima" numeric, "p_perguntas" "jsonb") RETURNS "uuid"
@@ -1589,6 +1679,21 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_motivo_inelegivel"("p_id_projeto" "uuid", "p_id_usuario" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_normalizar_nome"("p_texto" "text") RETURNS "text"
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT lower(btrim(extensions.unaccent(coalesce(p_texto, ''))));
+$$;
+
+
+ALTER FUNCTION "public"."fn_normalizar_nome"("p_texto" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_normalizar_nome"("p_texto" "text") IS 'Chave de comparação de nomes (minúsculas, sem acento, sem espaços nas pontas). Igual a normalizarChave() no front.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") RETURNS "jsonb"
@@ -2597,6 +2702,23 @@ $$;
 ALTER FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."trg_instituicoes_normalizar"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  -- Só as pontas: Projetos/Avaliadores comparam sem colapsar espaços internos
+  NEW.nome_exibicao := btrim(NEW.nome_exibicao);
+  NEW.nome_normalizado := public.fn_normalizar_nome(NEW.nome_exibicao);
+  NEW.sigla := nullif(upper(btrim(coalesce(NEW.sigla, ''))), '');
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."trg_instituicoes_normalizar"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."validar_avaliador_do_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3362,6 +3484,10 @@ CREATE UNIQUE INDEX "uq_idx_modalidades_evento_nome" ON "public"."modalidades" U
 
 
 
+CREATE OR REPLACE TRIGGER "instituicoes_normalizar" BEFORE INSERT OR UPDATE OF "nome_exibicao", "nome_normalizado", "sigla" ON "public"."instituicoes" FOR EACH ROW EXECUTE FUNCTION "public"."trg_instituicoes_normalizar"();
+
+
+
 ALTER TABLE ONLY "public"."areas_tematicas"
     ADD CONSTRAINT "areas_tematicas_id_evento_fkey" FOREIGN KEY ("id_evento") REFERENCES "public"."eventos"("id_evento") ON DELETE CASCADE;
 
@@ -3880,6 +4006,12 @@ GRANT ALL ON FUNCTION "public"."admin_enfileirar_projetos"("p_id_usuario" "uuid"
 
 
 
+REVOKE ALL ON FUNCTION "public"."admin_excluir_instituicao"("p_id_instituicao" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_excluir_instituicao"("p_id_instituicao" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_excluir_instituicao"("p_id_instituicao" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" "uuid") TO "service_role";
@@ -3925,6 +4057,12 @@ GRANT ALL ON FUNCTION "public"."admin_reset_global"("p_id_evento" "uuid") TO "se
 REVOKE ALL ON FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_salvar_instituicoes"("p_id_evento" "uuid", "p_itens" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_salvar_instituicoes"("p_id_evento" "uuid", "p_itens" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_salvar_instituicoes"("p_id_evento" "uuid", "p_itens" "jsonb") TO "service_role";
 
 
 
@@ -4034,6 +4172,12 @@ GRANT ALL ON FUNCTION "public"."fn_meu_perfil"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."fn_motivo_inelegivel"("p_id_projeto" "uuid", "p_id_usuario" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_motivo_inelegivel"("p_id_projeto" "uuid", "p_id_usuario" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_normalizar_nome"("p_texto" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."fn_normalizar_nome"("p_texto" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_normalizar_nome"("p_texto" "text") TO "service_role";
 
 
 
@@ -4164,6 +4308,12 @@ GRANT ALL ON FUNCTION "public"."sortear_projeto"("p_id_usuario" "uuid", "p_id_ev
 REVOKE ALL ON FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."trg_instituicoes_normalizar"() TO "anon";
+GRANT ALL ON FUNCTION "public"."trg_instituicoes_normalizar"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."trg_instituicoes_normalizar"() TO "service_role";
 
 
 
