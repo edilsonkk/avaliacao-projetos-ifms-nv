@@ -441,8 +441,12 @@ export const RelatoriosAdmin: React.FC<{
         buscarTodas<any>(() => rpc('fn_relatorio_projetos_completo', { p_id_evento: idEvento }).order('id_projeto')),
         buscarTodas<any>(() => rpc('fn_relatorio_avaliadores_completo', { p_id_evento: idEvento }).order('id_usuario')),
         buscarTodas<any>(() => rpc('fn_relatorio_ausencias_completo', { p_id_evento: idEvento }).order('id_usuario')),
-        buscarTodas<{ is_credenciado: boolean | null }>(() =>
-          supabase.from('avaliadores_evento').select('id_usuario, is_credenciado').eq('id_evento', idEvento).order('id_usuario')
+        buscarTodas<{ is_credenciado: boolean | null; usuarios: { papel: string | null } | { papel: string | null }[] | null }>(() =>
+          supabase
+            .from('avaliadores_evento')
+            .select('id_usuario, is_credenciado, usuarios!inner(papel)')
+            .eq('id_evento', idEvento)
+            .order('id_usuario')
         ),
         supabase.from('view_projetos_quarentena').select('id_projeto', { count: 'exact', head: true }).eq('id_evento', idEvento),
       ]);
@@ -517,8 +521,13 @@ export const RelatoriosAdmin: React.FC<{
         });
       });
 
-      const totalAvalCadastrados = avaliadoresEvento.length;
-      const totalAvalCredenciados = avaliadoresEvento.filter((a) => a.is_credenciado).length;
+      // avaliadores_evento guarda também o credenciamento do Staff: conta só quem tem papel AVALIADOR
+      const soAvaliadores = avaliadoresEvento.filter((a) => {
+        const usuario = Array.isArray(a.usuarios) ? a.usuarios[0] : a.usuarios;
+        return String(usuario?.papel || '').toUpperCase() === 'AVALIADOR';
+      });
+      const totalAvalCadastrados = soAvaliadores.length;
+      const totalAvalCredenciados = soAvaliadores.filter((a) => a.is_credenciado).length;
       const countQuarentena = quarentena.count ?? 0;
 
       // ========================================================================

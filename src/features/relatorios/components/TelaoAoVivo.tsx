@@ -24,6 +24,7 @@ interface ResumoTelao {
   projetos_presentes: number;
   avaliadores_credenciados: number;
   avaliacoes_em_andamento: number;
+  em_andamento_na_meta: number;
   avaliacoes_realizadas: number;
   meta_global: number;
   avaliacoes_na_meta: number;
@@ -41,6 +42,7 @@ const RESUMO_VAZIO: ResumoTelao = {
   projetos_presentes: 0,
   avaliadores_credenciados: 0,
   avaliacoes_em_andamento: 0,
+  em_andamento_na_meta: 0,
   avaliacoes_realizadas: 0,
   meta_global: 0,
   avaliacoes_na_meta: 0,
@@ -90,6 +92,7 @@ export const TelaoAoVivo: React.FC = () => {
         projetos_presentes: numero(r.projetos_presentes),
         avaliadores_credenciados: numero(r.avaliadores_credenciados),
         avaliacoes_em_andamento: numero(r.avaliacoes_em_andamento),
+        em_andamento_na_meta: numero(r.em_andamento_na_meta),
         avaliacoes_realizadas: numero(r.avaliacoes_realizadas),
         meta_global: numero(r.meta_global),
         avaliacoes_na_meta: numero(r.avaliacoes_na_meta),
@@ -121,10 +124,10 @@ export const TelaoAoVivo: React.FC = () => {
     };
   }, [buscar_dados_telao]);
 
-  // Distribuição da meta: concluídas (até a cota de cada projeto), em andamento e restantes
+  // Distribuição da meta: concluídas e em andamento (ambas até a cota de cada projeto presente) e restantes
   const meta = resumo.meta_global;
   const concluidas = Math.min(resumo.avaliacoes_na_meta, meta);
-  const em_andamento = Math.min(resumo.avaliacoes_em_andamento, Math.max(0, meta - concluidas));
+  const em_andamento = Math.min(resumo.em_andamento_na_meta, Math.max(0, meta - concluidas));
   const restantes = Math.max(0, meta - concluidas - em_andamento);
   const pct_conclusao = porcentagem(concluidas, meta);
 
