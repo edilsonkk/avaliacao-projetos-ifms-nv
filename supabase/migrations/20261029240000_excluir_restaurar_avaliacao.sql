@@ -13,7 +13,7 @@
 --   * Auditoria: avaliacoes.cancelada_em / cancelada_por.
 --   Assinaturas e retorno (jsonb com sucesso/mensagem) mantidos: compatível com a
 --   versão anterior do front-end.
--- PRÉ-REQUISITO: 20261029220000_resolver_quarentena.sql.
+-- PRÉ-REQUISITO: 20261029220000_resolver_quarentena.sql e 20261029235000_remover_fk_ambiguas.sql.
 -- IDEMPOTENTE. APLICAÇÃO: supabase db push (workflow supabase-migrations.yml).
 -- ==============================================================================
 
@@ -22,20 +22,10 @@ BEGIN;
 ALTER TABLE public.avaliacoes ADD COLUMN IF NOT EXISTS cancelada_em timestamptz;
 ALTER TABLE public.avaliacoes ADD COLUMN IF NOT EXISTS cancelada_por uuid;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'avaliacoes_cancelada_por_fkey' AND conrelid = 'public.avaliacoes'::regclass
-  ) THEN
-    ALTER TABLE public.avaliacoes
-      ADD CONSTRAINT avaliacoes_cancelada_por_fkey
-      FOREIGN KEY (cancelada_por) REFERENCES public.usuarios(id_usuario) ON DELETE SET NULL;
-  END IF;
-END $$;
-
 COMMENT ON COLUMN public.avaliacoes.cancelada_em IS 'Quando o Admin cancelou a avaliação (soft delete). NULL se ativa.';
-COMMENT ON COLUMN public.avaliacoes.cancelada_por IS 'Admin (usuarios.id_usuario) que cancelou a avaliação.';
+-- Sem FK de propósito: avaliacoes já tem id_usuario -> usuarios e uma 2ª FK quebraria o embed usuarios(...)
+-- do PostgREST (regra 12 de docs/banco-de-dados/migrations.md).
+COMMENT ON COLUMN public.avaliacoes.cancelada_por IS 'Admin (usuarios.id_usuario) que cancelou a avaliação. Sem FK de propósito (embed do PostgREST).';
 
 -- ------------------------------------------------------------------------------
 -- Marcação de quarentena do projeto, com a mesma regra da view_projetos_quarentena
@@ -197,5 +187,7 @@ REVOKE ALL ON FUNCTION public.excluir_avaliacao(uuid) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.restaurar_avaliacao(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.excluir_avaliacao(uuid) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.restaurar_avaliacao(uuid) TO authenticated, service_role;
+
+NOTIFY pgrst, 'reload schema';
 
 COMMIT;
