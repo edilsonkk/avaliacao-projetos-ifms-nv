@@ -50,7 +50,16 @@ Nunca apague a linha de `usuarios` direto: as FKs de avaliações são `ON DELET
 
 ## Gestor de Staff (Admin)
 
-Mesmo layout canônico. Importa `Nome`, `E-mail` e `Papel` (`STAFF` ou `MONITOR`).
+Mesmo layout canônico. A equipe é global (contas de login); o credenciamento é do evento ativo
+(`avaliadores_evento`). Para entrar, o membro precisa também de uma conta no Supabase Auth com **o mesmo e-mail**.
+
+- **Cadastro e importação** (`admin_salvar_staff`, uma transação): `Nome`, `E-mail` e `Papel` (`STAFF`, padrão, ou
+  `MONITOR`). E-mail de Admin ou Avaliador é ignorado e o motivo aparece: a conta nunca muda de papel. Reimportar não
+  descredencia quem já está credenciado. Há modelo `modelo_importacao_staff.xlsx`.
+- **Credenciar/Descredenciar** grava no banco; o status vem sempre do banco.
+- **Edição** (`admin_atualizar_staff`) recusa e-mail de outra pessoa. Mudar o e-mail não muda o login.
+- **Excluir** pede confirmação (`admin_excluir_staff`, só apaga Staff/Monitor). A conta de login fica no Auth, sem
+  permissão.
 
 ## Tela do Staff (recepção)
 
