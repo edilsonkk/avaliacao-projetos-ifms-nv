@@ -68,8 +68,21 @@ não consulta nada). Os dados vêm de `view_ranking_top3`:
 
 ## Telão ao Vivo (`TelaoAoVivo`)
 
-Projeção pública. Durante a feira mostra a evolução das metas **sem revelar notas**. Na premiação, revela o ranking
-top 3. Acesso só pelo Admin (oculto para o Staff).
+Projeção pública (rota `/telao`, sem login; também abre como modal no painel do Admin). Mostra a evolução da feira
+**sem revelar notas, nomes ou títulos**: os dados vêm só de `fn_telao_resumo` (agregados), atualizada a cada 10 s e na
+hora em que a tela volta do segundo plano. O Telão **não** mostra o ranking (a premiação usa a Classificação).
+
+- Sempre o **evento ativo do banco** (não um id guardado no navegador). O título é o nome (e a edição) do evento; sem
+  evento ativo, "Nenhum evento ativo".
+- **Meta global**: soma da cota de cada projeto **presente** (check-in feito) e **na competição**, usando a cota do
+  projeto ou a padrão do evento. **Concluídas**: avaliações não canceladas desses projetos, no máximo a cota de cada um
+  (avaliação extra não infla o progresso). **Em andamento**: travas não vencidas. **Restantes**: o que falta da meta.
+- **Quarentena**: número de projetos com quarentena pendente (`view_projetos_quarentena`).
+- **Tempo decorrido**: desde a data e o horário de início do evento, no relógio do computador do telão ("Começa às
+  HH:MM" antes do início; "Início não configurado" sem horário).
+- Selo "Ao vivo — atualizado às HH:MM:SS"; se a consulta falhar, "Sem conexão — dados de HH:MM:SS", mantendo os
+  últimos números.
 
 Testes: `src/features/relatorios/__tests__/RelatoriosAdminCompletosEIndicadores.test.tsx`,
+`TelaoAoVivo.test.tsx`, `supabase/tests/18_telao_test.sql`,
 `src/__tests__/integracao/AuditoriaPerformanceViews.test.tsx`.

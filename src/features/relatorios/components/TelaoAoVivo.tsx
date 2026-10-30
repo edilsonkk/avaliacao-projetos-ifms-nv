@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { aoRetomarApp } from '@/lib/keepAliveSessao';
 import {
   Trophy,
@@ -8,154 +8,142 @@ import {
   Users,
   Flame,
   Award,
-  Sparkles,
   RefreshCw,
-  PieChart
+  PieChart,
+  WifiOff
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 
-interface MetricsTelaoState {
+/** Resumo público do evento ativo (fn_telao_resumo): só agregados, sem nomes, títulos ou notas. */
+interface ResumoTelao {
+  nome_evento: string | null;
+  edicao: string | null;
+  data_evento: string | null;
+  horario_inicio: string | null;
   total_projetos: number;
+  projetos_presentes: number;
   avaliadores_credenciados: number;
   avaliacoes_em_andamento: number;
   avaliacoes_realizadas: number;
   meta_global: number;
+  avaliacoes_na_meta: number;
+  projetos_quarentena: number;
   cota_padrao: number;
-  porcentagem_conclusao: number;
-  porcentagem_concluidas: number;
-  porcentagem_em_andamento: number;
-  porcentagem_fila: number;
-  porcentagem_quarentena: number;
-  tempo_decorrido_horas: number;
-  tempo_decorrido_minutos: number;
 }
 
 // Estado inicial zerado: o Telão é público e não deve projetar números de exemplo.
-const metricas_telao_iniciais_fallback: MetricsTelaoState = {
+const RESUMO_VAZIO: ResumoTelao = {
+  nome_evento: null,
+  edicao: null,
+  data_evento: null,
+  horario_inicio: null,
   total_projetos: 0,
+  projetos_presentes: 0,
   avaliadores_credenciados: 0,
   avaliacoes_em_andamento: 0,
   avaliacoes_realizadas: 0,
-  cota_padrao: 3,
   meta_global: 0,
-  porcentagem_conclusao: 0,
-  porcentagem_concluidas: 0,
-  porcentagem_em_andamento: 0,
-  porcentagem_fila: 0,
-  porcentagem_quarentena: 0,
-  tempo_decorrido_horas: 0,
-  tempo_decorrido_minutos: 0,
+  avaliacoes_na_meta: 0,
+  projetos_quarentena: 0,
+  cota_padrao: 3,
+};
+
+const INTERVALO_ATUALIZACAO_MS = 10_000;
+
+const porcentagem = (parte: number, total: number) => (total > 0 ? Math.min(100, Number(((parte / total) * 100).toFixed(1))) : 0);
+
+const horaCurta = (data: Date) => data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+/** Início do evento no horário local do telão (data + horário de início configurados no evento). */
+export const inicioDoEvento = (data: string | null, horario: string | null): Date | null => {
+  if (!data || !horario) return null;
+  const inicio = new Date(`${data}T${horario.slice(0, 5)}:00`);
+  return isNaN(inicio.getTime()) ? null : inicio;
 };
 
 export const TelaoAoVivo: React.FC = () => {
-  const [metricas_telao, set_metricas_telao] = useState<MetricsTelaoState>(metricas_telao_iniciais_fallback);
+  const [resumo, set_resumo] = useState<ResumoTelao>(RESUMO_VAZIO);
   const [carregando_telao, set_carregando_telao] = useState<boolean>(false);
+  const [ultima_atualizacao, set_ultima_atualizacao] = useState<Date | null>(null);
+  const [sem_conexao, set_sem_conexao] = useState<boolean>(false);
+  const [agora, set_agora] = useState<Date>(() => new Date());
+  const buscando = useRef(false);
 
   const conexao_banco_configurada = verificar_conexao_configurada();
 
-  // 1. Função de busca agregada no Supabase
-  const buscar_dados_telao = async () => {
+  const buscar_dados_telao = useCallback(async () => {
+    if (!conexao_banco_configurada || buscando.current) return;
+    buscando.current = true;
     set_carregando_telao(true);
-
-    if (!conexao_banco_configurada) {
-      set_carregando_telao(false);
-      return;
-    }
-
     try {
-      // A) Total de Projetos cadastrados
-      // Só agregados, sem nomes nem notas (fn_telao_resumo): o Telão é público
-      const { data: resumo, error: erro_resumo } = await supabase.rpc('fn_telao_resumo', {
-        p_id_evento: localStorage.getItem('evento_ativo_id') || null,
+      // Sempre o evento ativo do banco (não um id guardado neste navegador, que pode ser de outro evento)
+      const { data, error } = await supabase.rpc('fn_telao_resumo', { p_id_evento: null });
+      if (error) throw error;
+      const r = (data || {}) as Partial<Record<keyof ResumoTelao, unknown>>;
+      const numero = (v: unknown) => Number(v) || 0;
+      set_resumo({
+        nome_evento: (r.nome_evento as string) || null,
+        edicao: (r.edicao as string) || null,
+        data_evento: (r.data_evento as string) || null,
+        horario_inicio: (r.horario_inicio as string) || null,
+        total_projetos: numero(r.total_projetos),
+        projetos_presentes: numero(r.projetos_presentes),
+        avaliadores_credenciados: numero(r.avaliadores_credenciados),
+        avaliacoes_em_andamento: numero(r.avaliacoes_em_andamento),
+        avaliacoes_realizadas: numero(r.avaliacoes_realizadas),
+        meta_global: numero(r.meta_global),
+        avaliacoes_na_meta: numero(r.avaliacoes_na_meta),
+        projetos_quarentena: numero(r.projetos_quarentena),
+        cota_padrao: numero(r.cota_padrao) || 3,
       });
-      if (erro_resumo) throw erro_resumo;
-
-      const total_proj = Number(resumo?.total_projetos) || 0;
-      const aval_cred = Number(resumo?.avaliadores_credenciados) || 0;
-      const em_andamento_cnt = Number(resumo?.avaliacoes_em_andamento) || 0;
-      const realizadas_cnt = Number(resumo?.avaliacoes_realizadas) || 0;
-      const cota_padrao = Number(resumo?.cota_padrao) || 3;
-
-      const meta_global_calculada = (total_proj || 1) * cota_padrao;
-
-      // Cálculos dinâmicos com proteção contra NaN e divisão por zero
-      const pct_conclusao_calculado = meta_global_calculada > 0
-        ? Math.min(100, Number(((realizadas_cnt / meta_global_calculada) * 100).toFixed(1)))
-        : 0;
-
-      const pct_concluidas = meta_global_calculada > 0
-        ? Number(((realizadas_cnt / meta_global_calculada) * 100).toFixed(1))
-        : 0;
-
-      const pct_em_andamento = meta_global_calculada > 0
-        ? Number(((em_andamento_cnt / meta_global_calculada) * 100).toFixed(1))
-        : 0;
-
-      const fila_cnt = Math.max(0, meta_global_calculada - realizadas_cnt - em_andamento_cnt);
-      const pct_fila = meta_global_calculada > 0
-        ? Number(((fila_cnt / meta_global_calculada) * 100).toFixed(1))
-        : 0;
-
-      set_metricas_telao((anterior) => ({
-        ...anterior,
-        total_projetos: total_proj,
-        avaliadores_credenciados: aval_cred,
-        avaliacoes_em_andamento: em_andamento_cnt,
-        avaliacoes_realizadas: realizadas_cnt,
-        cota_padrao,
-        meta_global: meta_global_calculada,
-        porcentagem_conclusao: pct_conclusao_calculado,
-        porcentagem_concluidas: pct_concluidas || 0,
-        porcentagem_em_andamento: pct_em_andamento || 0,
-        porcentagem_fila: pct_fila || 0,
-      }));
+      set_ultima_atualizacao(new Date());
+      set_sem_conexao(false);
     } catch (erro_excecao) {
-      console.error('Erro ao atualizar dados do telão no Supabase:', erro_excecao);
+      // Mantém os últimos números e avisa que estão desatualizados
+      console.error('Erro ao atualizar dados do telão:', erro_excecao);
+      set_sem_conexao(true);
     } finally {
+      buscando.current = false;
       set_carregando_telao(false);
     }
-  };
-
-  // 2. Polling automático a cada 10 segundos + Cronômetro do evento
-  useEffect(() => {
-    buscar_dados_telao();
-
-    // Polling a cada 10 segundos no Supabase
-    const intervalo_polling = setInterval(() => {
-      buscar_dados_telao();
-    }, 10000);
-
-    // Telão que ficou em segundo plano ou sem rede: atualiza na hora em que volta
-    const parar_retomada = aoRetomarApp(buscar_dados_telao);
-
-    // Cronômetro simples do tempo decorrido
-    const intervalo_cronometro = setInterval(() => {
-      set_metricas_telao((anterior) => {
-        let novos_minutos = anterior.tempo_decorrido_minutos + 1;
-        let novas_horas = anterior.tempo_decorrido_horas;
-
-        if (novos_minutos >= 60) {
-          novos_minutos = 0;
-          novas_horas += 1;
-        }
-
-        return {
-          ...anterior,
-          tempo_decorrido_horas: novas_horas,
-          tempo_decorrido_minutos: novos_minutos,
-        };
-      });
-    }, 60000);
-
-    return () => {
-      clearInterval(intervalo_polling);
-      clearInterval(intervalo_cronometro);
-      parar_retomada();
-    };
   }, [conexao_banco_configurada]);
 
-  const horas_formatadas = String(metricas_telao.tempo_decorrido_horas || 0).padStart(2, '0');
-  const minutos_formatados = String(metricas_telao.tempo_decorrido_minutos || 0).padStart(2, '0');
+  useEffect(() => {
+    buscar_dados_telao();
+    const intervalo_polling = setInterval(buscar_dados_telao, INTERVALO_ATUALIZACAO_MS);
+    // Telão que ficou em segundo plano ou sem rede: atualiza na hora em que volta
+    const parar_retomada = aoRetomarApp(buscar_dados_telao);
+    const intervalo_relogio = setInterval(() => set_agora(new Date()), 30_000);
+    return () => {
+      clearInterval(intervalo_polling);
+      clearInterval(intervalo_relogio);
+      parar_retomada();
+    };
+  }, [buscar_dados_telao]);
+
+  // Distribuição da meta: concluídas (até a cota de cada projeto), em andamento e restantes
+  const meta = resumo.meta_global;
+  const concluidas = Math.min(resumo.avaliacoes_na_meta, meta);
+  const em_andamento = Math.min(resumo.avaliacoes_em_andamento, Math.max(0, meta - concluidas));
+  const restantes = Math.max(0, meta - concluidas - em_andamento);
+  const pct_conclusao = porcentagem(concluidas, meta);
+
+  const inicio = inicioDoEvento(resumo.data_evento, resumo.horario_inicio);
+  const minutos_decorridos = inicio ? Math.floor((agora.getTime() - inicio.getTime()) / 60_000) : null;
+  const texto_tempo =
+    minutos_decorridos === null
+      ? 'Início não configurado'
+      : minutos_decorridos < 0
+      ? `Começa às ${resumo.horario_inicio?.slice(0, 5)}`
+      : `${String(Math.floor(minutos_decorridos / 60)).padStart(2, '0')}h ${String(minutos_decorridos % 60).padStart(2, '0')}min`;
+
+  const titulo_evento = resumo.nome_evento
+    ? resumo.edicao && !resumo.nome_evento.toLowerCase().includes(resumo.edicao.toLowerCase())
+      ? `${resumo.nome_evento} — ${resumo.edicao}`
+      : resumo.nome_evento
+    : ultima_atualizacao
+    ? 'Nenhum evento ativo'
+    : 'Telão ao Vivo';
 
   return (
     <main className="w-full min-h-[calc(100vh-5rem)] bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 p-6 lg:p-10 flex flex-col justify-between space-y-8 select-none font-sans">
@@ -166,16 +154,20 @@ export const TelaoAoVivo: React.FC = () => {
             IF
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-0.5 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300">
-                Polling Ativo (10s)
-              </span>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                IFMS Câmpus Campo Grande
-              </span>
+            <div role="status" className="flex items-center gap-2">
+              {sem_conexao ? (
+                <span className="px-3 py-0.5 rounded-full text-xs font-black uppercase tracking-wider bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300 border border-red-300 inline-flex items-center gap-1">
+                  <WifiOff className="w-3.5 h-3.5" aria-hidden="true" />
+                  Sem conexão{ultima_atualizacao ? ` — dados de ${horaCurta(ultima_atualizacao)}` : ''}
+                </span>
+              ) : (
+                <span className="px-3 py-0.5 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300">
+                  Ao vivo{ultima_atualizacao ? ` — atualizado às ${horaCurta(ultima_atualizacao)}` : ''}
+                </span>
+              )}
             </div>
             <h1 className="text-2xl lg:text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-tight mt-0.5">
-              FETEC MS 2026 — Feira de Tecnologias do IFMS
+              {titulo_evento}
             </h1>
           </div>
         </div>
@@ -183,13 +175,13 @@ export const TelaoAoVivo: React.FC = () => {
         <div className="flex items-center gap-4 bg-slate-100 dark:bg-slate-900/80 px-6 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 shrink-0">
           <div className="text-right">
             <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 flex items-center justify-end gap-1 uppercase tracking-wider">
-              <Trophy className="w-4 h-4" /> 🏆 MONITORAMENTO AO VIVO
+              <Trophy className="w-4 h-4" aria-hidden="true" /> Monitoramento ao vivo
             </span>
             <span className="text-sm font-bold text-slate-600 dark:text-slate-300 block">
-              Tempo Decorrido: <strong className="font-mono text-slate-900 dark:text-white">{horas_formatadas}h {minutos_formatados}min</strong>
+              Tempo decorrido: <strong className="font-mono text-slate-900 dark:text-white">{texto_tempo}</strong>
             </span>
           </div>
-          <div className="w-3 h-3 rounded-full bg-emerald-500 animate-ping shrink-0"></div>
+          <div aria-hidden="true" className={`w-3 h-3 rounded-full shrink-0 ${sem_conexao ? 'bg-red-500' : 'bg-emerald-500 animate-ping'}`}></div>
         </div>
       </header>
 
@@ -202,9 +194,9 @@ export const TelaoAoVivo: React.FC = () => {
             <FolderGit2 className="w-6 h-6 text-slate-600 dark:text-slate-300" />
           </div>
           <div className="text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
-            {metricas_telao.total_projetos || 0}
+            {resumo.total_projetos}
           </div>
-          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Expositores inscritos</span>
+          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">{resumo.projetos_presentes} presentes na competição</span>
         </div>
 
         {/* Avaliadores Credenciados */}
@@ -214,7 +206,7 @@ export const TelaoAoVivo: React.FC = () => {
             <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
           </div>
           <div className="text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
-            {metricas_telao.avaliadores_credenciados || 0}
+            {resumo.avaliadores_credenciados}
           </div>
           <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold">Credenciados liberados</span>
         </div>
@@ -226,9 +218,9 @@ export const TelaoAoVivo: React.FC = () => {
             <Activity className="w-6 h-6 animate-pulse" />
           </div>
           <div className="text-4xl lg:text-5xl font-black text-amber-600 dark:text-amber-400 tracking-tight">
-            {metricas_telao.avaliacoes_em_andamento || 0}
+            {resumo.avaliacoes_em_andamento}
           </div>
-          <span className="text-xs text-amber-700 dark:text-amber-300 font-semibold">Travas ativas (locks)</span>
+          <span className="text-xs text-amber-700 dark:text-amber-300 font-semibold">Avaliadores nos estandes agora</span>
         </div>
 
         {/* Avaliações Realizadas */}
@@ -238,9 +230,9 @@ export const TelaoAoVivo: React.FC = () => {
             <CheckCircle2 className="w-6 h-6" />
           </div>
           <div className="text-4xl lg:text-5xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight">
-            {metricas_telao.avaliacoes_realizadas || 0}
+            {resumo.avaliacoes_realizadas}
           </div>
-          <span className="text-xs text-emerald-700 dark:text-emerald-300 font-semibold">Fichas salvas</span>
+          <span className="text-xs text-emerald-700 dark:text-emerald-300 font-semibold">Fichas enviadas</span>
         </div>
 
         {/* Meta Global */}
@@ -250,9 +242,9 @@ export const TelaoAoVivo: React.FC = () => {
             <Award className="w-6 h-6 text-white" />
           </div>
           <div className="text-4xl lg:text-5xl font-black text-white tracking-tight">
-            {metricas_telao.meta_global || 0}
+            {meta}
           </div>
-          <span className="text-xs text-emerald-100 font-medium">Projetos x {metricas_telao.cota_padrao} avaliações</span>
+          <span className="text-xs text-emerald-100 font-medium">Cota de cada projeto presente (padrão {resumo.cota_padrao})</span>
         </div>
       </section>
 
@@ -265,13 +257,14 @@ export const TelaoAoVivo: React.FC = () => {
               Distribuição Percentual do Status da Avaliação
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Cálculo em tempo real baseado no total de metas e travas ativas do Supabase.
+              Em relação à meta: cada projeto presente conta até a sua cota.
             </p>
           </div>
 
           <button
             type="button"
             onClick={buscar_dados_telao}
+            disabled={carregando_telao}
             className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs font-bold border border-emerald-200 flex items-center gap-1.5"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${carregando_telao ? 'animate-spin' : ''}`} />
@@ -286,10 +279,10 @@ export const TelaoAoVivo: React.FC = () => {
               Concluídas
             </span>
             <span className="text-3xl font-black text-emerald-900 dark:text-emerald-100">
-              {metricas_telao.porcentagem_concluidas || 0}%
+              {porcentagem(concluidas, meta)}%
             </span>
             <span className="text-[11px] text-emerald-700 dark:text-emerald-400 block font-semibold">
-              {metricas_telao.avaliacoes_realizadas || 0} Avaliações Salvas
+              {concluidas} de {meta} avaliações
             </span>
           </div>
 
@@ -299,23 +292,23 @@ export const TelaoAoVivo: React.FC = () => {
               Em Andamento
             </span>
             <span className="text-3xl font-black text-amber-900 dark:text-amber-100">
-              {metricas_telao.porcentagem_em_andamento || 0}%
+              {porcentagem(em_andamento, meta)}%
             </span>
             <span className="text-[11px] text-amber-700 dark:text-amber-400 block font-semibold">
-              {metricas_telao.avaliacoes_em_andamento || 0} Locks em Execução
+              {resumo.avaliacoes_em_andamento} em avaliação agora
             </span>
           </div>
 
           {/* Fila / Aguardando */}
           <div className="bg-slate-100 dark:bg-slate-700/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-600 text-center space-y-1">
             <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block uppercase">
-              Fila / Aguardando
+              Restantes
             </span>
             <span className="text-3xl font-black text-slate-800 dark:text-slate-200">
-              {metricas_telao.porcentagem_fila || 0}%
+              {porcentagem(restantes, meta)}%
             </span>
             <span className="text-[11px] text-slate-500 dark:text-slate-400 block font-semibold">
-              Projetos na Fila
+              {restantes} avaliações a fazer
             </span>
           </div>
 
@@ -325,10 +318,10 @@ export const TelaoAoVivo: React.FC = () => {
               Quarentena / Análise
             </span>
             <span className="text-3xl font-black text-red-900 dark:text-red-100">
-              {metricas_telao.porcentagem_quarentena || 0}%
+              {resumo.projetos_quarentena}
             </span>
             <span className="text-[11px] text-red-700 dark:text-red-400 block font-semibold">
-              Casos para Arbitragem
+              Projetos com notas divergentes em análise
             </span>
           </div>
         </div>
@@ -342,14 +335,21 @@ export const TelaoAoVivo: React.FC = () => {
             Progresso Geral da Feira (Meta Global)
           </span>
           <span className="text-2xl lg:text-3xl font-black text-emerald-600 dark:text-emerald-400">
-            {metricas_telao.porcentagem_conclusao || 0}% Concluído
+            {pct_conclusao}% concluído
           </span>
         </div>
 
-        <div className="w-full bg-slate-100 dark:bg-slate-900 h-8 rounded-2xl p-1 border border-slate-200 dark:border-slate-700 overflow-hidden shadow-inner">
+        <div
+          role="progressbar"
+          aria-label="Progresso geral da feira"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={pct_conclusao}
+          className="w-full bg-slate-100 dark:bg-slate-900 h-8 rounded-2xl p-1 border border-slate-200 dark:border-slate-700 overflow-hidden shadow-inner"
+        >
           <div
             className="bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-400 h-full rounded-xl transition-all duration-1000 shadow-md relative overflow-hidden"
-            style={{ width: `${Math.max(0, Math.min(100, metricas_telao.porcentagem_conclusao || 0))}%` }}
+            style={{ width: `${pct_conclusao}%` }}
           >
             <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
           </div>
