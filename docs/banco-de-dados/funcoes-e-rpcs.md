@@ -77,7 +77,8 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `fn_avaliacoes_do_questionario(p_id_questionario)` → `integer` | Quantas avaliações usaram o questionário (trava a edição na tela) |
 | `admin_salvar_instituicoes(p_id_evento uuid, p_itens jsonb)` → `jsonb` | Cadastro manual e importação de instituições por `(id_evento, nome_normalizado)`. Devolve `{cadastradas, atualizadas, ignoradas}` |
 | `admin_excluir_instituicao(p_id_instituicao)` | Exclui instituição sem projeto nem avaliador vinculado |
-| `fn_normalizar_nome(p_texto)` → `text` | Chave de comparação de nomes (minúsculas, sem acento, sem espaços nas pontas); usada pelo trigger de `instituicoes` |
+| `fn_normalizar_nome(p_texto)` → `text` | Chave de comparação de nomes (minúsculas, NFD sem acentos, pontas aparadas como `String.trim()`), igual a `normalizarChave()` no front; usada pelo trigger de `instituicoes`, pelo autocadastro e pelas funções de instituições/modalidades |
+| `fn_aparar_texto(p_texto)` → `text` | Apara as pontas com o mesmo conjunto de espaços de `String.trim()` (inclui espaço não separável) |
 | `admin_salvar_modalidades(p_id_evento uuid, p_itens jsonb)` → `jsonb` | Cadastro manual e importação de modalidades (cria ou atualiza pelo nome; `id_existente` grava apelido). Devolve `{cadastradas, atualizadas, associadas, ignoradas}` |
 | `admin_excluir_modalidade(p_id_modalidade)` | Exclui modalidade sem projeto nem bloqueio de avaliador |
 | `fn_expurgar_modalidades_bloqueadas(p_id_usuario, p_id_evento)` | Interna: remove travas e fila do avaliador em projetos das modalidades bloqueadas |

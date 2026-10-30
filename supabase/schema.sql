@@ -1273,6 +1273,20 @@ $$;
 ALTER FUNCTION "public"."exigir_staff_ou_admin"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_aparar_texto"("p_texto" "text") RETURNS "text"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $_$
+  SELECT regexp_replace(
+    coalesce(p_texto, ''),
+    '^[\s   -     　﻿]+|[\s   -     　﻿]+$',
+    '', 'g');
+$_$;
+
+
+ALTER FUNCTION "public"."fn_aparar_texto"("p_texto" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "uuid", "p_nome" "text", "p_email" "text", "p_id_instituicao" "uuid", "p_nome_instituicao_nova" "text", "p_ids_areas" "uuid"[]) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1283,7 +1297,6 @@ DECLARE
   v_email    text := lower(btrim(coalesce(p_email, '')));
   v_inst     uuid := p_id_instituicao;
   v_inst_nova text := btrim(regexp_replace(coalesce(p_nome_instituicao_nova, ''), '\s+', ' ', 'g'));
-  v_norm     text;
   v_usuario  public.usuarios;
 BEGIN
   IF v_evento IS NULL OR NOT EXISTS (SELECT 1 FROM public.eventos WHERE id_evento = v_evento AND is_ativo) THEN
@@ -1308,16 +1321,16 @@ BEGIN
     RETURN jsonb_build_object('ok', true, 'situacao', 'ja_cadastrado');
   END IF;
 
-  -- Instituição: existente do evento ou nova (normalizada como o restante do sistema)
+  -- Instituição: existente do evento ou nova (a chave é calculada pelo trigger)
   IF v_inst IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.instituicoes WHERE id_instituicao = v_inst AND id_evento = v_evento) THEN
     v_inst := NULL;
   END IF;
   IF v_inst IS NULL AND length(v_inst_nova) BETWEEN 2 AND 200 THEN
-    v_norm := lower(btrim(extensions.unaccent(v_inst_nova)));
-    SELECT id_instituicao INTO v_inst FROM public.instituicoes WHERE id_evento = v_evento AND nome_normalizado = v_norm;
+    SELECT id_instituicao INTO v_inst FROM public.instituicoes
+    WHERE id_evento = v_evento AND nome_normalizado = public.fn_normalizar_nome(v_inst_nova);
     IF v_inst IS NULL THEN
       INSERT INTO public.instituicoes (id_evento, nome_exibicao, nome_normalizado)
-      VALUES (v_evento, v_inst_nova, v_norm)
+      VALUES (v_evento, v_inst_nova, public.fn_normalizar_nome(v_inst_nova))
       RETURNING id_instituicao INTO v_inst;
     END IF;
   END IF;
@@ -1802,14 +1815,14 @@ CREATE OR REPLACE FUNCTION "public"."fn_normalizar_nome"("p_texto" "text") RETUR
     LANGUAGE "sql" STABLE
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  SELECT lower(btrim(extensions.unaccent(coalesce(p_texto, ''))));
+  SELECT public.fn_aparar_texto(regexp_replace(lower(normalize(coalesce(p_texto, ''), NFD)), '[̀-ͯ]', '', 'g'));
 $$;
 
 
 ALTER FUNCTION "public"."fn_normalizar_nome"("p_texto" "text") OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."fn_normalizar_nome"("p_texto" "text") IS 'Chave de comparação de nomes (minúsculas, sem acento, sem espaços nas pontas). Igual a normalizarChave() no front.';
+COMMENT ON FUNCTION "public"."fn_normalizar_nome"("p_texto" "text") IS 'Chave de comparação de nomes: minúsculas, sem acentos e sem espaços nas pontas. Igual a normalizarChave() no front.';
 
 
 
@@ -2825,9 +2838,9 @@ CREATE OR REPLACE FUNCTION "public"."trg_instituicoes_normalizar"() RETURNS "tri
     AS $$
 BEGIN
   -- Só as pontas: Projetos/Avaliadores comparam sem colapsar espaços internos
-  NEW.nome_exibicao := btrim(NEW.nome_exibicao);
+  NEW.nome_exibicao := public.fn_aparar_texto(NEW.nome_exibicao);
   NEW.nome_normalizado := public.fn_normalizar_nome(NEW.nome_exibicao);
-  NEW.sigla := nullif(upper(btrim(coalesce(NEW.sigla, ''))), '');
+  NEW.sigla := nullif(upper(public.fn_aparar_texto(NEW.sigla)), '');
   RETURN NEW;
 END;
 $$;
@@ -4229,6 +4242,12 @@ GRANT ALL ON FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid") TO "
 
 REVOKE ALL ON FUNCTION "public"."exigir_staff_ou_admin"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."exigir_staff_ou_admin"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_aparar_texto"("p_texto" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_aparar_texto"("p_texto" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_aparar_texto"("p_texto" "text") TO "service_role";
 
 
 
