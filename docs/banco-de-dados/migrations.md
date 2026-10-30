@@ -151,3 +151,4 @@ de dados, restaure o backup gerado antes do `db push` ([restaurar backup](../ope
 | `20261030020000_gestor_questionarios.sql` | `perguntas_questionario.descricao_lembrete`; questionários gravados por função, sem apagar notas por critério; questionário usado só muda o título |
 | `20261030030000_gestor_instituicoes.sql` | Trigger de `nome_normalizado` (fim das duplicatas); importação por função; exclusão recusada se houver vínculo |
 | `20261030040000_gestor_modalidades.sql` | Modalidades por função: reimportação sem erro, apelidos do De-Para; exclusão recusada se houver projeto ou bloqueio |
+| `20261030050000_normalizar_nome_igual_front.sql` | `fn_normalizar_nome` igual ao front (sem `unaccent`): instituição com travessão na importação de projetos não fica mais sem vínculo; autocadastro usa a mesma chave |

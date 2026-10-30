@@ -100,8 +100,9 @@ acentuação oficial:
 - Lista só as instituições do **evento ativo**: Instituição, Sigla e Câmpus, ordenáveis (também pelo teclado). Sem
   evento ativo, a tela avisa e não cadastra. O `nome_normalizado` não é exibido.
 - `nome_normalizado` é calculado por trigger no banco (`fn_normalizar_nome`: minúsculas, sem acento, sem espaços nas
-  pontas), o mesmo critério de Projetos, Avaliadores e autocadastro. A mesma escola escrita de outro jeito não
-  duplica no evento.
+  pontas), exatamente o mesmo critério de `normalizarChave()` no front (Projetos, Avaliadores) e do autocadastro.
+  Travessão, aspas curvas e ligaduras **não** são trocados: "IFMS – Câmpus X" e "IFMS - Câmpus X" são nomes
+  diferentes (use o De-Para para juntá-los). A mesma escola escrita só com outra caixa ou acento não duplica.
 - Cadastro e importação passam por `admin_salvar_instituicoes` (uma chamada): instituição já existente tem sigla e
   câmpus atualizados; sigla vazia fica vazia (não é inventada). Há modelo `modelo_importacao_instituicoes.xlsx`.
 - **Excluir** pede confirmação e é recusado se houver projeto ou avaliador da instituição
