@@ -14,7 +14,12 @@ O evento (feira) é a unidade de isolamento de todos os dados. Código: `src/fea
 - **Projeto sem `id_evento` fica invisível** para o sorteio e para os relatórios (`NULL = p_id_evento` é falso). Por
   isso, cadastro, edição e importação de projetos sempre gravam `id_evento`. Ao abrir o `GestorProjetos`, projetos
   legados com `id_evento IS NULL` recebem o evento ativo automaticamente.
-- O evento ativo fica em `localStorage` (`evento_ativo_id`, `evento_ativo_nome`, `evento_ativo_data`).
+- O evento ativo vem **sempre do banco** (`eventos.is_ativo`): o painel do Admin o lê e o repassa às telas; Staff,
+  Telão e autocadastro o leem direto (o autocadastro aceita também `?evento=` no link). O `localStorage`
+  (`evento_ativo_id`, `evento_ativo_nome`, `evento_ativo_data`) é só registro e nunca escolhe o evento: num aparelho
+  usado em outra feira ele apontaria para o evento antigo.
+- Sem evento ativo, Projetos, Atribuir Projeto, Projetos Bloqueados, Quarentena, Relatórios, Staff e autocadastro
+  avisam "não há evento ativo" e não mostram dados de outros eventos.
 
 ## Configurações do evento
 

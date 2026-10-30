@@ -50,13 +50,20 @@ export const ProjetosBloqueados: React.FC<ProjetosBloqueadosProps> = ({ aoFechar
   const [direcao, set_direcao] = useState<'asc' | 'desc'>('asc');
 
   const conexao_banco = verificar_conexao_configurada();
-  const idEvento = id_evento_ativo || (typeof window !== 'undefined' ? localStorage.getItem('evento_ativo_id') : null) || null;
+  // Só o evento ativo recebido do painel (nunca um id guardado neste navegador, que pode ser de outro evento)
+  const idEvento = id_evento_ativo || null;
 
   const carregar_travas = useCallback(async () => {
     set_carregando(true);
     set_mensagem_erro(null);
     if (!conexao_banco) {
       set_travas([]);
+      set_carregando(false);
+      return;
+    }
+    if (!idEvento) {
+      set_travas([]);
+      set_mensagem_erro('Não há evento ativo: ative um evento para ver as travas.');
       set_carregando(false);
       return;
     }
@@ -73,7 +80,7 @@ export const ProjetosBloqueados: React.FC<ProjetosBloqueadosProps> = ({ aoFechar
           usuarios ( nome, email )
         `)
         .gt('expira_em', new Date().toISOString());
-      if (idEvento) consulta = consulta.eq('projetos.id_evento', idEvento);
+      consulta = consulta.eq('projetos.id_evento', idEvento);
 
       const { data, error } = await consulta;
       if (error) throw error;

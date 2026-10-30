@@ -198,4 +198,17 @@ describe('ProjetosQuarentena', () => {
     expect(screen.getByRole('button', { name: /resolver todos/i })).toBeDisabled();
     expect(supabase.from).not.toHaveBeenCalledWith('avaliacoes');
   });
+
+  it('sem evento ativo deve avisar e não consultar nada, nem um evento guardado no navegador', async () => {
+    // Arrange
+    localStorage.setItem('evento_ativo_id', 'evento-do-ano-passado');
+
+    // Act
+    render(<ProjetosQuarentena id_evento_ativo="" />);
+
+    // Assert
+    expect(await screen.findByRole('alert')).toHaveTextContent(/não há evento ativo/i);
+    expect(supabase.from).not.toHaveBeenCalled();
+    localStorage.removeItem('evento_ativo_id');
+  });
 });

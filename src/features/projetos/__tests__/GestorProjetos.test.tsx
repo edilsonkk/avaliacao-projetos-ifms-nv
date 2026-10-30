@@ -254,7 +254,7 @@ describe('GestorProjetos', () => {
       // Arrange
       const user = userEvent.setup();
       render(<GestorProjetos />);
-      await screen.findByText('FETEC-001');
+      await screen.findByText(/nenhum evento ativo/i);
       await user.click(screen.getByRole('button', { name: /novo projeto/i }));
 
       // Act
@@ -370,7 +370,7 @@ describe('GestorProjetos', () => {
       // Arrange
       const user = userEvent.setup();
       render(<GestorProjetos />);
-      await screen.findByText('FETEC-001');
+      await screen.findByText(/nenhum evento ativo/i);
 
       // Act
       await enviarPlanilha(user, `${CABECALHO}\nFETEC-040,Projeto,,,IFMS Campus Campo Grande,IFMS-CG,Ciências Exatas,Ensino Médio,Não`);
@@ -380,5 +380,18 @@ describe('GestorProjetos', () => {
       expect(chamadasDe('projetos', 'upsert')).toHaveLength(0);
       expect(screen.getByRole('log', { name: /console de logs/i })).not.toHaveTextContent(/evt-1/);
     });
+  });
+
+  it('sem evento ativo deve avisar e não listar projetos de outros eventos, nem de um evento guardado no navegador', async () => {
+    // Arrange
+    localStorage.setItem('evento_ativo_id', 'evento-do-ano-passado');
+
+    // Act
+    render(<GestorProjetos id_evento_ativo="" />);
+
+    // Assert
+    expect(await screen.findByText(/nenhum evento ativo/i)).toBeInTheDocument();
+    expect(supabase.from).not.toHaveBeenCalled();
+    localStorage.removeItem('evento_ativo_id');
   });
 });

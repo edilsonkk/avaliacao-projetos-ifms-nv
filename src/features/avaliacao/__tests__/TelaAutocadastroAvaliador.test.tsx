@@ -85,4 +85,36 @@ describe('TelaAutocadastroAvaliador', () => {
     await waitFor(() => expect(screen.getByText('E-mail inválido.')).toBeInTheDocument());
     expect(screen.queryByText('Cadastro Concluído!')).not.toBeInTheDocument();
   });
+
+  it('sem evento no link deve usar o evento ativo do banco, e não um evento guardado no navegador', async () => {
+    // Arrange
+    window.history.replaceState({}, '', '/?cadastro=avaliador');
+    localStorage.setItem('evento_ativo_id', 'evento-do-ano-passado');
+    const user = userEvent.setup();
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: { ok: true }, error: null } as never);
+    render(<TelaAutocadastroAvaliador />);
+
+    // Act
+    await preencherFormulario(user);
+
+    // Assert
+    await waitFor(() =>
+      expect(supabase.rpc).toHaveBeenCalledWith('fn_autocadastro_avaliador', expect.objectContaining({ p_id_evento: ID_EVENTO }))
+    );
+  });
+
+  it('sem evento ativo deve avisar em vez de mostrar instituições de todos os eventos', async () => {
+    // Arrange
+    window.history.replaceState({}, '', '/?cadastro=avaliador');
+    const eventoAtivo = tabelas.eventos;
+    tabelas.eventos = null;
+
+    // Act
+    render(<TelaAutocadastroAvaliador />);
+
+    // Assert
+    expect(await screen.findByText(/não há evento ativo/i)).toBeInTheDocument();
+    expect(vi.mocked(supabase.from).mock.calls.map((c) => c[0])).not.toContain('instituicoes');
+    tabelas.eventos = eventoAtivo;
+  });
 });

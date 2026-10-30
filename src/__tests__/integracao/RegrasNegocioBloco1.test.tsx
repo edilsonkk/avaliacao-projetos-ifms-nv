@@ -243,7 +243,7 @@ describe('Validação de Regras de Negócio Remodeladas do Bloco 1', () => {
   });
 
   it('2. CARD PROJETOS BLOQUEADOS: deve consultar locks válidos (expira_em > now) e renderizar no modal', async () => {
-    render(<ProjetosBloqueados aoFechar={vi.fn()} />);
+    render(<ProjetosBloqueados aoFechar={vi.fn()} id_evento_ativo="evt-1" />);
 
     await waitFor(() => {
       expect(mockFrom).toHaveBeenCalledWith('locks_ativos');
@@ -253,7 +253,7 @@ describe('Validação de Regras de Negócio Remodeladas do Bloco 1', () => {
   });
 
   it('3. CARD PROJETOS EM QUARENTENA: deve consultar view_projetos_quarentena (divergência > 2.5 pts ou flag)', async () => {
-    render(<ProjetosQuarentena aoFechar={vi.fn()} />);
+    render(<ProjetosQuarentena aoFechar={vi.fn()} id_evento_ativo="evt-1" />);
 
     await waitFor(() => {
       expect(mockFrom).toHaveBeenCalledWith('view_projetos_quarentena');
@@ -293,6 +293,7 @@ describe('Validação de Regras de Negócio Remodeladas do Bloco 1', () => {
       <AtribuicaoForcada
         isOpen={true}
         aoFechar={vi.fn()}
+        id_evento_ativo="evt-1"
       />
     );
 

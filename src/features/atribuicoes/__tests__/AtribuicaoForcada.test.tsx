@@ -114,6 +114,19 @@ describe('AtribuicaoForcada', () => {
       expect(screen.queryByText('Sara do Staff')).not.toBeInTheDocument();
     });
 
+    it('sem evento ativo deve avisar e não consultar nada, nem um evento guardado no navegador', async () => {
+      // Arrange
+      localStorage.setItem('evento_ativo_id', 'evento-do-ano-passado');
+
+      // Act
+      render(<AtribuicaoForcada isOpen aoFechar={vi.fn()} id_evento_ativo="" cota_padrao_evento={3} />);
+
+      // Assert
+      expect(await screen.findByText(/não há evento ativo/i)).toBeInTheDocument();
+      expect(supabase.from).not.toHaveBeenCalled();
+      localStorage.removeItem('evento_ativo_id');
+    });
+
     it('deve buscar travas válidas e dados só do evento ativo', async () => {
       // Arrange / Act
       renderizar();

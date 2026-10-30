@@ -198,4 +198,17 @@ describe('ProjetosBloqueados', () => {
     await waitFor(() => expect(screen.queryByText('Bruno Avaliador')).not.toBeInTheDocument());
     expect(screen.getByText('Ana Avaliadora')).toBeInTheDocument();
   });
+
+  it('sem evento ativo deve avisar e não consultar nada, nem um evento guardado no navegador', async () => {
+    // Arrange
+    localStorage.setItem('evento_ativo_id', 'evento-do-ano-passado');
+
+    // Act
+    render(<ProjetosBloqueados id_evento_ativo="" />);
+
+    // Assert
+    expect(await screen.findByRole('alert')).toHaveTextContent(/não há evento ativo/i);
+    expect(supabase.from).not.toHaveBeenCalled();
+    localStorage.removeItem('evento_ativo_id');
+  });
 });

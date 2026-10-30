@@ -115,6 +115,7 @@ describe('Auditoria de Regressão: Restrição de Exclusão (Erradicação de C�
       <ProjetosBloqueados
         aoFechar={vi.fn()}
         aoAtualizarMetricas={vi.fn()}
+        id_evento_ativo="evt-1"
       />
     );
 
