@@ -2,7 +2,7 @@
 -- Rodar: npx supabase@2.122.0 test db
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(18);
+SELECT plan(20);
 
 INSERT INTO auth.users (id, email, is_anonymous, email_confirmed_at) VALUES
   ('d7000000-0000-0000-0000-0000000000ad', 'admin7@teste.local', false, now()),
@@ -31,7 +31,9 @@ INSERT INTO public.avaliadores_evento (id_usuario, id_evento, id_instituicao, is
   ('c7000000-0000-0000-0000-0000000000a1', 'e7000000-0000-0000-0000-000000000001', '17000000-0000-0000-0000-000000000001', true),
   ('c7000000-0000-0000-0000-0000000000a2', 'e7000000-0000-0000-0000-000000000001', NULL, true),
   ('c7000000-0000-0000-0000-0000000000a3', 'e7000000-0000-0000-0000-000000000001', NULL, true),
-  ('c7000000-0000-0000-0000-0000000000a4', 'e7000000-0000-0000-0000-000000000001', NULL, false);
+  ('c7000000-0000-0000-0000-0000000000a4', 'e7000000-0000-0000-0000-000000000001', NULL, false),
+  -- Staff credenciado no evento (o credenciamento do Staff fica na mesma tabela): não é avaliador
+  ('c7000000-0000-0000-0000-000000000051', 'e7000000-0000-0000-0000-000000000001', NULL, true);
 INSERT INTO public.avaliador_modalidades_bloqueadas (id_usuario, id_evento, id_modalidade) VALUES
   ('c7000000-0000-0000-0000-0000000000a2', 'e7000000-0000-0000-0000-000000000001', '27000000-0000-0000-0000-000000000001');
 -- Trava vencida não pode ocupar vaga nem deixar o avaliador "ocupado"
@@ -51,6 +53,10 @@ SELECT throws_ok($$ SELECT public.admin_enfileirar_projetos('c7000000-0000-0000-
   '42501', NULL, 'Staff não enfileira');
 
 SELECT pg_temp.como('d7000000-0000-0000-0000-0000000000ad');
+SELECT throws_like($$ SELECT public.admin_atribuir_banca('f7000000-0000-0000-0000-000000000001', ARRAY['c7000000-0000-0000-0000-000000000051'::uuid]) $$,
+  '%não é avaliador%', 'banca recusa Staff credenciado');
+SELECT throws_like($$ SELECT public.admin_enfileirar_projetos('c7000000-0000-0000-0000-000000000051', ARRAY['f7000000-0000-0000-0000-000000000001'::uuid]) $$,
+  '%não é avaliador%', 'fila recusa Staff credenciado');
 SELECT throws_like($$ SELECT public.admin_atribuir_banca('f7000000-0000-0000-0000-000000000002', ARRAY['c7000000-0000-0000-0000-0000000000a1'::uuid]) $$,
   '%Conflito: mesma instituição%', 'banca recusa avaliador da mesma instituição');
 SELECT throws_like($$ SELECT public.admin_atribuir_banca('f7000000-0000-0000-0000-000000000003', ARRAY['c7000000-0000-0000-0000-0000000000a2'::uuid]) $$,

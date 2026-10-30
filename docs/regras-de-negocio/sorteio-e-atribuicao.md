@@ -89,7 +89,8 @@ Card **Atribuir Projeto** no Bloco 1 do painel Admin.
   projeto já vira trava; os demais entram em `fila_atribuicoes_direcionadas` na ordem escolhida, **depois** dos itens
   pendentes que ele já tinha. Projeto repetido na seleção é ignorado; projeto já pendente na fila é recusado.
 - **O banco valida tudo** (`fn_motivo_inelegivel`, as mesmas regras do sorteio e do envio da nota): check-in, fora da
-  competição, credenciamento no evento, mesma instituição, modalidade bloqueada, "Já avaliou este projeto" (inclusive
+  competição, papel **Avaliador** (o Staff credenciado no evento não aparece na lista nem recebe projeto),
+  credenciamento no evento, mesma instituição, modalidade bloqueada, "Já avaliou este projeto" (inclusive
   cancelada), **conflito declarado pelo próprio avaliador** e avaliador ocupado. A cota (avaliações ativas + travas
   válidas) é checada com o projeto bloqueado (`FOR UPDATE`), sem corrida com o sorteio. A tela mostra os mesmos
   motivos antes de enviar, só para orientar.

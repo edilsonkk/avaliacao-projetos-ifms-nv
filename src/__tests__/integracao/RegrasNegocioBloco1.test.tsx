@@ -107,7 +107,7 @@ describe('Validação de Regras de Negócio Remodeladas do Bloco 1', () => {
               id_usuario: 'user-ocupado-88',
               expira_em: futuroIso,
               projetos: { codigo_projeto: 'FETEC-BLOQ', titulo: 'Projeto Bloqueado', estande: 'A-01' },
-              usuarios: { nome: 'Prof. Avaliador 1', email: 'aval1@ifms.edu.br' },
+              usuarios: { nome: 'Prof. Avaliador 1', email: 'aval1@ifms.edu.br', papel: 'AVALIADOR' },
             },
           ],
           count: 7,

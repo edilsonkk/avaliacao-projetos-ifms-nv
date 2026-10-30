@@ -1780,6 +1780,10 @@ BEGIN
   IF NOT v_projeto.check_in THEN RETURN 'Projeto sem check-in'; END IF;
   IF v_projeto.fora THEN RETURN 'Projeto fora da competição'; END IF;
 
+  IF NOT EXISTS (SELECT 1 FROM public.usuarios u WHERE u.id_usuario = p_id_usuario AND upper(u.papel::text) = 'AVALIADOR') THEN
+    RETURN 'Usuário não é avaliador';
+  END IF;
+
   SELECT ae.id_instituicao INTO v_inst_avaliador
   FROM public.avaliadores_evento ae
   WHERE ae.id_usuario = p_id_usuario AND ae.id_evento = v_projeto.id_evento AND ae.is_credenciado;
