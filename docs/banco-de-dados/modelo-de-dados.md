@@ -124,8 +124,11 @@ A tabela **não** tem colunas textuais `modalidade`, `area_conhecimento` ou `nom
 
 ### `questionarios` e `perguntas_questionario`
 - `questionarios`: `id_questionario`, `id_evento`, `titulo`, `escala_minima`, `escala_maxima`.
-- `perguntas_questionario`: `id_pergunta`, `id_questionario`, `texto_pergunta`, `peso_calculo`, `peso_desempate`,
-  `ordem`.
+- `perguntas_questionario`: `id_pergunta`, `id_questionario`, `texto_pergunta`, `descricao_lembrete` (texto de ajuda
+  para o avaliador), `peso_calculo`, `peso_desempate`, `ordem`.
+- `respostas_avaliacao.id_pergunta` é `ON DELETE CASCADE`: apagar uma pergunta apaga as notas por critério já dadas.
+  Por isso a escrita é só por `admin_salvar_questionario` / `admin_excluir_questionario`, que travam questionários
+  já usados.
 
 ## Avaliação
 
