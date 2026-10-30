@@ -404,57 +404,33 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
     unmount();
   });
 
-  it('8. PERSISTÊNCIA DE CREDENCIAMENTO: ao credenciar avaliador, estado persiste ao fechar e reabrir o Gestor e atualiza métricas', async () => {
+  it('8. PERSISTÊNCIA DE CREDENCIAMENTO: credenciar grava no banco (não no navegador) e atualiza métricas', async () => {
     localStorage.clear();
     const mockAtualizarMetricas = vi.fn();
-
-    // Primeira abertura do gestor
-    const { unmount: fecharGestor1 } = render(
-      <GestorAvaliadores
-        id_evento_ativo="evt-2026"
-        aoAtualizarMetricas={mockAtualizarMetricas}
-      />
+    const implementacaoPadrao = mockFrom.getMockImplementation()!;
+    mockFrom.mockImplementation((tabela: string) =>
+      tabela === 'avaliadores_evento'
+        ? criarQueryChain({
+            data: [
+              { id_usuario: 'user-aval-2', is_credenciado: false, id_instituicao: null, usuarios: { nome: 'Dra. Patricia Alencar', email: 'patricia@ifms.edu.br', papel: 'AVALIADOR' } },
+            ],
+            error: null,
+          })
+        : implementacaoPadrao(tabela)
     );
 
-    // Aguarda carregar os avaliadores
-    await waitFor(() => {
-      expect(screen.getByText('Dra. Patricia Alencar')).toBeDefined();
-    });
+    render(<GestorAvaliadores id_evento_ativo="evt-2026" aoAtualizarMetricas={mockAtualizarMetricas} />);
+    expect(await screen.findByText('Dra. Patricia Alencar')).toBeDefined();
 
-    // Encontra o botão de credenciar especificamente do avaliador não credenciado
-    const btnCredenciar = screen.getByTitle('Credenciar avaliador no evento');
-    expect(btnCredenciar).toBeDefined();
-
-    // Clica para credenciar
-    fireEvent.click(btnCredenciar);
+    fireEvent.click(screen.getByRole('button', { name: 'Credenciar Dra. Patricia Alencar' }));
 
     await waitFor(() => {
+      expect(mockUpdate).toHaveBeenCalledWith({ is_credenciado: true });
       expect(mockAtualizarMetricas).toHaveBeenCalled();
-      const overrides = JSON.parse(localStorage.getItem('avaliadores_credenciados_local') || '{}');
-      expect(Object.values(overrides)).toContain(true);
     });
-
-    // Fecha o modal (desmonta)
-    fecharGestor1();
-
-    // Reabre o modal (segunda montagem)
-    const { unmount: fecharGestor2 } = render(
-      <GestorAvaliadores
-        id_evento_ativo="evt-2026"
-        aoAtualizarMetricas={mockAtualizarMetricas}
-      />
-    );
-
-    // Deve permanecer credenciado com o botão de descredenciar disponível
-    await waitFor(() => {
-      expect(screen.getByText('Dra. Patricia Alencar')).toBeDefined();
-      const linhaPatricia = screen.getByText('Dra. Patricia Alencar').closest('tr');
-      expect(linhaPatricia).toBeDefined();
-      expect(within(linhaPatricia!).getByText('Credenciado')).toBeDefined();
-      expect(within(linhaPatricia!).getByTitle('Remover credenciamento do avaliador')).toBeDefined();
-    });
-
-    fecharGestor2();
+    expect(localStorage.getItem('avaliadores_credenciados_local')).toBeNull();
+    const linhaPatricia = screen.getByText('Dra. Patricia Alencar').closest('tr')!;
+    expect(within(linhaPatricia).getByText('Credenciado')).toBeDefined();
   });
 
   it('9. PADRONIZAÇÃO DE BOTÕES DE IMPORTAÇÃO: todos os 5 gestores exibem botão "Importar (.xlsx/.csv)"', async () => {

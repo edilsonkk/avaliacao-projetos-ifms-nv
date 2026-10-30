@@ -19,7 +19,7 @@ gestores de cada feature. Modelos estáticos: `public/modelos/`.
 | Gestor | Tabelas | Colunas reconhecidas | Chave do upsert |
 |---|---|---|---|
 | `GestorProjetos` | `projetos` | Código, Título, Área Temática, Nível/Categoria/Modalidade, Instituição, Sigla, Estande, Corredor, Orientador, Estudantes, Fora da Competição | `id_evento, codigo_projeto` (constraint `uq_projetos_evento_codigo`) |
-| `GestorAvaliadores` | `usuarios`, `avaliadores_evento`, `avaliador_areas`, `avaliador_modalidades_bloqueadas` | nome, email, instituicao, sigla_instituicao, modalidades_bloqueadas, areas, CPF | `email` |
+| `GestorAvaliadores` | RPC `admin_salvar_avaliadores` (uma chamada para a planilha toda) | nome, email, instituicao, sigla_instituicao, modalidades_bloqueadas, areas | `email` (sem diferenciar maiúsculas); e-mails de Admin/Staff são ignorados |
 | `GestorStaff` | `usuarios`, `avaliadores_evento` | Nome, E-mail, Papel (`STAFF`/`MONITOR`) | `email` |
 | `GestorInstituicoes` | `instituicoes` | Nome / Nome de Exibição, Sigla, Campus | `nome_normalizado` |
 | `GestorModalidades` | `modalidades` | Código, Modalidade, Nível, Área Temática, Descrição | por evento |
@@ -107,5 +107,5 @@ Card no Bloco 2 (`GestorModalidades`), no layout canônico dos gestores: cadastr
 as colunas; edição inline.
 
 Testes: `src/lib/parsers/__tests__/`, `src/features/cadastros/__tests__/GestorModalidadesEDePara.test.tsx`,
-`src/features/projetos/__tests__/`, `src/features/avaliadores/__tests__/GestorAvaliadoresAreas.test.tsx`,
+`src/features/projetos/__tests__/`, `src/features/avaliadores/__tests__/GestorAvaliadores.test.tsx`,
 `src/__tests__/integracao/AutoCadastroEAreasTematicasEvento.test.tsx`, `CotaEstritaEAutoCadastroDePara.test.tsx`.

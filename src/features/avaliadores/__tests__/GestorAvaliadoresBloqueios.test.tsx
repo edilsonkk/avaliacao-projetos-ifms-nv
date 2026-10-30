@@ -24,6 +24,7 @@ vi.mock('@/lib/supabase', () => ({
 import { GestorAvaliadores } from '@/features/avaliadores';
 import { AtribuicaoForcada } from '@/features/atribuicoes';
 
+// Lista, bloqueios e cadastro do Gestor de Avaliadores: ver GestorAvaliadores.test.tsx
 describe('TDD: Gestor de Avaliadores - Bloqueio de Modalidade, Instituição e Cota Estrita', () => {
   const criarQueryChain = (resultado: any) => {
     const chain: any = {
@@ -179,52 +180,6 @@ describe('TDD: Gestor de Avaliadores - Bloqueio de Modalidade, Instituição e C
 
     const botaoBaixar = await screen.findByRole('button', { name: /Baixar Modelo \(\.xlsx\)/i });
     expect(botaoBaixar).toBeInTheDocument();
-  });
-
-  it('deve exibir badges de Instituição e Bloqueio de Modalidade na lista de avaliadores', async () => {
-    render(<GestorAvaliadores id_evento_ativo="evt-1" />);
-
-    // Verifica nome do avaliador
-    expect(await screen.findByText('Prof. Roberto Carlos')).toBeInTheDocument();
-
-    // Verifica badge da instituição
-    expect(screen.getByText('IFMS Campus CG')).toBeInTheDocument();
-
-    // Verifica badge de bloqueio da modalidade Ensino Médio
-    expect(screen.getByText(/Bloq:\s*Ensino Médio/i)).toBeInTheDocument();
-  });
-
-  it('deve permitir abrir o formulário e selecionar Instituição e Modalidades Bloqueadas ao cadastrar novo avaliador', async () => {
-    const user = userEvent.setup();
-    render(<GestorAvaliadores id_evento_ativo="evt-1" />);
-
-    const botaoNovo = await screen.findByRole('button', { name: /Novo Avaliador/i });
-    await user.click(botaoNovo);
-
-    // Campos do formulário
-    const inputNome = screen.getByPlaceholderText(/Nome do Avaliador/i);
-    const inputEmail = screen.getByPlaceholderText(/E-mail do Avaliador/i);
-    const selectInst = screen.getByRole('combobox');
-
-    expect(inputNome).toBeInTheDocument();
-    expect(inputEmail).toBeInTheDocument();
-    expect(selectInst).toBeInTheDocument();
-
-    // Checkbox da modalidade disponível
-    const checkModalidade = screen.getByLabelText(/Ensino Técnico/i);
-    expect(checkModalidade).toBeInTheDocument();
-
-    await user.type(inputNome, 'Prof. Mariana Lima');
-    await user.type(inputEmail, 'mariana@ufms.br');
-    await user.selectOptions(selectInst, 'inst-2');
-    await user.click(checkModalidade);
-
-    const botaoSalvar = screen.getByRole('button', { name: /Cadastrar Avaliador/i });
-    await user.click(botaoSalvar);
-
-    await waitFor(() => {
-      expect(mockFrom).toHaveBeenCalledWith('usuarios');
-    });
   });
 
   it('deve validar bloqueio de modalidade e conflito institucional na Atribuição Forçada', async () => {

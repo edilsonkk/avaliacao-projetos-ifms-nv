@@ -10,6 +10,7 @@ vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: vi.fn(),
     rpc: vi.fn(),
+    auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'jwt' } }, error: null }) },
   },
   isSupabaseConfigured: () => true,
   verificar_conexao_configurada: () => true,
@@ -32,6 +33,7 @@ describe('Auditoria de Regressão: Bloqueio Estrito por Modalidade no Sorteio e 
       in: vi.fn().mockReturnThis(),
       gt: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
+      range: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
       maybeSingle: vi.fn().mockResolvedValue(resultadoFinal),
       single: vi.fn().mockResolvedValue(resultadoFinal),
@@ -212,7 +214,7 @@ describe('Auditoria de Regressão: Bloqueio Estrito por Modalidade no Sorteio e 
     });
   });
 
-  it('1. GESTOR DE AVALIADORES: ao salvar modalidades bloqueadas, persiste com id_evento e expurga travas das modalidades bloqueadas', async () => {
+  it('1. GESTOR DE AVALIADORES: ao salvar modalidades bloqueadas, grava pela função do banco (que também expurga as travas)', async () => {
     render(
       <GestorAvaliadores
         id_evento_ativo={eventoIdTeste}
@@ -220,25 +222,20 @@ describe('Auditoria de Regressão: Bloqueio Estrito por Modalidade no Sorteio e 
       />
     );
 
-    // Aguarda carregar o avaliador na lista
     expect(await screen.findByText('Avaliador Teste Modalidade')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Avaliador Teste Modalidade' }));
+    expect(await screen.findByRole('dialog', { name: 'Editar Avaliador' })).toBeInTheDocument();
 
-    // Clica no botão de editar
-    const botaoEditar = screen.getByTitle('Editar Avaliador');
-    fireEvent.click(botaoEditar);
-
-    // Modal de edição abre com checkboxes de modalidades
-    expect(await screen.findByText('Editar Avaliador')).toBeInTheDocument();
-    expect(screen.getByText('Informática e Computação')).toBeInTheDocument();
-
-    // Clica em Salvar Alterações
-    const botaoSalvar = screen.getByRole('button', { name: /Salvar Alterações/i });
-    fireEvent.click(botaoSalvar);
+    fireEvent.click(screen.getByRole('button', { name: /Salvar Alterações/i }));
 
     await waitFor(() => {
-      // Verifica se houve tentativa de expurgo de locks para projetos da modalidade bloqueada
-      expect(chamadasDeleteLocks.length).toBeGreaterThanOrEqual(1);
+      expect(supabase.rpc).toHaveBeenCalledWith('admin_atualizar_avaliador', expect.objectContaining({
+        p_id_usuario: usuarioAvaliadorId,
+        p_id_evento: eventoIdTeste,
+        p_ids_modalidades_bloqueadas: [modalidadeBloqueadaId],
+      }));
     });
+    expect(chamadasDeleteLocks).toHaveLength(0);
   });
 
   it('2. ATRIBUIR PROJETO: identifica e sinaliza o bloqueio no modo Enfileirar para projetos da modalidade bloqueada', async () => {

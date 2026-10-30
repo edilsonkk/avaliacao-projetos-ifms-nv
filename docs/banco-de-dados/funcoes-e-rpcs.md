@@ -65,6 +65,11 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `admin_remover_quarentena_todos()` | Aceita a divergência de todos os projetos em quarentena, de todos os eventos (a tela usa a versão por evento) |
 | `excluir_avaliacao(p_id_avaliacao uuid)` | Soft delete: `status = 'CANCELADA'`, `cancelada_em/_por`; recalcula a quarentena; devolve `projeto_em_quarentena` |
 | `restaurar_avaliacao(p_id_avaliacao uuid)` | Volta a avaliação para `CONCLUIDA` se houver vaga na cota; recalcula a quarentena |
+| `admin_salvar_avaliadores(p_id_evento uuid, p_itens jsonb)` → `jsonb` | Cadastro manual e importação de avaliadores numa transação: cria ou atualiza o nome, inscreve no evento, grava bloqueios e áreas do evento. E-mails de Admin/Staff são ignorados (nunca rebaixados). Devolve `{cadastrados, atualizados, ignorados: [{email, motivo}]}` |
+| `admin_atualizar_avaliador(p_id_usuario, p_id_evento, p_nome, p_email, p_id_instituicao, p_ids_modalidades_bloqueadas, p_ids_areas)` | Edição do avaliador de uma vez (substitui instituição, bloqueios e áreas no evento); recusa e-mail de outra pessoa |
+| `admin_bloquear_modalidade_avaliador(p_id_usuario, p_id_evento, p_id_modalidade, p_bloquear boolean)` | Chip de modalidade do Gestor de Avaliadores |
+| `admin_remover_avaliador_evento(p_id_usuario, p_id_evento)` → `jsonb` | Tira o avaliador do evento. Recusa se ele tem avaliação ativa no evento; só apaga o cadastro se não sobrar evento nem avaliação. Devolve `{sucesso, cadastro_apagado}` |
+| `fn_expurgar_modalidades_bloqueadas(p_id_usuario, p_id_evento)` | Interna: remove travas e fila do avaliador em projetos das modalidades bloqueadas |
 | `fn_recalcular_quarentena(p_id_projeto uuid)` | Interna: marca/desmarca `is_quarentena` das avaliações ativas pela regra da view |
 | `is_admin()` → `boolean` | Usuário autenticado tem papel `ADMIN` |
 
