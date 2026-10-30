@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.10](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.9...v0.6.10) (2026-10-30)
+
+
+### Correções
+
+* **admin:** cabeçalho do painel mostra o evento ativo do banco, sem nome guardado ou inventado ([#54](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/54)) ([9715d97](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/9715d9749d4c67ed3074aaa62c39c434cb1d89e8))
+* **atribuicoes:** Staff credenciado não aparece nem recebe atribuição forçada ([#50](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/50)) ([2956dcc](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/2956dcc148861c86dc3aa7b71300de9d0a081239))
+* **relatorios:** indicadores com a meta pela cota de cada projeto e ausentes separados dos não credenciados ([#51](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/51)) ([bd12b02](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/bd12b0271a61861cb3b1e48e26bef8ac858e02c1))
+* **telao:** avaliadores credenciados sem o Staff e travas na meta só de projetos que ainda cabem ([#48](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/48)) ([edcc236](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/edcc236c8d8a649cfec5a1a6f35ac4a629e279bf))
+* telas usam o evento ativo do banco, nunca um evento guardado no navegador ([#53](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/53)) ([e5f593c](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/e5f593ca45275012d3fd89ce8b66776b03bf579e))
+
+
+### Refatoração
+
+* **admin:** painel lê só o evento ativo, sem calcular contadores que não exibe ([#52](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/52)) ([d2bdee9](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/d2bdee9a30b8e7a61662a67e07cb265ed79746e1))
+
 ## [0.6.9](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.8...v0.6.9) (2026-10-30)
 
 
