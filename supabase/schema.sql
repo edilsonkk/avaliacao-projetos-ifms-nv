@@ -173,6 +173,43 @@ $_$;
 ALTER FUNCTION "public"."admin_atualizar_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid", "p_nome" "text", "p_email" "text", "p_id_instituicao" "uuid", "p_ids_modalidades_bloqueadas" "uuid"[], "p_ids_areas" "uuid"[]) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_atualizar_staff"("p_id_usuario" "uuid", "p_nome" "text", "p_email" "text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_nome  text := btrim(regexp_replace(coalesce(p_nome, ''), '\s+', ' ', 'g'));
+  v_email text := lower(btrim(coalesce(p_email, '')));
+  v_papel text;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  SELECT papel INTO v_papel FROM public.usuarios WHERE id_usuario = p_id_usuario FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Membro do Staff não encontrado.';
+  END IF;
+  IF upper(coalesce(v_papel, '')) NOT IN ('STAFF', 'MONITOR') THEN
+    RAISE EXCEPTION 'Este usuário não é da equipe Staff.';
+  END IF;
+  IF length(v_nome) < 2 OR length(v_nome) > 255 THEN
+    RAISE EXCEPTION 'Informe o nome.';
+  END IF;
+  IF v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' OR length(v_email) > 254 THEN
+    RAISE EXCEPTION 'E-mail inválido.';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.usuarios WHERE lower(email) = v_email AND id_usuario <> p_id_usuario) THEN
+    RAISE EXCEPTION 'Já existe outro usuário com o e-mail %.', v_email;
+  END IF;
+
+  UPDATE public.usuarios SET nome = v_nome, email = v_email WHERE id_usuario = p_id_usuario;
+END;
+$_$;
+
+
+ALTER FUNCTION "public"."admin_atualizar_staff"("p_id_usuario" "uuid", "p_nome" "text", "p_email" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_bloquear_modalidade_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid", "p_id_modalidade" "uuid", "p_bloquear" boolean) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -334,6 +371,32 @@ $$;
 
 
 ALTER FUNCTION "public"."admin_enfileirar_projetos"("p_id_usuario" "uuid", "p_ids_projetos" "uuid"[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_papel text;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  SELECT papel INTO v_papel FROM public.usuarios WHERE id_usuario = p_id_usuario FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Membro do Staff não encontrado.';
+  END IF;
+  IF upper(coalesce(v_papel, '')) NOT IN ('STAFF', 'MONITOR') THEN
+    RAISE EXCEPTION 'Este usuário não é da equipe Staff.';
+  END IF;
+
+  DELETE FROM public.usuarios WHERE id_usuario = p_id_usuario;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_remover_avaliador_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") RETURNS "jsonb"
@@ -692,6 +755,85 @@ $_$;
 
 
 ALTER FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_salvar_staff"("p_id_evento" "uuid", "p_itens" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_item        jsonb;
+  v_nome        text;
+  v_email       text;
+  v_papel       text;
+  v_usuario     public.usuarios;
+  v_cadastrados integer := 0;
+  v_atualizados integer := 0;
+  v_ignorados   jsonb := '[]'::jsonb;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  IF p_id_evento IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.eventos WHERE id_evento = p_id_evento) THEN
+    RAISE EXCEPTION 'Evento não encontrado.';
+  END IF;
+  IF jsonb_typeof(p_itens) IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'Lista de membros do Staff inválida.';
+  END IF;
+
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_itens) LOOP
+    v_nome  := btrim(regexp_replace(coalesce(v_item->>'nome', ''), '\s+', ' ', 'g'));
+    v_email := lower(btrim(coalesce(v_item->>'email', '')));
+    v_papel := upper(btrim(coalesce(nullif(v_item->>'papel', ''), 'STAFF')));
+
+    IF v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' OR length(v_email) > 254 THEN
+      v_ignorados := v_ignorados || jsonb_build_object('email', v_email, 'motivo', 'E-mail inválido.');
+      CONTINUE;
+    END IF;
+    IF v_papel NOT IN ('STAFF', 'MONITOR') THEN
+      v_ignorados := v_ignorados || jsonb_build_object('email', v_email, 'motivo', format('Papel "%s" inválido: use STAFF ou MONITOR.', v_papel));
+      CONTINUE;
+    END IF;
+
+    SELECT * INTO v_usuario FROM public.usuarios WHERE lower(email) = v_email ORDER BY created_at LIMIT 1;
+
+    IF v_usuario.id_usuario IS NOT NULL AND upper(coalesce(v_usuario.papel, '')) NOT IN ('STAFF', 'MONITOR') THEN
+      v_ignorados := v_ignorados || jsonb_build_object(
+        'email', v_email,
+        'motivo', format('O e-mail pertence a um usuário %s; ele não foi alterado.', upper(coalesce(v_usuario.papel, 'sem papel'))));
+      CONTINUE;
+    END IF;
+
+    IF v_usuario.id_usuario IS NULL THEN
+      IF length(v_nome) < 2 OR length(v_nome) > 255 THEN
+        v_ignorados := v_ignorados || jsonb_build_object('email', v_email, 'motivo', 'Nome ausente ou muito longo.');
+        CONTINUE;
+      END IF;
+      INSERT INTO public.usuarios (email, nome, papel) VALUES (v_email, v_nome, v_papel)
+      RETURNING * INTO v_usuario;
+      v_cadastrados := v_cadastrados + 1;
+    ELSE
+      UPDATE public.usuarios
+      SET nome = CASE WHEN length(v_nome) BETWEEN 2 AND 255 THEN v_nome ELSE nome END,
+          papel = v_papel
+      WHERE id_usuario = v_usuario.id_usuario;
+      v_atualizados := v_atualizados + 1;
+    END IF;
+
+    -- Inscreve no evento sem mexer no credenciamento de quem já está lá
+    IF p_id_evento IS NOT NULL THEN
+      INSERT INTO public.avaliadores_evento (id_usuario, id_evento, is_credenciado)
+      VALUES (v_usuario.id_usuario, p_id_evento, false)
+      ON CONFLICT (id_usuario, id_evento) DO NOTHING;
+    END IF;
+  END LOOP;
+
+  RETURN jsonb_build_object('cadastrados', v_cadastrados, 'atualizados', v_atualizados, 'ignorados', v_ignorados);
+END;
+$_$;
+
+
+ALTER FUNCTION "public"."admin_salvar_staff"("p_id_evento" "uuid", "p_itens" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."avaliador_atual"() RETURNS "uuid"
@@ -3542,6 +3684,12 @@ GRANT ALL ON FUNCTION "public"."admin_atualizar_avaliador"("p_id_usuario" "uuid"
 
 
 
+REVOKE ALL ON FUNCTION "public"."admin_atualizar_staff"("p_id_usuario" "uuid", "p_nome" "text", "p_email" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_atualizar_staff"("p_id_usuario" "uuid", "p_nome" "text", "p_email" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_atualizar_staff"("p_id_usuario" "uuid", "p_nome" "text", "p_email" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."admin_bloquear_modalidade_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid", "p_id_modalidade" "uuid", "p_bloquear" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_bloquear_modalidade_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid", "p_id_modalidade" "uuid", "p_bloquear" boolean) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_bloquear_modalidade_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid", "p_id_modalidade" "uuid", "p_bloquear" boolean) TO "service_role";
@@ -3569,6 +3717,12 @@ GRANT ALL ON FUNCTION "public"."admin_desbloquear_trava"("p_id_lock" "uuid") TO 
 REVOKE ALL ON FUNCTION "public"."admin_enfileirar_projetos"("p_id_usuario" "uuid", "p_ids_projetos" "uuid"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_enfileirar_projetos"("p_id_usuario" "uuid", "p_ids_projetos" "uuid"[]) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_enfileirar_projetos"("p_id_usuario" "uuid", "p_ids_projetos" "uuid"[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") TO "service_role";
 
 
 
@@ -3605,6 +3759,12 @@ GRANT ALL ON FUNCTION "public"."admin_reset_global"("p_id_evento" "uuid") TO "se
 REVOKE ALL ON FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_salvar_staff"("p_id_evento" "uuid", "p_itens" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_salvar_staff"("p_id_evento" "uuid", "p_itens" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_salvar_staff"("p_id_evento" "uuid", "p_itens" "jsonb") TO "service_role";
 
 
 

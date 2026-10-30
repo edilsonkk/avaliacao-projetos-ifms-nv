@@ -20,7 +20,7 @@ gestores de cada feature. Modelos estáticos: `public/modelos/`.
 |---|---|---|---|
 | `GestorProjetos` | `projetos` | Código, Título, Área Temática, Nível/Categoria/Modalidade, Instituição, Sigla, Estande, Corredor, Orientador, Estudantes, Fora da Competição | `id_evento, codigo_projeto` (constraint `uq_projetos_evento_codigo`) |
 | `GestorAvaliadores` | RPC `admin_salvar_avaliadores` (uma chamada para a planilha toda) | nome, email, instituicao, sigla_instituicao, modalidades_bloqueadas, areas | `email` (sem diferenciar maiúsculas); e-mails de Admin/Staff são ignorados |
-| `GestorStaff` | `usuarios`, `avaliadores_evento` | Nome, E-mail, Papel (`STAFF`/`MONITOR`) | `email` |
+| `GestorStaff` | RPC `admin_salvar_staff` (uma chamada) | Nome, E-mail, Papel (`STAFF`/`MONITOR`) | `email` (sem diferenciar maiúsculas); e-mails de Admin/Avaliador são ignorados |
 | `GestorInstituicoes` | `instituicoes` | Nome / Nome de Exibição, Sigla, Campus | `nome_normalizado` |
 | `GestorModalidades` | `modalidades` | Código, Modalidade, Nível, Área Temática, Descrição | por evento |
 | `GestorQuestionarios` | `questionarios`, `perguntas_questionario` | Pergunta/Critério, Lembrete/Descrição, Peso (padrão 1.0) | vinculado ao questionário |

@@ -69,6 +69,9 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `admin_atualizar_avaliador(p_id_usuario, p_id_evento, p_nome, p_email, p_id_instituicao, p_ids_modalidades_bloqueadas, p_ids_areas)` | Edição do avaliador de uma vez (substitui instituição, bloqueios e áreas no evento); recusa e-mail de outra pessoa |
 | `admin_bloquear_modalidade_avaliador(p_id_usuario, p_id_evento, p_id_modalidade, p_bloquear boolean)` | Chip de modalidade do Gestor de Avaliadores |
 | `admin_remover_avaliador_evento(p_id_usuario, p_id_evento)` → `jsonb` | Tira o avaliador do evento. Recusa se ele tem avaliação ativa no evento; só apaga o cadastro se não sobrar evento nem avaliação. Devolve `{sucesso, cadastro_apagado}` |
+| `admin_salvar_staff(p_id_evento uuid, p_itens jsonb)` → `jsonb` | Cadastro manual e importação da equipe Staff (`papel` `STAFF`/`MONITOR`); ignora e-mails de Admin/Avaliador; inscreve no evento sem mexer no credenciamento. Devolve `{cadastrados, atualizados, ignorados}` |
+| `admin_atualizar_staff(p_id_usuario, p_nome, p_email)` | Edição de membro do Staff; recusa e-mail de outra pessoa |
+| `admin_excluir_staff(p_id_usuario)` | Exclui membro do Staff/Monitor (recusa outros papéis) |
 | `fn_expurgar_modalidades_bloqueadas(p_id_usuario, p_id_evento)` | Interna: remove travas e fila do avaliador em projetos das modalidades bloqueadas |
 | `fn_recalcular_quarentena(p_id_projeto uuid)` | Interna: marca/desmarca `is_quarentena` das avaliações ativas pela regra da view |
 | `is_admin()` → `boolean` | Usuário autenticado tem papel `ADMIN` |

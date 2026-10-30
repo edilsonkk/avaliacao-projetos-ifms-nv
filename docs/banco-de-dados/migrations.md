@@ -147,3 +147,4 @@ de dados, restaure o backup gerado antes do `db push` ([restaurar backup](../ope
 | `20261029235000_remover_fk_ambiguas.sql` | Hotfix: remove FKs de auditoria que deixavam o embed `usuarios(...)` ambíguo |
 | `20261029240000_excluir_restaurar_avaliacao.sql` | Cancelar/restaurar recalculam a quarentena; restaurar respeita a cota; `cancelada_em/_por` |
 | `20261030000000_gestor_avaliadores.sql` | Escritas do Gestor de Avaliadores por função: remover só do evento (nunca apaga notas), importação sem rebaixar Admin/Staff, edição atômica |
+| `20261030010000_gestor_staff.sql` | Escritas do Gestor da Equipe Staff por função: cadastro/importação sem mudar o papel de Admin/Avaliador, sem descredenciar; exclusão só de Staff |
