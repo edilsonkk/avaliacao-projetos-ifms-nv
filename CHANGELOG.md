@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.8](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.7...v0.6.8) (2026-10-30)
+
+
+### Correções
+
+* **classificacao:** pódio só do evento ativo, sem projetos fora da competição e com empate na mesma posição ([#43](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/43)) ([633d786](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/633d7866de02746c4bbb0a6ef8d3642e798930ac))
+* **instituicoes:** chave de nome do banco igual à do front, sem perder a instituição de projetos importados ([#41](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/41)) ([8a00e17](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/8a00e178308b01b72dd0c64615e98ee07cf96f55))
+* **mapa-estandes:** cores e contadores só do evento ativo, com a cota do projeto e a quarentena pendente ([#45](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/45)) ([214badd](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/214badd4a538373de22b9ca1846196604909728e))
+* **relatorios:** funções de relatório voltam a funcionar, só do evento ativo e sem dados inventados ([#44](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/44)) ([243aff8](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/243aff83331edc736f9b098ade8dabf3504020d8))
+
 ## [0.6.7](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.6...v0.6.7) (2026-10-30)
 
 
