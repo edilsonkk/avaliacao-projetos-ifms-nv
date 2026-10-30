@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.6](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.5...v0.6.6) (2026-10-30)
+
+
+### Correções
+
+* **avaliacao:** excluir/restaurar avaliação recalculam a quarentena e respeitam a cota ([#32](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/32)) ([74634e6](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/74634e6b19b5f1b4b1573e48d84a762eb0e9eee9))
+
 ## [0.6.5](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.4...v0.6.5) (2026-10-30)
 
 
