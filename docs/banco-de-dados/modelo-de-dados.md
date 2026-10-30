@@ -138,7 +138,8 @@ A tabela **não** tem colunas textuais `modalidade`, `area_conhecimento` ou `nom
 | `parecer_final` | Texto do avaliador |
 | `status` | `CONCLUIDA` (padrão), `CANCELADA` (soft delete), `AUSENTE` |
 | `status_avaliacao` | Espelho legado de `status` em minúsculas |
-| `is_quarentena` | Marcada por divergência de notas |
+| `is_quarentena` | Marcada por divergência de notas (recalculada ao cancelar/restaurar) |
+| `cancelada_em`, `cancelada_por` | Quando e qual Admin cancelou (sem FK: ver regra 12 de migrations) |
 | `tempo_presenca` | Início da avaliação (confirmação de presença no estande) |
 | `tempo_submissao` | Envio |
 

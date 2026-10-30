@@ -63,8 +63,9 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `fn_vagas_projeto(p_id_projeto uuid)` | Interna: cota − avaliações ativas − travas válidas |
 | `admin_remover_quarentena(p_id_projeto uuid)` | Aceita a divergência do projeto (registra `quarentena_resolvida_em/_por`) |
 | `admin_remover_quarentena_todos()` | Aceita a divergência de todos os projetos em quarentena, de todos os eventos (a tela usa a versão por evento) |
-| `excluir_avaliacao(p_id_avaliacao uuid)` | Soft delete: `status = 'CANCELADA'`, `is_quarentena = false` |
-| `restaurar_avaliacao(p_id_avaliacao uuid)` | Volta a avaliação para `CONCLUIDA` |
+| `excluir_avaliacao(p_id_avaliacao uuid)` | Soft delete: `status = 'CANCELADA'`, `cancelada_em/_por`; recalcula a quarentena; devolve `projeto_em_quarentena` |
+| `restaurar_avaliacao(p_id_avaliacao uuid)` | Volta a avaliação para `CONCLUIDA` se houver vaga na cota; recalcula a quarentena |
+| `fn_recalcular_quarentena(p_id_projeto uuid)` | Interna: marca/desmarca `is_quarentena` das avaliações ativas pela regra da view |
 | `is_admin()` → `boolean` | Usuário autenticado tem papel `ADMIN` |
 
 ## Relatórios
