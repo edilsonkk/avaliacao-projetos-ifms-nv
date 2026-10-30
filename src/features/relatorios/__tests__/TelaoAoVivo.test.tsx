@@ -18,7 +18,8 @@ const RESUMO = {
   total_projetos: 40,
   projetos_presentes: 30,
   avaliadores_credenciados: 12,
-  avaliacoes_em_andamento: 3,
+  avaliacoes_em_andamento: 5,
+  em_andamento_na_meta: 3,
   avaliacoes_realizadas: 57,
   meta_global: 80,
   avaliacoes_na_meta: 40,
@@ -70,10 +71,11 @@ describe('TelaoAoVivo', () => {
     // Arrange / Act
     render(<TelaoAoVivo />);
 
-    // Assert (40 de 80 = 50%; restantes = 80 - 40 - 3)
+    // Assert (40 de 80 = 50%; restantes = 80 - 40 - 3 travas que cabem na meta, não as 5 travas do evento)
     expect(await screen.findByRole('progressbar', { name: 'Progresso geral da feira' })).toHaveAttribute('aria-valuenow', '50');
     expect(screen.getByText('50% concluído')).toBeInTheDocument();
     expect(screen.getByText('37 avaliações a fazer')).toBeInTheDocument();
+    expect(screen.getByText('5 em avaliação agora')).toBeInTheDocument();
     expect(screen.getByText('Projetos com notas divergentes em análise').previousElementSibling).toHaveTextContent('2');
   });
 

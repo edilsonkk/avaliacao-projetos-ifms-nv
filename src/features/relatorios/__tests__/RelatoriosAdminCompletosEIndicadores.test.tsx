@@ -224,10 +224,12 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
       if (tabela === 'avaliadores_evento') {
         return criarQueryChain({
           data: [
-            { id_usuario: 'usr-1', is_credenciado: true },
-            { id_usuario: 'usr-2', is_credenciado: true },
-            { id_usuario: 'usr-3', is_credenciado: true },
-            { id_usuario: 'usr-4', is_credenciado: false },
+            { id_usuario: 'usr-1', is_credenciado: true, usuarios: { papel: 'AVALIADOR' } },
+            { id_usuario: 'usr-2', is_credenciado: true, usuarios: { papel: 'AVALIADOR' } },
+            { id_usuario: 'usr-3', is_credenciado: true, usuarios: { papel: 'AVALIADOR' } },
+            { id_usuario: 'usr-4', is_credenciado: false, usuarios: { papel: 'AVALIADOR' } },
+            // Staff credenciado no evento: não entra na conta de avaliadores
+            { id_usuario: 'usr-staff', is_credenciado: true, usuarios: { papel: 'STAFF' } },
           ],
           error: null,
         });
@@ -419,7 +421,7 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
       expect(screen.getByText('18:00')).toBeDefined();
       // Métricas de Projetos: 2 submetidos, 1 credenciado (50%)
       expect(screen.getByText(/50% presença/i)).toBeDefined();
-      // Métricas de Avaliadores: 4 cadastrados, 3 credenciados (75%)
+      // Métricas de Avaliadores: 4 cadastrados, 3 credenciados (75%), sem contar o Staff
       expect(screen.getByText(/75% presentes/i)).toBeDefined();
       // % Progresso Global (2 de 3 esperadas de 1 credenciado)
       expect(screen.getByText(/Progresso Global/i)).toBeDefined();

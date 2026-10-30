@@ -27,7 +27,7 @@ Card **Relatórios** no Bloco 3, com cinco abas:
 Regras comuns:
 - Na aba Projetos, a coluna **Código do Projeto** ordena pelo código em ordem natural (PROJ-2 antes de PROJ-10); os
   cabeçalhos funcionam pelo teclado.
-- Indicadores: avaliadores cadastrados/credenciados vêm de `avaliadores_evento` do evento (sem estimativa).
+- Indicadores: avaliadores cadastrados/credenciados vêm de `avaliadores_evento` do evento, só com papel Avaliador (sem o Staff; sem estimativa).
 - Grupos começam recolhidos, com `Expandir Todos` / `Recolher Todos`.
 - Datas no formato `DD-MM-YYYY`.
 - **Exportar CSV** exporta a aba ativa (sem estande), em UTF-8 com BOM e com campos protegidos contra fórmulas
@@ -76,7 +76,11 @@ hora em que a tela volta do segundo plano. O Telão **não** mostra o ranking (a
   evento ativo, "Nenhum evento ativo".
 - **Meta global**: soma da cota de cada projeto **presente** (check-in feito) e **na competição**, usando a cota do
   projeto ou a padrão do evento. **Concluídas**: avaliações não canceladas desses projetos, no máximo a cota de cada um
-  (avaliação extra não infla o progresso). **Em andamento**: travas não vencidas. **Restantes**: o que falta da meta.
+  (avaliação extra não infla o progresso). **Em andamento**: travas não vencidas do evento (o card mostra todas; na
+  distribuição da meta só contam as de projetos presentes, na competição e abaixo da cota). **Restantes**: o que falta
+  da meta.
+- **Avaliadores**: credenciados no evento com papel **Avaliador** (o credenciamento do Staff, guardado na mesma
+  tabela, não entra), igual às telas Avaliadores e Staff.
 - **Quarentena**: número de projetos com quarentena pendente (`view_projetos_quarentena`).
 - **Tempo decorrido**: desde a data e o horário de início do evento, no relógio do computador do telão ("Começa às
   HH:MM" antes do início; "Início não configurado" sem horário).
