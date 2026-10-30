@@ -171,7 +171,7 @@ ausências.
 
 | View | Conteúdo |
 |---|---|
-| `view_ranking_top3` | Apesar do nome: **todos** os projetos com avaliação não cancelada, com modalidade, área, notas e média **simples**, ordenados pela média. O corte por modalidade e o top 3 são feitos no front-end (ver PRD, L11) |
+| `view_ranking_top3` | Apesar do nome: todos os projetos **na competição** com avaliação não cancelada, com modalidade, área, notas, média **simples**, `posicao` (`RANK()` por evento, modalidade e área; empate divide) e `em_quarentena`. O front filtra por `id_evento` e mostra quem tem posição até 3 |
 | `view_relatorio_admin` | Por projeto: quantidade de avaliações, estande e média |
 | `view_relatorio_projetos` | Projetos com notas individuais em JSON (`avaliacoes_detalhadas`) |
 | `view_relatorio_avaliadores` | Avaliações por avaliador com início, fim e duração (`tempo_formatado`) |

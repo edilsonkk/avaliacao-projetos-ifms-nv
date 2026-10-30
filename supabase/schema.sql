@@ -3243,25 +3243,45 @@ ALTER VIEW "public"."view_projetos_quarentena" OWNER TO "postgres";
 
 
 CREATE OR REPLACE VIEW "public"."view_ranking_top3" WITH ("security_invoker"='true') AS
- SELECT "p"."id_projeto",
-    "p"."codigo_projeto",
-    "p"."titulo",
-    "p"."estande",
-    "p"."corredor",
-    COALESCE("m"."nome_modalidade", 'Geral'::character varying) AS "modalidade",
-    COALESCE("ar"."nome_area", 'Multidisciplinar'::character varying) AS "area_tematica",
-    COALESCE("inst"."nome_exibicao", 'Não informada'::character varying) AS "nome_instituicao",
-    COALESCE("array_agg"("round"(("a"."nota_final")::numeric, 2)) FILTER (WHERE (("a"."nota_final" IS NOT NULL) AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")))), '{}'::numeric[]) AS "notas",
-    COALESCE("round"("avg"("a"."nota_final"), 2), 0.00) AS "media_geral",
-    "count"("a"."id_avaliacao") AS "total_avaliacoes",
-    "p"."id_evento"
-   FROM (((("public"."projetos" "p"
-     LEFT JOIN "public"."modalidades" "m" ON (("m"."id_modalidade" = "p"."id_modalidade")))
-     LEFT JOIN "public"."areas_tematicas" "ar" ON (("ar"."id_area" = "p"."id_area")))
-     LEFT JOIN "public"."instituicoes" "inst" ON (("inst"."id_instituicao" = "p"."id_instituicao")))
-     JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")))))
-  GROUP BY "p"."id_projeto", "p"."codigo_projeto", "p"."titulo", "p"."estande", "p"."corredor", "m"."nome_modalidade", "ar"."nome_area", "inst"."nome_exibicao", "p"."id_evento"
-  ORDER BY COALESCE("round"("avg"("a"."nota_final"), 2), 0.00) DESC;
+ WITH "base" AS (
+         SELECT "p"."id_projeto",
+            "p"."codigo_projeto",
+            "p"."titulo",
+            "p"."estande",
+            "p"."corredor",
+            COALESCE("m"."nome_modalidade", 'Sem modalidade'::character varying) AS "modalidade",
+            COALESCE("ar"."nome_area", 'Sem área temática'::character varying) AS "area_tematica",
+            COALESCE("inst"."nome_exibicao", 'Não informada'::character varying) AS "nome_instituicao",
+            COALESCE("array_agg"("round"(("a"."nota_final")::numeric, 2) ORDER BY "a"."tempo_submissao", "a"."created_at") FILTER (WHERE ("a"."nota_final" IS NOT NULL)), '{}'::numeric[]) AS "notas",
+            COALESCE("round"("avg"("a"."nota_final"), 2), 0.00) AS "media_geral",
+            "count"("a"."id_avaliacao") AS "total_avaliacoes",
+            "p"."id_evento"
+           FROM (((("public"."projetos" "p"
+             LEFT JOIN "public"."modalidades" "m" ON (("m"."id_modalidade" = "p"."id_modalidade")))
+             LEFT JOIN "public"."areas_tematicas" "ar" ON (("ar"."id_area" = "p"."id_area")))
+             LEFT JOIN "public"."instituicoes" "inst" ON (("inst"."id_instituicao" = "p"."id_instituicao")))
+             JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")))))
+          WHERE (NOT COALESCE("p"."is_fora_da_competicao", false))
+          GROUP BY "p"."id_projeto", "p"."codigo_projeto", "p"."titulo", "p"."estande", "p"."corredor", "m"."nome_modalidade", "ar"."nome_area", "inst"."nome_exibicao", "p"."id_evento"
+        )
+ SELECT "id_projeto",
+    "codigo_projeto",
+    "titulo",
+    "estande",
+    "corredor",
+    "modalidade",
+    "area_tematica",
+    "nome_instituicao",
+    "notas",
+    "media_geral",
+    "total_avaliacoes",
+    "id_evento",
+    "rank"() OVER (PARTITION BY "id_evento", "modalidade", "area_tematica" ORDER BY "media_geral" DESC) AS "posicao",
+    (EXISTS ( SELECT 1
+           FROM "public"."view_projetos_quarentena" "q"
+          WHERE ("q"."id_projeto" = "b"."id_projeto"))) AS "em_quarentena"
+   FROM "base" "b"
+  ORDER BY "media_geral" DESC, "codigo_projeto";
 
 
 ALTER VIEW "public"."view_ranking_top3" OWNER TO "postgres";
@@ -4592,7 +4612,6 @@ GRANT ALL ON TABLE "public"."view_projetos_quarentena" TO "service_role";
 
 
 
-GRANT SELECT,MAINTAIN ON TABLE "public"."view_ranking_top3" TO "anon";
 GRANT SELECT,MAINTAIN ON TABLE "public"."view_ranking_top3" TO "authenticated";
 GRANT ALL ON TABLE "public"."view_ranking_top3" TO "service_role";
 

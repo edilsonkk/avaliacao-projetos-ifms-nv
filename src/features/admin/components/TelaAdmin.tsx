@@ -1192,6 +1192,8 @@ export const TelaAdmin: React.FC = () => {
             <button
               type="button"
               onClick={() => set_mostrar_modal_ranking(false)}
+              aria-label="Fechar Classificação"
+              title="Fechar Classificação"
               className="absolute top-6 right-6 p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 z-10"
             >
               <X className="w-5 h-5" />
