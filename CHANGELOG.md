@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.9](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.8...v0.6.9) (2026-10-30)
+
+
+### Correções
+
+* **telao:** evento ativo do banco, título real, meta pela cota dos projetos presentes e quarentena verdadeira ([#46](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/46)) ([e9be7e5](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/e9be7e517fb75e3e8029847caec7af24bbf9af51))
+
 ## [0.6.8](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.7...v0.6.8) (2026-10-30)
 
 
