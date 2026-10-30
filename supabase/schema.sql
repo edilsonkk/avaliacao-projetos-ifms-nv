@@ -401,6 +401,34 @@ $$;
 ALTER FUNCTION "public"."admin_excluir_instituicao"("p_id_instituicao" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_excluir_modalidade"("p_id_modalidade" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_projetos  integer;
+  v_bloqueios integer;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  PERFORM 1 FROM public.modalidades WHERE id_modalidade = p_id_modalidade FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Modalidade não encontrada.';
+  END IF;
+  SELECT count(*) INTO v_projetos FROM public.projetos WHERE id_modalidade = p_id_modalidade;
+  SELECT count(*) INTO v_bloqueios FROM public.avaliador_modalidades_bloqueadas WHERE id_modalidade = p_id_modalidade;
+  IF v_projetos + v_bloqueios > 0 THEN
+    RAISE EXCEPTION 'A modalidade tem % projeto(s) e está bloqueada para % avaliador(es). Mude a modalidade desses projetos e libere os bloqueios antes de excluir.', v_projetos, v_bloqueios;
+  END IF;
+  DELETE FROM public.modalidades WHERE id_modalidade = p_id_modalidade;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_excluir_modalidade"("p_id_modalidade" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -871,6 +899,95 @@ $$;
 
 
 ALTER FUNCTION "public"."admin_salvar_instituicoes"("p_id_evento" "uuid", "p_itens" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_salvar_modalidades"("p_id_evento" "uuid", "p_itens" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_item        jsonb;
+  v_nome        text;
+  v_codigo      text;
+  v_nivel       text;
+  v_area        text;
+  v_descricao   text;
+  v_id          uuid;
+  v_cadastradas integer := 0;
+  v_atualizadas integer := 0;
+  v_associadas  integer := 0;
+  v_ignoradas   jsonb := '[]'::jsonb;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.eventos WHERE id_evento = p_id_evento) THEN
+    RAISE EXCEPTION 'Não há evento ativo para vincular as modalidades.';
+  END IF;
+  IF jsonb_typeof(p_itens) IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'Lista de modalidades inválida.';
+  END IF;
+
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_itens) LOOP
+    v_nome      := btrim(regexp_replace(coalesce(v_item->>'nome', ''), '\s+', ' ', 'g'));
+    v_codigo    := nullif(btrim(coalesce(v_item->>'codigo', '')), '');
+    v_nivel     := nullif(btrim(coalesce(v_item->>'nivel', '')), '');
+    v_area      := nullif(btrim(coalesce(v_item->>'area_tematica', '')), '');
+    v_descricao := nullif(btrim(coalesce(v_item->>'descricao', '')), '');
+
+    IF length(v_nome) < 2 OR length(v_nome) > 150 THEN
+      v_ignoradas := v_ignoradas || jsonb_build_object('nome', v_nome, 'motivo', 'Nome ausente ou com mais de 150 caracteres.');
+      CONTINUE;
+    END IF;
+    IF length(coalesce(v_codigo, '')) > 50 OR length(coalesce(v_nivel, '')) > 100 OR length(coalesce(v_area, '')) > 150 THEN
+      v_ignoradas := v_ignoradas || jsonb_build_object('nome', v_nome, 'motivo', 'Código (até 50), nível (até 100) ou área (até 150) muito longos.');
+      CONTINUE;
+    END IF;
+
+    -- Associação do De-Para: grava o nome como apelido da modalidade escolhida
+    IF nullif(v_item->>'id_existente', '') IS NOT NULL THEN
+      SELECT id_modalidade INTO v_id FROM public.modalidades
+      WHERE id_modalidade = (v_item->>'id_existente')::uuid AND id_evento = p_id_evento;
+      IF v_id IS NULL THEN
+        v_ignoradas := v_ignoradas || jsonb_build_object('nome', v_nome, 'motivo', 'A modalidade escolhida no De-Para não é deste evento.');
+        CONTINUE;
+      END IF;
+      IF public.fn_normalizar_nome(v_nome) <> (SELECT public.fn_normalizar_nome(nome_modalidade) FROM public.modalidades WHERE id_modalidade = v_id) THEN
+        INSERT INTO public.modalidade_aliases (id_modalidade, alias, alias_normalizado)
+        VALUES (v_id, v_nome, public.fn_normalizar_nome(v_nome))
+        ON CONFLICT (id_modalidade, alias_normalizado) DO NOTHING;
+      END IF;
+      v_associadas := v_associadas + 1;
+      CONTINUE;
+    END IF;
+
+    SELECT id_modalidade INTO v_id FROM public.modalidades
+    WHERE id_evento = p_id_evento AND public.fn_normalizar_nome(nome_modalidade) = public.fn_normalizar_nome(v_nome)
+    ORDER BY created_at
+    LIMIT 1;
+
+    IF v_id IS NULL THEN
+      INSERT INTO public.modalidades (id_evento, nome_modalidade, codigo, nivel, area_tematica, descricao)
+      VALUES (p_id_evento, v_nome, v_codigo, v_nivel, v_area, v_descricao);
+      v_cadastradas := v_cadastradas + 1;
+    ELSE
+      UPDATE public.modalidades
+      SET codigo = coalesce(v_codigo, codigo),
+          nivel = coalesce(v_nivel, nivel),
+          area_tematica = coalesce(v_area, area_tematica),
+          descricao = coalesce(v_descricao, descricao)
+      WHERE id_modalidade = v_id;
+      v_atualizadas := v_atualizadas + 1;
+    END IF;
+  END LOOP;
+
+  RETURN jsonb_build_object('cadastradas', v_cadastradas, 'atualizadas', v_atualizadas,
+                            'associadas', v_associadas, 'ignoradas', v_ignoradas);
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_salvar_modalidades"("p_id_evento" "uuid", "p_itens" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_salvar_questionario"("p_id_questionario" "uuid", "p_id_evento" "uuid", "p_titulo" "text", "p_escala_minima" numeric, "p_escala_maxima" numeric, "p_perguntas" "jsonb") RETURNS "uuid"
@@ -4012,6 +4129,12 @@ GRANT ALL ON FUNCTION "public"."admin_excluir_instituicao"("p_id_instituicao" "u
 
 
 
+REVOKE ALL ON FUNCTION "public"."admin_excluir_modalidade"("p_id_modalidade" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_excluir_modalidade"("p_id_modalidade" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_excluir_modalidade"("p_id_modalidade" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" "uuid") TO "service_role";
@@ -4063,6 +4186,12 @@ GRANT ALL ON FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", 
 REVOKE ALL ON FUNCTION "public"."admin_salvar_instituicoes"("p_id_evento" "uuid", "p_itens" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_salvar_instituicoes"("p_id_evento" "uuid", "p_itens" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_salvar_instituicoes"("p_id_evento" "uuid", "p_itens" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_salvar_modalidades"("p_id_evento" "uuid", "p_itens" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_salvar_modalidades"("p_id_evento" "uuid", "p_itens" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_salvar_modalidades"("p_id_evento" "uuid", "p_itens" "jsonb") TO "service_role";
 
 
 
