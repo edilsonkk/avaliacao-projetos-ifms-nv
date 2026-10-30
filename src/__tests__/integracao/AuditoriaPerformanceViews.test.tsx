@@ -39,6 +39,7 @@ describe('Auditoria de Desempenho, Ausência de Loop Infinito e Integração de 
       gte: vi.fn(() => chain),
       order: vi.fn(() => chain),
       limit: vi.fn(() => chain),
+      range: vi.fn(() => Promise.resolve(resultado)),
       ilike: vi.fn(() => chain),
       in: vi.fn(() => chain),
       delete: vi.fn(() => chain),
@@ -244,7 +245,7 @@ describe('Auditoria de Desempenho, Ausência de Loop Infinito e Integração de 
   });
 
   it('4. INTEGRAÇÃO RANKING (view_ranking_top3): deve consumir exclusivamente a view view_ranking_top3 sem cálculos no JS', async () => {
-    render(<RankingPremiacao />);
+    render(<RankingPremiacao id_evento_ativo="evt-1" />);
 
     await waitFor(() => {
       expect(mockFrom).toHaveBeenCalledWith('view_ranking_top3');

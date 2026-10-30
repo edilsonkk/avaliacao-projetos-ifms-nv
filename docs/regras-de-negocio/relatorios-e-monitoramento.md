@@ -43,11 +43,21 @@ Botão **Imprimir PDF** em todas as abas (`window.print()`).
 
 ## Classificação (`RankingPremiacao`)
 
-Card **Classificação**: pódio para homologação e premiação. Os dados vêm de `view_ranking_top3`, que devolve todos
-os projetos avaliados ordenados pela média simples. O agrupamento por modalidade e o corte nos três primeiros são
-feitos no componente.
+Card **Classificação**: pódio para homologação e premiação, só do **evento ativo** (sem evento ativo, a tela avisa e
+não consulta nada). Os dados vêm de `view_ranking_top3`:
 
-> ⚠️ A view não exclui projetos fora da competição nem usa `peso_desempate` (PRD, L11).
+- Entram os projetos com ao menos uma avaliação não cancelada; projetos **fora da competição não entram**.
+- A média é a simples das notas finais, calculada no banco. A `posicao` também vem do banco: `RANK()` por evento,
+  modalidade e área. **Empate divide a posição** (1º, 1º, 3º) e o card mostra "(empate)". Não há critério oficial de
+  desempate (`peso_desempate` não é usado): a comissão decide.
+- O pódio de cada modalidade/área mostra todos com posição até 3 (um empate pode colocar mais de três).
+- Projeto com notas divergentes ainda não resolvidas na Quarentena (`em_quarentena`) aparece marcado, e a tela avisa
+  para resolver antes de homologar.
+- Sem modalidade/área, aparece "Sem modalidade"/"Sem área temática"; estande e instituição ausentes não são
+  inventados.
+- Erro de leitura aparece como alerta (não como "nenhum projeto").
+- **Exportar CSV** (`classificacao_premiacao.csv`): UTF-8 com BOM (acentos certos no Excel), posição do banco, coluna
+  "Em quarentena" e campos começados por `=`, `+`, `-` ou `@` prefixados com `'` (não viram fórmula).
 
 ## Telão ao Vivo (`TelaoAoVivo`)
 
