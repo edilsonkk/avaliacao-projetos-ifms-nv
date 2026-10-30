@@ -58,4 +58,19 @@ describe('Painel do Admin: sincronia do evento ativo', () => {
     // Assert
     expect(await screen.findByText('Falha ao sincronizar o evento ativo com o banco de dados.')).toBeInTheDocument();
   });
+
+  it('sem evento ativo deve dizer isso no cabeçalho, e não mostrar o nome guardado no navegador', async () => {
+    // Arrange
+    localStorage.setItem('evento_ativo_nome', 'Feira do Ano Passado');
+    vi.mocked(supabase.from).mockImplementation((() => cadeia({ data: null, error: null })) as never);
+
+    // Act
+    render(<TelaAdmin />);
+
+    // Assert
+    expect(await screen.findByText('Nenhum evento ativo')).toBeInTheDocument();
+    expect(screen.queryByText('Feira do Ano Passado')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Editar Nome do Evento' })).toBeDisabled();
+    localStorage.removeItem('evento_ativo_nome');
+  });
 });
