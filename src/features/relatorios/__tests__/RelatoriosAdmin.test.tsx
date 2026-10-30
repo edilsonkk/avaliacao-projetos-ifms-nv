@@ -107,4 +107,38 @@ describe('RelatoriosAdmin', () => {
     expect(screen.getByRole('columnheader', { name: /código do projeto/i })).toHaveAttribute('aria-sort', 'descending');
     expect(within(primeiraLinha()).getByText('P-10')).toBeInTheDocument();
   });
+
+  it('deve calcular os indicadores pela cota de cada projeto presente na competição', async () => {
+    // Arrange (evento com cota padrão 3)
+    const p = (codigo: string, extra: Record<string, unknown>) => ({ ...projeto(codigo, 'A-01'), cota_avaliacoes: 3, is_fora_da_competicao: false, ...extra });
+    respostasRpc.fn_relatorio_projetos_completo = {
+      data: [
+        p('P-1', { cota_avaliacoes: 2, total_avaliacoes: 3 }), // cota customizada 2, uma avaliação a mais
+        p('P-2', { total_avaliacoes: 1 }), // abaixo da cota
+        p('P-3', { total_avaliacoes: 2, is_fora_da_competicao: true }), // fora da competição: fora da meta
+        p('P-4', { is_check_in_realizado: false }), // não credenciado
+        p('P-5', {}), // check-in feito, marcado ausente no estande
+      ],
+      error: null,
+    };
+    respostasRpc.fn_relatorio_ausencias_completo = {
+      data: [{ id_usuario: 'u-1', avaliador_nome: 'Ana', avaliador_email: 'a@x', ausencias: [{ id_projeto: 'id-P-5', codigo_projeto: 'P-5' }] }],
+      error: null,
+    };
+    const user = userEvent.setup();
+    render(<RelatoriosAdmin id_evento_ativo={ID_EVENTO} />);
+    await screen.findByText('Projeto P-1');
+    const span = (texto: string) => screen.getByText((_, el) => el?.tagName === 'SPAN' && el.textContent === texto);
+
+    // Act
+    await user.click(screen.getByRole('button', { name: /indicadores/i }));
+
+    // Assert (meta = 2 + 3 + 3 = 8; na meta = 2 + 1 + 0 = 3)
+    expect(await screen.findByText('3 de 8 avaliações (38%)')).toBeInTheDocument();
+    expect(span('Ausentes: 1')).toBeInTheDocument();
+    expect(span('Não credenciados: 1')).toBeInTheDocument();
+    expect(screen.getByText('Sem avaliação').nextElementSibling).toHaveTextContent('1 proj.');
+    expect(screen.getByText('Abaixo da cota').nextElementSibling).toHaveTextContent('1 proj.');
+    expect(screen.getByText('Cota concluída').nextElementSibling).toHaveTextContent('1 proj.');
+  });
 });

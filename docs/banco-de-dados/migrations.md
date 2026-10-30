@@ -157,3 +157,4 @@ de dados, restaure o backup gerado antes do `db push` ([restaurar backup](../ope
 | `20261030080000_telao.sql` | `fn_telao_resumo` com nome/data/horário do evento, meta pela cota de cada projeto presente, avaliações na meta e quarentena pendente |
 | `20261030090000_telao_contagens.sql` | `fn_telao_resumo`: avaliadores credenciados só com papel Avaliador (sem Staff) e nova chave `em_andamento_na_meta` |
 | `20261030100000_atribuicao_sem_staff.sql` | `fn_motivo_inelegivel` recusa quem não tem papel Avaliador: banca e fila não aceitam mais Staff credenciado |
+| `20261030110000_relatorio_cota_projeto.sql` | `fn_relatorio_projetos_completo` devolve `cota_avaliacoes` (customizada ou padrão do evento) para a meta dos Indicadores |
