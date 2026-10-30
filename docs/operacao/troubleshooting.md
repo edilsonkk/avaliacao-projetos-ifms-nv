@@ -51,6 +51,17 @@ if (res.error && (res.error.message?.includes('schema cache') || res.error.code 
 
 ---
 
+## Erro PGRST201 "more than one relationship was found"
+
+**Sintoma**: uma tela para de carregar e o PostgREST responde `PGRST201 Could not embed because more than one
+relationship was found for 'locks_ativos' and 'usuarios'`.
+**Causa**: a tabela ganhou uma segunda FK para a mesma tabela (ex.: `locks_ativos.atribuido_por → usuarios`, além de
+`id_usuario`), e o embed `usuarios(...)` ficou ambíguo. Aconteceu na 0.6.4 com a tela Projetos Bloqueados.
+**Solução**: migration `20261029235000_remover_fk_ambiguas.sql` remove as FKs das colunas de auditoria. Regra 9 de
+[migrations](../banco-de-dados/migrations.md) e teste `supabase/tests/09_embeds_sem_ambiguidade_test.sql`.
+
+---
+
 ## Erro "no unique or exclusion constraint matching the ON CONFLICT" ao importar projetos
 
 **Sintoma**: "Importar (.xlsx/.csv)" em Projetos falhava com `there is no unique or exclusion constraint matching the

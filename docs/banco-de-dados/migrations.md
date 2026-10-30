@@ -28,6 +28,11 @@ como uma nova migration. Nunca altere o banco só pelo painel do Supabase.
 9. Garanta compatibilidade com a versão anterior do front-end ([expand/contract](#compatibilidade-com-a-versão-anterior-expandcontract)).
 10. Teste localmente com `npx supabase@2.122.0 db reset` antes de abrir o PR.
 11. **Nunca edite nem renomeie uma migration já aplicada em produção.** Para corrigir, crie outra.
+12. **Nunca crie uma segunda FK de uma tabela para a mesma tabela** (ex.: uma coluna de auditoria `*_por` apontando
+    para `usuarios` numa tabela que já tem `id_usuario`). O PostgREST passa a recusar o embed `usuarios(...)` com
+    `PGRST201` e as telas param. Guarde o id sem FK e documente no `COMMENT`. Coberto por
+    `supabase/tests/09_embeds_sem_ambiguidade_test.sql` (aconteceu com `locks_ativos.atribuido_por`, corrigido em
+    `20261029235000`).
 
 ## Compatibilidade com a versão anterior (expand/contract)
 
