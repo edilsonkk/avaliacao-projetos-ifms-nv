@@ -27,6 +27,7 @@ import {
   X,
   Save
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { PainelAparelhoAvaliador } from './PainelAparelhoAvaliador';
 
@@ -1330,13 +1331,14 @@ export const TelaStaff: React.FC = () => {
               {/* Renderizador de QR Code Real Escaneável com Moldura Harmonizada */}
               <div className="bg-slate-50 dark:bg-slate-900 p-4 rounded-2xl shrink-0 text-center border border-slate-200 dark:border-slate-700 shadow-xs">
                 {url_autocadastro ? (
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url_autocadastro)}`}
-                    alt="QR Code para Autocadastro de Avaliadores"
-                    className="w-40 h-40 object-contain mx-auto rounded-xl bg-white p-2 shadow-2xs"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
+                  // Gerado no navegador: o link do evento não vai para serviço de terceiros (que poderia trocar o QR)
+                  <QRCodeSVG
+                    value={url_autocadastro}
+                    size={144}
+                    marginSize={1}
+                    role="img"
+                    aria-label="QR Code para Autocadastro de Avaliadores"
+                    className="w-40 h-40 mx-auto rounded-xl bg-white p-2 shadow-2xs"
                   />
                 ) : (
                   <div className="w-40 h-40 bg-white dark:bg-slate-800 p-2 rounded-xl flex items-center justify-center border border-slate-200 dark:border-slate-700">

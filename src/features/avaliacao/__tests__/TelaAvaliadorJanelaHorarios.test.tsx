@@ -398,5 +398,43 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
         );
       });
     });
+
+    it('sem internet, avisa que a avaliação NÃO foi enviada, mantém o projeto e não guarda notas no navegador', async () => {
+      // Arrange
+      const idProjeto = 'p0000000-0000-0000-0000-000000000077';
+      localStorage.clear();
+      vi.mocked(supabase.rpc).mockReset().mockResolvedValue({ data: null, error: null } as any);
+      vi.mocked(supabase.from).mockImplementation((tabela: string) => {
+        if (tabela === 'eventos') {
+          return criarQueryChain({ data: { id_evento: eventoIdTeste, data_evento: '2020-01-01', horario_inicio: '08:00', horario_fim: '18:00', sistema_liberado: true }, error: null });
+        }
+        if (tabela === 'locks_ativos') return criarQueryChain({ data: { id_projeto: idProjeto }, error: null });
+        if (tabela === 'projetos') {
+          return criarQueryChain({ data: { id_projeto: idProjeto, titulo: 'Projeto Sem Rede', estande: 'EST-7', id_questionario_fixado: 'quest-1' }, error: null });
+        }
+        if (tabela === 'questionarios') {
+          return criarQueryChain({ data: [{ id_questionario: 'quest-1', titulo: 'Q', escala_minima: 1, escala_maxima: 5 }], error: null });
+        }
+        if (tabela === 'perguntas_questionario') {
+          return criarQueryChain({ data: [{ id_pergunta: 'p-1', titulo_criterio: 'Critério 1', ordem: 1 }], error: null });
+        }
+        return criarQueryChain({ data: [], error: null });
+      });
+      render(<TelaAvaliador id_usuario_logado={usuarioAvaliadorId} id_evento_ativo={eventoIdTeste} />);
+      expect(await screen.findByText('Projeto Sem Rede')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Presente/i }));
+      const btnSalvar = await screen.findByRole('button', { name: /Salvar Nota e Puxar Próximo/i });
+      const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+
+      // Act
+      fireEvent.click(btnSalvar);
+
+      // Assert
+      expect(await screen.findByText(/não foi enviada/i)).toBeInTheDocument();
+      expect(screen.getByText('Projeto Sem Rede')).toBeInTheDocument();
+      expect(supabase.rpc).not.toHaveBeenCalledWith('fn_enviar_avaliacao', expect.anything());
+      expect(localStorage.getItem('avaliacoes_offline_pendentes')).toBeNull();
+      online.mockRestore();
+    });
   });
 });

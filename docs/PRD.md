@@ -32,7 +32,7 @@ O sistema é uma SPA (React 19 + Vite + Tailwind) sobre o Supabase (PostgreSQL +
 
 | Persona | Papel (`usuarios.papel`) | Tela | Autenticação | O que pode fazer |
 |---|---|---|---|---|
-| **Coordenação / Administrador** | `ADMIN` (`SUPERADMIN`) | `TelaAdmin` | Supabase Auth (e-mail + senha, recuperação de senha, OAuth) | Tudo: configurar o evento, cadastros e importações, atribuição forçada, quarentena, desbloqueios, exclusão de avaliações, relatórios, reset global, gestão de administradores |
+| **Coordenação / Administrador** | `ADMIN` (`SUPERADMIN`) | `TelaAdmin` | Supabase Auth (e-mail + senha, recuperação de senha, segundo fator opcional) | Tudo: configurar o evento, cadastros e importações, atribuição forçada, quarentena, desbloqueios, exclusão de avaliações, relatórios, reset global, gestão de administradores |
 | **Staff / Recepção** | `STAFF`, `MONITOR` | `TelaStaff` | Somente e-mail (role `anon`) | Check-in de expositores, credenciar/bloquear avaliadores, editar dados e bloqueios de modalidade/áreas, divulgar QR Code de autocadastro. **Não exclui registros** |
 | **Avaliador** | `AVALIADOR` | `TelaAvaliador` | Somente e-mail (role `anon`) | Receber projeto sorteado ou direcionado, marcar presença/ausência do expositor, avaliar por critérios, redigir parecer |
 | **Avaliador não cadastrado** | — | `TelaAutocadastroAvaliador` (via QR Code) | Sem login | Cadastrar-se como avaliador pendente de credenciamento |
@@ -48,7 +48,7 @@ O sistema é uma SPA (React 19 + Vite + Tailwind) sobre o Supabase (PostgreSQL +
 - Vários eventos ativos ao mesmo tempo (o sistema trabalha com um "evento ativo").
 - Recursos de IA: `GEMINI_API_KEY` e `@google/genai` estão declarados, mas não são usados em `src/`.
 - Emissão de certificados e notificações por e-mail aos avaliadores.
-- App nativo ou modo offline completo (há apenas fallbacks em `localStorage`).
+- App nativo ou modo offline: sem internet, a avaliação não é enviada nem guardada; as notas ficam na tela para reenviar.
 
 ---
 
@@ -180,7 +180,7 @@ usuarios ─┬─ avaliador_areas / avaliador_modalidades_bloqueadas (por event
 
 **Views:** `view_ranking_top3`, `view_relatorio_admin`, `view_relatorio_projetos`, `view_relatorio_avaliadores`, `view_relatorio_ausencias`, `view_projetos_quarentena`, `view_projetos_pendentes_avaliacao`, `view_avaliadores_credenciados`.
 
-**Integrações externas:** Supabase (BD, Auth, PostgREST) e `api.qrserver.com` (geração da imagem do QR Code).
+**Integrações externas:** Supabase (BD, Auth, PostgREST). O QR Code é gerado no navegador.
 
 ## 9. Fluxos principais
 
@@ -225,7 +225,7 @@ usuarios ─┬─ avaliador_areas / avaliador_modalidades_bloqueadas (por event
 | L4 | Views citam `historico_sorteios`, mas nenhuma migration cria essa tabela | O relatório de ausências pode falhar ou depender do fallback | Criar a tabela ou remover a referência; usar `historico_impedimentos` de forma consistente | Média |
 | L5 | A interface fala em "Importar (.xls/.xlsx/.csv)", mas `.xls` é recusado | Confusão do usuário | Ajustar os rótulos para `.xlsx/.csv` | Baixa |
 | L6 | `@google/genai`, `express`, `dotenv` e `GEMINI_API_KEY` sem uso | Superfície de ataque e dependências desnecessárias | Remover, ou definir um caso de uso de IA (ex.: resumo de pareceres) | Baixa |
-| L7 | QR Code gerado por `api.qrserver.com` | Dependência externa no dia do evento; o link (com o id do evento) é enviado a terceiros | Gerar o QR Code localmente (biblioteca JS) | Média |
+| L7 | ~~QR Code gerado por `api.qrserver.com`~~ **Resolvido em 2026-10-31**: gerado no navegador (`qrcode.react`) | Dependência externa no dia do evento; o link (com o id do evento) é enviado a terceiros | Gerar o QR Code localmente (biblioteca JS) | Média |
 | L8 | Componentes muito grandes (`RelatoriosAdmin` com 3,2 mil linhas, `GestorAvaliadores` 2,5 mil, `GestorProjetos` 2,1 mil) | Manutenção cara e regressões | Extrair hooks e serviços de dados (o `schema.sql` duplicado foi resolvido em 2026-10-27) | Média |
 | L9 | ~~Documentação desatualizada (ANTIGRAVITY.MD)~~ **Resolvido em 2026-10-27**: conteúdo revisado e dividido em `docs/` por assunto. `supabase/schema.sql` atualizado com as `20261026*` | Decisões tomadas com base em informação errada | — | Baixa |
 | L10 | Sem multi-evento simultâneo nem histórico consultável após o reset global | Perda de dados históricos se o reset for usado no lugar do arquivamento | Arquivar o evento (flag `is_ativo`) em vez de apagar; exportação completa antes do reset | Média |

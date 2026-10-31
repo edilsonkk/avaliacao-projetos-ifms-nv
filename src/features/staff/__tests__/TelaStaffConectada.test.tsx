@@ -80,6 +80,20 @@ describe('TelaStaff conectada ao banco', () => {
     expect(supabase.rpc).toHaveBeenCalledWith('fn_situacao_vinculos', { p_id_evento: ID_EVENTO });
   });
 
+  it('gera o QR Code do autocadastro no próprio navegador, sem enviar o link a serviço de terceiros', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    render(<TelaStaff />);
+
+    // Act
+    await user.click(await screen.findByRole('button', { name: /credenciar avaliadores/i }));
+
+    // Assert
+    const qr = await screen.findByRole('img', { name: /qr code para autocadastro/i });
+    expect(qr.tagName.toLowerCase()).toBe('svg');
+    expect(document.querySelector('img[src*="qrserver"]')).toBeNull();
+  });
+
   it('sem evento ativo no banco deve avisar e não carregar dados de outro evento, nem do guardado no navegador', async () => {
     // Arrange (beforeEach guardou um evento no navegador; o banco não tem evento ativo)
     const eventoAtivo = dados.eventos;
