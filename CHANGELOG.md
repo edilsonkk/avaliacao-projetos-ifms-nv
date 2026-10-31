@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.8.0...v0.8.1) (2026-10-31)
+
+
+### Correções
+
+* **seguranca:** cabeçalhos de segurança no site, QR Code sem terceiros e avaliação sem internet não se perde em silêncio ([#68](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/68)) ([e92c23e](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/e92c23e97ed87ef6e843a6ec59cde2d12cbc4d1a))
+
 ## [0.8.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.7.3...v0.8.0) (2026-10-31)
 
 
