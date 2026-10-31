@@ -12,8 +12,12 @@ Código: `src/features/staff/` (`TelaStaff`, `GestorStaff`), `src/features/avali
   1. o avaliador abre a aba Avaliador, e o celular mostra um código curto;
   2. o Staff abre **Aparelho** na linha do avaliador, digita o código e clica em **Parear**. O avaliador é credenciado
      junto, e a tela do celular abre sozinha;
-  3. alternativa sem o celular no balcão: o Staff clica em **Gerar código de acesso** e passa o código ao avaliador,
-     que digita e-mail e código no celular. O código aparece uma única vez, expira e tem tentativas limitadas.
+  3. alternativa sem o celular no balcão: o Staff clica em **Gerar código de acesso** (o avaliador é credenciado
+     junto) e passa o código ao avaliador, que digita e-mail e código no celular. O código aparece uma única vez,
+     expira e tem tentativas limitadas.
+- O celular só funciona enquanto o avaliador estiver **credenciado no evento ativo**: **Bloquear** corta o acesso na
+  hora (a tela do celular volta ao login) e **Credenciar** reativa o mesmo aparelho. Em um evento novo, o celular é
+  vinculado de novo.
 - Validade, tamanho dos códigos, tentativas e formas liberadas ficam nas Configurações do evento (engrenagem),
   seção **Acesso dos avaliadores**.
 - Celular perdido ou trocado: **Aparelho → Desvincular aparelho** e parear o novo.

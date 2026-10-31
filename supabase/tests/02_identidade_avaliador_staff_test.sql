@@ -128,9 +128,9 @@ SELECT is(public.avaliador_atual(), NULL, 'Staff desvincula o aparelho do Avalia
 -- ---------------------------------------------------------------------------
 SELECT pg_temp.como(NULL);
 SELECT is(public.fn_autocadastro_avaliador('e0000000-0000-0000-0000-000000000001', 'Pessoa Nova', 'nova@teste.local', NULL, 'Instituto Ação Teste', NULL)->>'situacao',
-  'cadastrado', 'Autocadastro cria avaliador novo');
+  'recebido', 'Autocadastro cria avaliador novo (resposta neutra; o cadastro é conferido abaixo)');
 SELECT is(public.fn_autocadastro_avaliador('e0000000-0000-0000-0000-000000000001', 'Nome Trocado', 'aval1@teste.local', NULL, NULL, NULL)->>'situacao',
-  'ja_cadastrado', 'Autocadastro com e-mail existente não recadastra');
+  'recebido', 'E-mail existente: mesma resposta de cadastro novo (não revela quem tem conta) e não recadastra');
 SELECT throws_ok($$ SELECT public.fn_autocadastro_avaliador('e0000000-0000-0000-0000-000000000001', 'X', 'nao-e-email', NULL, NULL, NULL) $$,
   'P0001', NULL, 'Autocadastro valida nome e e-mail');
 RESET ROLE;
