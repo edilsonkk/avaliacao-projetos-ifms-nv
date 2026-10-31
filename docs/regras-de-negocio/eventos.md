@@ -48,6 +48,9 @@ Criação de evento: se o PostgREST rejeitar colunas novas por schema cache, o i
 ## Janela de avaliação
 
 Avaliações só acontecem dentro de `data_evento` + `horario_inicio`…`horario_fim` e com `sistema_liberado = true`.
+O banco confere a mesma regra no sorteio e na fila (`fn_janela_avaliacao_aberta`, no fuso `America/Campo_Grande`):
+pela API não dá para sortear fora da janela. Quem já está com o projeto pode enviar depois do horário, mas não com o
+sistema pausado.
 
 Função pura `validarJanelaAvaliacao(info, dataHoraReferencia)` (`TelaAvaliador.tsx`):
 

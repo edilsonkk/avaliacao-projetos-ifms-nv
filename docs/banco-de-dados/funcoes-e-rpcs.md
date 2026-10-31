@@ -48,6 +48,7 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `fn_registrar_impedimento(id_projeto, tipo)` | Avaliador | Ausência ou conflito no projeto em que está (com trava); libera a trava |
 | `fn_politica_seguranca()` | Logados | MFA do Admin exigido? e minutos sem uso para encerrar a sessão de Admin/Staff |
 | `admin_salvar_configuracoes_seguranca(exigir_mfa, minutos)` | Admin | Grava a política; mudar o MFA exige sessão com segundo fator (`aal2`) |
+| `fn_janela_avaliacao_aberta(id_evento)` | Logados | Janela do evento aberta agora (data, horário no fuso de MS e sistema liberado); usada pelo sorteio e pela fila |
 | `fn_feira_concluida(id_evento)` | Avaliador/Staff/Admin | Avaliação finalizada: há projetos presentes (check-in) na competição e todos atingiram a cota (mesma regra de `avaliacao_finalizada` do Telão) |
 | `fn_autocadastro_avaliador(...)` | Público | Autocadastro pelo QR; nunca altera cadastro existente |
 | `fn_telao_resumo(id_evento)` | Público | Totais do Telão (evento ativo se nulo): nome/data/horário do evento, projetos presentes, meta pela cota de cada projeto, avaliações na meta, travas (todas e as que cabem na meta), avaliadores credenciados (só papel Avaliador), quarentena pendente, `avaliacao_finalizada`; sem nomes de pessoas, títulos nem notas |

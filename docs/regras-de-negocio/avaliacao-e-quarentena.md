@@ -30,7 +30,11 @@ projeto. Esse projeto não volta a ser sorteado para o mesmo avaliador.
 - Calculada **no servidor** por `fn_enviar_avaliacao` (média simples das notas dos critérios). O valor enviado pelo
   cliente é ignorado.
 - Cada nota deve estar dentro de `escala_minima`–`escala_maxima` do questionário.
-- O projeto usa o questionário em `projetos.id_questionario_fixado`, fixado na primeira avaliação, se ainda não houver.
+- O banco exige **todas as perguntas do questionário, uma vez cada, com nota**: responder só algumas, repetir uma
+  pergunta ou usar perguntas de outro questionário é recusado. O questionário precisa ser do evento do projeto.
+- O projeto usa o questionário em `projetos.id_questionario_fixado`, fixado na primeira avaliação, se ainda não houver;
+  depois disso, outro questionário é recusado.
+- Parecer: até 5000 caracteres.
 
 ## Gestor de Questionários (Admin)
 

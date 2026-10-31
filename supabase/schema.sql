@@ -1342,6 +1342,10 @@ BEGIN
   IF v_usuario IS NULL THEN
     RAISE EXCEPTION 'Acesso negado: este aparelho não está vinculado a um avaliador.' USING ERRCODE = '42501';
   END IF;
+  -- Fila só dentro da janela do evento (antes era conferida só na tela)
+  IF NOT coalesce(public.fn_janela_avaliacao_aberta(public.evento_ativo_id()), false) THEN
+    RAISE EXCEPTION 'Fora do horário de avaliação ou sistema pausado pela coordenação.' USING ERRCODE = 'P0001';
+  END IF;
 
   -- Mesma regra do sorteio: a trava anterior do próprio avaliador é descartada
   DELETE FROM public.locks_ativos WHERE id_usuario = v_usuario;
@@ -1393,6 +1397,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "u
     SET "search_path" TO 'public', 'pg_temp'
     AS $_$
 DECLARE
+  v_criou_inst boolean := false;
   v_evento   uuid := coalesce(p_id_evento, public.evento_ativo_id());
   v_nome     text := btrim(regexp_replace(coalesce(p_nome, ''), '\s+', ' ', 'g'));
   v_email    text := lower(btrim(coalesce(p_email, '')));
@@ -1410,6 +1415,13 @@ BEGIN
     RAISE EXCEPTION 'E-mail inválido.';
   END IF;
 
+  -- Limite contra cadastro em massa (o endpoint é público): no máximo 30 autocadastros por minuto no sistema
+  PERFORM pg_advisory_xact_lock(hashtext('fn_autocadastro_avaliador'));
+  DELETE FROM public.registro_autocadastro WHERE criado_em < now() - interval '1 day';
+  IF (SELECT count(*) FROM public.registro_autocadastro WHERE criado_em > now() - interval '1 minute') >= 30 THEN
+    RAISE EXCEPTION 'Muitos cadastros neste momento. Aguarde um minuto e tente de novo.' USING ERRCODE = 'P0001';
+  END IF;
+
   SELECT * INTO v_usuario FROM public.usuarios WHERE lower(email) = v_email LIMIT 1;
   IF v_usuario.id_usuario IS NOT NULL THEN
     -- Já existe: não altera nada e responde igual a um cadastro novo (não revela quem tem conta). Só garante a inscrição no evento, sem
@@ -1419,6 +1431,7 @@ BEGIN
       VALUES (v_usuario.id_usuario, v_evento, false)
       ON CONFLICT (id_usuario, id_evento) DO NOTHING;
     END IF;
+    INSERT INTO public.registro_autocadastro (id_evento, criou_instituicao) VALUES (v_evento, false);
     RETURN jsonb_build_object('ok', true, 'situacao', 'recebido');
   END IF;
 
@@ -1429,10 +1442,14 @@ BEGIN
   IF v_inst IS NULL AND length(v_inst_nova) BETWEEN 2 AND 200 THEN
     SELECT id_instituicao INTO v_inst FROM public.instituicoes
     WHERE id_evento = v_evento AND nome_normalizado = public.fn_normalizar_nome(v_inst_nova);
-    IF v_inst IS NULL THEN
+    -- Instituição nova digitada no autocadastro: no máximo 20 por hora (senão o cadastro segue sem instituição
+    -- e o Staff ajusta), para ninguém encher as listas com nomes inventados
+    IF v_inst IS NULL AND (SELECT count(*) FROM public.registro_autocadastro
+                           WHERE criou_instituicao AND criado_em > now() - interval '1 hour') < 20 THEN
       INSERT INTO public.instituicoes (id_evento, nome_exibicao, nome_normalizado)
       VALUES (v_evento, v_inst_nova, public.fn_normalizar_nome(v_inst_nova))
       RETURNING id_instituicao INTO v_inst;
+      v_criou_inst := true;
     END IF;
   END IF;
 
@@ -1449,6 +1466,7 @@ BEGIN
     ON CONFLICT DO NOTHING;
   END IF;
 
+  INSERT INTO public.registro_autocadastro (id_evento, criou_instituicao) VALUES (v_evento, v_criou_inst);
   RETURN jsonb_build_object('ok', true, 'situacao', 'recebido');
 END;
 $_$;
@@ -1546,6 +1564,12 @@ DECLARE
   v_tinha_trava           boolean;
   v_cota_padrao           integer;
   v_cota_projeto          integer;
+  v_quest_fixado          uuid;
+  v_quest_evento          uuid;
+  v_total_perguntas       integer;
+  v_distintas             integer;
+  v_alheias               integer;
+  v_nulas                 integer;
   v_sistema_liberado      boolean;
   v_escala_min            numeric(5,2);
   v_escala_max            numeric(5,2);
@@ -1578,9 +1602,9 @@ BEGIN
   SELECT p.id_evento, p.id_instituicao, p.id_modalidade,
          COALESCE(p.is_check_in_realizado, false),
          COALESCE(p.is_fora_da_competicao, false),
-         p.cota_avaliacoes_customizada
+         p.cota_avaliacoes_customizada, p.id_questionario_fixado
     INTO v_id_evento, v_inst_projeto, v_modalidade_projeto,
-         v_check_in, v_fora_competicao, v_cota_projeto
+         v_check_in, v_fora_competicao, v_cota_projeto, v_quest_fixado
   FROM public.projetos p
   WHERE p.id_projeto = p_id_projeto;
 
@@ -1649,12 +1673,41 @@ BEGIN
     RAISE EXCEPTION 'Sistema de avaliação bloqueado pela coordenação.' USING ERRCODE = '42501';
   END IF;
 
-  -- 8. FAIXA DE NOTA conforme o questionário.
-  SELECT COALESCE(q.escala_minima, 0), COALESCE(q.escala_maxima, 10)
-    INTO v_escala_min, v_escala_max
+  -- 8. QUESTIONÁRIO DO PROJETO: do mesmo evento e, se já fixado, o mesmo.
+  IF p_id_questionario IS NULL THEN
+    RAISE EXCEPTION 'Escolha o questionário da avaliação.' USING ERRCODE = '22023';
+  END IF;
+  SELECT COALESCE(q.escala_minima, 0), COALESCE(q.escala_maxima, 10), q.id_evento
+    INTO v_escala_min, v_escala_max, v_quest_evento
   FROM public.questionarios q WHERE q.id_questionario = p_id_questionario;
-  IF NOT FOUND THEN
-    v_escala_min := 0; v_escala_max := 10;
+  IF NOT FOUND OR v_quest_evento IS DISTINCT FROM v_id_evento THEN
+    RAISE EXCEPTION 'Questionário não pertence ao evento do projeto.' USING ERRCODE = '42501';
+  END IF;
+  IF v_quest_fixado IS NOT NULL AND v_quest_fixado <> p_id_questionario THEN
+    RAISE EXCEPTION 'Este projeto já é avaliado com outro questionário.' USING ERRCODE = '42501';
+  END IF;
+  IF length(coalesce(p_parecer, '')) > 5000 THEN
+    RAISE EXCEPTION 'Parecer muito longo (máximo de 5000 caracteres).' USING ERRCODE = '22001';
+  END IF;
+
+  -- 8.1 RESPOSTAS: todas as perguntas do questionário, uma vez cada, com nota.
+  --     (antes, a média de qualquer lista enviada: responder só a pergunta conveniente ou repeti-la mudava a nota)
+  IF jsonb_typeof(p_respostas) IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'Respostas em formato inválido.' USING ERRCODE = '22023';
+  END IF;
+  SELECT count(*) INTO v_total_perguntas FROM public.perguntas_questionario WHERE id_questionario = p_id_questionario;
+  SELECT count(*),
+         count(DISTINCT r->>'id_pergunta'),
+         count(*) FILTER (WHERE pq.id_pergunta IS NULL),
+         count(*) FILTER (WHERE jsonb_typeof(r->'nota') IS DISTINCT FROM 'number')
+    INTO v_qtd_respostas, v_distintas, v_alheias, v_nulas
+  FROM jsonb_array_elements(p_respostas) AS r
+  LEFT JOIN public.perguntas_questionario pq
+    ON pq.id_pergunta::text = r->>'id_pergunta' AND pq.id_questionario = p_id_questionario;
+  IF v_total_perguntas = 0 OR v_qtd_respostas <> v_total_perguntas OR v_distintas <> v_qtd_respostas
+     OR v_alheias > 0 OR v_nulas > 0 THEN
+    RAISE EXCEPTION 'Responda todas as % perguntas do questionário, uma vez cada, com uma nota.', v_total_perguntas
+      USING ERRCODE = '22023';
   END IF;
 
   SELECT COUNT(*),
@@ -1835,6 +1888,23 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_gerar_codigo_acesso"("p_id_usuario" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_janela_avaliacao_aberta"("p_id_evento" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  -- Mesma regra da tela do avaliador (validarJanelaAvaliacao), no fuso de Mato Grosso do Sul
+  SELECT coalesce(e.sistema_liberado, true)
+     AND e.data_evento IS NOT NULL AND e.horario_inicio IS NOT NULL AND e.horario_fim IS NOT NULL
+     AND (now() AT TIME ZONE 'America/Campo_Grande')
+         BETWEEN (e.data_evento + e.horario_inicio) AND (e.data_evento + e.horario_fim)
+  FROM public.eventos e
+  WHERE e.id_evento = p_id_evento;
+$$;
+
+
+ALTER FUNCTION "public"."fn_janela_avaliacao_aberta"("p_id_evento" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_meu_perfil"() RETURNS "jsonb"
@@ -2840,6 +2910,10 @@ BEGIN
   IF NOT public.is_admin() AND public.avaliador_atual() IS DISTINCT FROM p_id_usuario THEN
     RAISE EXCEPTION 'Acesso negado: este aparelho não está vinculado a este avaliador.' USING ERRCODE = '42501';
   END IF;
+  -- Sorteio só dentro da janela do evento (antes era conferida só na tela)
+  IF NOT coalesce(public.fn_janela_avaliacao_aberta(p_id_evento), false) THEN
+    RAISE EXCEPTION 'Fora do horário de avaliação ou sistema pausado pela coordenação.' USING ERRCODE = 'P0001';
+  END IF;
   -- 1. Limpa locks expirados do sistema
   DELETE FROM public.locks_ativos 
   WHERE expira_em < now();
@@ -3299,6 +3373,28 @@ CREATE TABLE IF NOT EXISTS "public"."questionarios" (
 ALTER TABLE "public"."questionarios" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."registro_autocadastro" (
+    "id" bigint NOT NULL,
+    "id_evento" "uuid",
+    "criado_em" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "criou_instituicao" boolean DEFAULT false NOT NULL
+);
+
+
+ALTER TABLE "public"."registro_autocadastro" OWNER TO "postgres";
+
+
+ALTER TABLE "public"."registro_autocadastro" ALTER COLUMN "id" ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME "public"."registro_autocadastro_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."respostas_avaliacao" (
     "id_resposta" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "id_avaliacao" "uuid" NOT NULL,
@@ -3653,6 +3749,11 @@ ALTER TABLE ONLY "public"."questionarios"
 
 
 
+ALTER TABLE ONLY "public"."registro_autocadastro"
+    ADD CONSTRAINT "registro_autocadastro_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."respostas_avaliacao"
     ADD CONSTRAINT "respostas_avaliacao_pkey" PRIMARY KEY ("id_resposta");
 
@@ -3774,6 +3875,10 @@ CREATE INDEX "idx_projetos_evento" ON "public"."projetos" USING "btree" ("id_eve
 
 
 CREATE INDEX "idx_projetos_modalidade" ON "public"."projetos" USING "btree" ("id_modalidade");
+
+
+
+CREATE INDEX "idx_registro_autocadastro_criado_em" ON "public"."registro_autocadastro" USING "btree" ("criado_em");
 
 
 
@@ -4051,6 +4156,9 @@ ALTER TABLE "public"."projetos" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."questionarios" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."registro_autocadastro" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."respostas_avaliacao" ENABLE ROW LEVEL SECURITY;
@@ -4495,6 +4603,12 @@ GRANT ALL ON FUNCTION "public"."fn_gerar_codigo_acesso"("p_id_usuario" "uuid") T
 
 
 
+REVOKE ALL ON FUNCTION "public"."fn_janela_avaliacao_aberta"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_janela_avaliacao_aberta"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_janela_avaliacao_aberta"("p_id_evento" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_meu_perfil"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_meu_perfil"() TO "anon";
 GRANT ALL ON FUNCTION "public"."fn_meu_perfil"() TO "authenticated";
@@ -4762,6 +4876,16 @@ GRANT ALL ON TABLE "public"."projetos" TO "service_role";
 GRANT SELECT,MAINTAIN ON TABLE "public"."questionarios" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."questionarios" TO "authenticated";
 GRANT ALL ON TABLE "public"."questionarios" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."registro_autocadastro" TO "service_role";
+
+
+
+GRANT ALL ON SEQUENCE "public"."registro_autocadastro_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."registro_autocadastro_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."registro_autocadastro_id_seq" TO "service_role";
 
 
 

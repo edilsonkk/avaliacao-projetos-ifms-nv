@@ -13,8 +13,10 @@ INSERT INTO auth.users (id, email, is_anonymous, email_confirmed_at) VALUES
   ('d1000000-0000-0000-0000-0000000000ff', NULL, true, NULL),
   ('d1000000-0000-0000-0000-000000000051', 'staff3@teste.local', false, now());
 
-INSERT INTO public.eventos (id_evento, nome_evento, is_ativo, created_at, cota_avaliacoes_padrao)
-VALUES ('e1000000-0000-0000-0000-000000000001', 'Evento Teste RLS', true, now() + interval '2 days', 3);
+-- Janela de avaliação aberta agora (o sorteio confere data e horário no fuso de MS)
+INSERT INTO public.eventos (id_evento, nome_evento, is_ativo, created_at, cota_avaliacoes_padrao, data_evento, horario_inicio, horario_fim)
+VALUES ('e1000000-0000-0000-0000-000000000001', 'Evento Teste RLS', true, now() + interval '2 days', 3,
+        (now() AT TIME ZONE 'America/Campo_Grande')::date, '00:00', '23:59:59');
 INSERT INTO public.instituicoes (id_instituicao, id_evento, nome_exibicao, nome_normalizado) VALUES
   ('11000000-0000-0000-0000-000000000001', 'e1000000-0000-0000-0000-000000000001', 'Escola A', 'escola a'),
   ('11000000-0000-0000-0000-000000000002', 'e1000000-0000-0000-0000-000000000001', 'Escola B', 'escola b');

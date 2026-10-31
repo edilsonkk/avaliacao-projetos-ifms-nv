@@ -8,7 +8,7 @@ Cada achado vira um teste que precisa falhar sem a correção. Regras de acesso 
 | 0 | Modelo de ameaças (este documento) | concluída |
 | 1 | Banco e API: matriz papel × objeto | concluída (migration `20261031010000`) |
 | 2 | Autenticação e sessão (login anônimo, código de acesso, pareamento, senhas, limites) | concluída (migration `20261031020000`) |
-| 3 | Regras de negócio e abuso (sorteio, cota, autocadastro, Telão público) | pendente |
+| 3 | Regras de negócio e abuso (sorteio, cota, autocadastro, Telão público) | concluída (migration `20261031040000`) |
 | 4 | Front-end (XSS, cabeçalhos no Firebase, dados no navegador) | pendente |
 | 5 | Dependências, CI e configuração (cadeia de fornecimento, segredos, painel do Supabase) | pendente |
 
@@ -104,4 +104,24 @@ Recomendações decididas pelo dono do projeto e implementadas (`20261031030000_
 - **Expiração da sessão de Admin/Staff por inatividade** (ASVS 7.3), aplicada no navegador.
 
 Pendente: **proteção contra senhas vazadas** (HaveIBeenPwned) no Auth, recurso de plano pago.
+
+## Etapa 3: regras de negócio e abuso
+
+Método: leitura das funções de sorteio, fila, envio de nota, autocadastro e Telão; prova de cada abuso com um
+avaliador real no banco local (transação desfeita) e medição de custo do resumo público do Telão.
+
+Confirmado como **protegido**: cota com o projeto reservado (sorteios simultâneos, `20261030130000`); trava, fila e
+impedimentos só por função (etapa 1); nota calculada no servidor, dentro da escala; avaliação única por avaliador e
+projeto; quarentena automática por divergência; o resumo público do Telão custa ~3 ms e só devolve totais.
+
+Achados (corrigidos em `20261031040000_seguranca_regras_negocio.sql`, testes em `22_seguranca_regras_negocio_test.sql`):
+
+| # | Gravidade | Achado | Referência | Correção |
+|---|---|---|---|---|
+| C1 | Alta | A nota era a média de qualquer lista enviada: responder só 1 de 5 perguntas com nota máxima, repetir uma pergunta, usar perguntas ou questionário de outro evento, ou nenhum questionário. Na prova, as duas manobras gravaram **nota 10** | CWE-20, CWE-840, API6 | Questionário do evento (e o fixado, se houver); todas as perguntas, uma vez cada, com nota; parecer ≤ 5000 |
+| C2 | Média | Data, horário e "sistema liberado" só eram conferidos na tela: pela API dava para sortear fora da janela ou com o sistema pausado | CWE-841, A04 | `fn_janela_avaliacao_aberta` no sorteio e na fila |
+| C3 | Média | Autocadastro público sem limite: milhares de avaliadores pendentes e instituições com qualquer nome | CWE-770, A04 | 30 autocadastros/min e 20 instituições novas/hora |
+
+Recomendação que depende de decisão: **CAPTCHA** (Cloudflare Turnstile, gratuito) no autocadastro, para barrar robôs
+sem depender do limite global (que um robô pode esgotar por alguns minutos).
 
