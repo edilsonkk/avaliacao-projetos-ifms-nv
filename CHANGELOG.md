@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.8.2...v0.9.0) (2026-10-31)
+
+
+### Funcionalidades
+
+* **questionarios:** questionários prontos, reaproveitamento, nota com pesos e desempate ([#78](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/78)) ([249b0f0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/249b0f06edec0ad658ddc43160ff8382eaab4be5))
+
 ## [0.8.2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.8.1...v0.8.2) (2026-10-31)
 
 
