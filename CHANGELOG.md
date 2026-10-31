@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.10...v0.7.0) (2026-10-31)
+
+
+### Funcionalidades
+
+* **telao:** aviso de avaliação finalizada no Telão e no painel, com a mesma regra da tela do avaliador ([#55](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/55)) ([226a67d](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/226a67ddd47d4bf199c15bd305f52543e56d9bea))
+
+
+### Correções
+
+* **sorteio:** sorteios simultâneos não entregam o mesmo projeto nem estouram a cota ([#57](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/57)) ([12fabb2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/12fabb2d0e0d6d77f6e0526e27575e9267a8fdef))
+
 ## [0.6.10](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.9...v0.6.10) (2026-10-30)
 
 
