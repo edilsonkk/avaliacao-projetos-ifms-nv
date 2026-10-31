@@ -10,8 +10,10 @@ INSERT INTO auth.users (id, email, is_anonymous, email_confirmed_at) VALUES
   ('d1900000-0000-0000-0000-0000000000a1', NULL, true, NULL),
   ('d1900000-0000-0000-0000-0000000000ff', NULL, true, NULL),
   ('d1900000-0000-0000-0000-000000000051', 'staff19@teste.local', false, now());
-INSERT INTO public.eventos (id_evento, nome_evento, is_ativo, cota_avaliacoes_padrao)
-VALUES ('e1900000-0000-0000-0000-000000000001', 'Evento Segurança', true, 2);
+-- Janela de avaliação aberta agora (a fila confere data e horário no fuso de MS)
+INSERT INTO public.eventos (id_evento, nome_evento, is_ativo, cota_avaliacoes_padrao, data_evento, horario_inicio, horario_fim)
+VALUES ('e1900000-0000-0000-0000-000000000001', 'Evento Segurança', true, 2,
+        (now() AT TIME ZONE 'America/Campo_Grande')::date, '00:00', '23:59:59');
 INSERT INTO public.modalidades (id_modalidade, id_evento, nome_modalidade)
 VALUES ('b1900000-0000-0000-0000-000000000001', 'e1900000-0000-0000-0000-000000000001', 'Bloqueada');
 INSERT INTO public.projetos (id_projeto, codigo_projeto, titulo, id_evento, id_modalidade, is_check_in_realizado, is_fora_da_competicao) VALUES

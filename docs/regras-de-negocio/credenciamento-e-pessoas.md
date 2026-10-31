@@ -90,6 +90,9 @@ O botão de navegação para o **Telão** fica oculto para o Staff (só o Admin 
   interesse.
 - O avaliador fica **pendente de credenciamento presencial** e é orientado a procurar o Staff.
 - O cadastro é idempotente por e-mail.
+- Limites contra cadastro em massa (o endereço é público): até **30 autocadastros por minuto** no sistema e **20
+  instituições novas por hora** digitadas no autocadastro. Acima disso, o cadastro segue **sem** a instituição (o Staff
+  ajusta) ou, no caso do limite por minuto, pede para tentar de novo em instantes.
 
 ## Contagens
 
