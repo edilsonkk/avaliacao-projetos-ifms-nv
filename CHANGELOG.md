@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.3](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.7.2...v0.7.3) (2026-10-31)
+
+
+### Correções
+
+* **seguranca:** celular do avaliador só vale credenciado no evento ativo; login por código sem vazar e-mails ([#62](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/62)) ([54a3d8e](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/54a3d8eb72117b968a620f41f21e69248faf4040))
+
 ## [0.7.2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.7.1...v0.7.2) (2026-10-31)
 
 
