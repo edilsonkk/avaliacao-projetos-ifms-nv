@@ -1190,6 +1190,12 @@ CREATE OR REPLACE FUNCTION "public"."avaliador_atual"() RETURNS "uuid"
   JOIN public.usuarios u ON u.id_usuario = d.id_usuario
   WHERE d.auth_uid = auth.uid()
     AND d.revogado_em IS NULL
+    -- Só vale no evento ativo e enquanto o Staff mantiver o credenciamento
+    AND d.id_evento = public.evento_ativo_id()
+    AND EXISTS (
+      SELECT 1 FROM public.avaliadores_evento ae
+      WHERE ae.id_usuario = d.id_usuario AND ae.id_evento = d.id_evento AND ae.is_credenciado
+    )
     AND upper(u.papel::text) = 'AVALIADOR'
   LIMIT 1;
 $$;
@@ -1369,14 +1375,14 @@ BEGIN
 
   SELECT * INTO v_usuario FROM public.usuarios WHERE lower(email) = v_email LIMIT 1;
   IF v_usuario.id_usuario IS NOT NULL THEN
-    -- Já existe: não altera nada. Só garante a inscrição no evento, sem
+    -- Já existe: não altera nada e responde igual a um cadastro novo (não revela quem tem conta). Só garante a inscrição no evento, sem
     -- mudar credenciamento nem instituição de quem já está inscrito.
     IF upper(v_usuario.papel::text) = 'AVALIADOR' THEN
       INSERT INTO public.avaliadores_evento (id_usuario, id_evento, is_credenciado)
       VALUES (v_usuario.id_usuario, v_evento, false)
       ON CONFLICT (id_usuario, id_evento) DO NOTHING;
     END IF;
-    RETURN jsonb_build_object('ok', true, 'situacao', 'ja_cadastrado');
+    RETURN jsonb_build_object('ok', true, 'situacao', 'recebido');
   END IF;
 
   -- Instituição: existente do evento ou nova (a chave é calculada pelo trigger)
@@ -1406,7 +1412,7 @@ BEGIN
     ON CONFLICT DO NOTHING;
   END IF;
 
-  RETURN jsonb_build_object('ok', true, 'situacao', 'cadastrado');
+  RETURN jsonb_build_object('ok', true, 'situacao', 'recebido');
 END;
 $_$;
 
@@ -1781,6 +1787,10 @@ BEGIN
   INSERT INTO public.codigos_acesso (id_usuario, id_evento, codigo_hash, gerado_por, expira_em, max_tentativas)
   VALUES (p_id_usuario, v_evento.id_evento, extensions.crypt(v_codigo, extensions.gen_salt('bf', 8)),
           auth.uid(), v_expira, v_evento.max_tentativas_codigo);
+
+  -- Gerar o código é o Staff liberando o avaliador (como no pareamento): o celular só vale credenciado
+  UPDATE public.avaliadores_evento SET is_credenciado = true
+  WHERE id_usuario = p_id_usuario AND id_evento = v_evento.id_evento;
 
   RETURN jsonb_build_object('codigo', v_codigo, 'expira_em', v_expira);
 END;
@@ -2444,12 +2454,15 @@ ALTER FUNCTION "public"."fn_vagas_projeto"("p_id_projeto" "uuid") OWNER TO "post
 CREATE OR REPLACE FUNCTION "public"."fn_vincular_com_codigo"("p_email" "text", "p_codigo" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
-    AS $$
+    AS $_$
 DECLARE
   v_evento     public.eventos;
   v_usuario    public.usuarios;
   v_cod        public.codigos_acesso;
   v_erro_padrao constant text := 'E-mail ou código inválido, expirado ou já utilizado.';
+  -- Hash de um código que não existe: a resposta leva o mesmo tempo com ou sem código ativo
+  -- (sem isso, a demora do bcrypt revelava quais e-mails são de avaliadores com código pendente)
+  v_hash_falso  constant text := '$2a$08$ie/XW71pyb9bnxcEXTtuY.As1yr3hdoN6v.lALJZUc8swDbePZkOS';
 BEGIN
   IF auth.uid() IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'erro', 'Sessão do aparelho não iniciada.');
@@ -2463,6 +2476,7 @@ BEGIN
   WHERE lower(email) = lower(trim(p_email)) AND upper(papel::text) = 'AVALIADOR'
   LIMIT 1;
   IF v_usuario.id_usuario IS NULL THEN
+    PERFORM extensions.crypt(public.normalizar_codigo(p_codigo), v_hash_falso);
     RETURN jsonb_build_object('ok', false, 'erro', v_erro_padrao);
   END IF;
 
@@ -2475,6 +2489,7 @@ BEGIN
   LIMIT 1
   FOR UPDATE;
   IF v_cod.id IS NULL THEN
+    PERFORM extensions.crypt(public.normalizar_codigo(p_codigo), v_hash_falso);
     RETURN jsonb_build_object('ok', false, 'erro', v_erro_padrao);
   END IF;
 
@@ -2497,7 +2512,7 @@ BEGIN
 
   RETURN jsonb_build_object('ok', true, 'id_usuario', v_usuario.id_usuario, 'nome', v_usuario.nome);
 END;
-$$;
+$_$;
 
 
 ALTER FUNCTION "public"."fn_vincular_com_codigo"("p_email" "text", "p_codigo" "text") OWNER TO "postgres";

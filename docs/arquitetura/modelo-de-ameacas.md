@@ -7,7 +7,7 @@ Cada achado vira um teste que precisa falhar sem a correção. Regras de acesso 
 |---|---|---|
 | 0 | Modelo de ameaças (este documento) | concluída |
 | 1 | Banco e API: matriz papel × objeto | concluída (migration `20261031010000`) |
-| 2 | Autenticação e sessão (login anônimo, código de acesso, pareamento, senhas, limites) | pendente |
+| 2 | Autenticação e sessão (login anônimo, código de acesso, pareamento, senhas, limites) | concluída (migration `20261031020000`) |
 | 3 | Regras de negócio e abuso (sorteio, cota, autocadastro, Telão público) | pendente |
 | 4 | Front-end (XSS, cabeçalhos no Firebase, dados no navegador) | pendente |
 | 5 | Dependências, CI e configuração (cadeia de fornecimento, segredos, painel do Supabase) | pendente |
@@ -75,3 +75,33 @@ Achados (corrigidos em `20261031010000_seguranca_matriz_papeis.sql`, testes em `
 
 Riscos aceitos: Staff altera nome e e-mail de avaliadores no balcão (ele já vincula qualquer celular a qualquer
 avaliador). Ver [limites conhecidos](seguranca.md#limites-conhecidos).
+
+## Etapa 2: autenticação e sessão
+
+Método: leitura das funções de vínculo (`gerar_codigo_curto`, `fn_solicitar_pareamento`, `fn_parear_dispositivo`,
+`fn_gerar_codigo_acesso`, `fn_vincular_com_codigo`, `avaliador_atual`, `fn_meu_perfil`, `fn_vincular_conta_staff`),
+da configuração do Auth e dos fluxos de login, saída e troca de senha; sondagem no banco local e medição de tempo de
+resposta.
+
+Confirmado como **protegido**: códigos gerados com gerador criptográfico e sem viés (29 símbolos sem ambíguos, 6
+caracteres ≈ 594 milhões de combinações); código de acesso guardado só como bcrypt, de uso único, com validade e
+limite de tentativas que é gravado mesmo no erro; mensagem de erro única; um aparelho ativo por avaliador (vínculo novo
+revoga o anterior); desvincular revoga na hora; "Sair" encerra a sessão no Auth; Staff só vira Staff com e-mail
+**confirmado**; login de Admin/Staff confere o papel e encerra a sessão se não bater.
+
+Achados (corrigidos em `20261031020000_seguranca_sessao.sql`, testes em `20_seguranca_sessao_test.sql`):
+
+| # | Gravidade | Achado | Referência | Correção |
+|---|---|---|---|---|
+| B1 | Alta | Suspender o credenciamento ("Bloquear") não parava o avaliador: o celular seguia sorteando e enviando notas. Celular de evento anterior também valia no evento ativo, sem inscrição | CWE-285, CWE-613, ASVS 7.4 | `avaliador_atual()` exige evento ativo e credenciamento ativo; gerar código credencia |
+| B2 | Média | Login com código respondia em ~12 ms para e-mail com código ativo e ~0,1 ms para os demais (enumeração por tempo) | CWE-208, ASVS 6.3 | bcrypt também sem código: ~11,4 ms em todos os casos |
+| B3 | Baixa | Autocadastro público respondia `ja_cadastrado` para e-mails existentes, inclusive de Admin e Staff | CWE-204 | Resposta sempre `recebido` |
+| B4 | Média (configuração) | Senha mínima de 6 caracteres no Auth; troca de senha sem login recente | ASVS 6.2.1, 6.2.3 | Mínimo 12 (tela e `config.toml`) e *Secure password change*; **produção: ajustar no painel** |
+
+Recomendações que dependem de decisão (não implementadas):
+- **MFA (TOTP) para o Admin** (ASVS 6.3.3, nível 2): o Supabase oferece TOTP no plano gratuito; exige telas de cadastro
+  e verificação do segundo fator.
+- **Expirar a sessão de Admin/Staff por inatividade** (ASVS 7.3): o limite de sessão do Supabase é de plano pago; pode
+  ser feito no front (sair após N minutos sem uso).
+- **Proteção contra senhas vazadas** (HaveIBeenPwned) no Auth: recurso de plano pago.
+

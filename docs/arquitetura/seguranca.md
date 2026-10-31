@@ -39,8 +39,13 @@ um destes caminhos (configuráveis por evento na engrenagem):
    (`fn_parear_dispositivo`). A pessoa está presente, então o pareamento também a credencia. O código só aponta o
    aparelho (quem autoriza é o Staff), por isso não é tratado como senha.
 2. **Código de acesso**: o **Staff** gera um código (`fn_gerar_codigo_acesso`), e o avaliador digita e-mail e código no
-   próprio celular (`fn_vincular_com_codigo`). Esse código **é** credencial: só o hash bcrypt é gravado, é de uso
-   único, expira, e é invalidado após N tentativas erradas.
+   próprio celular (`fn_vincular_com_codigo`). Gerar o código também credencia o avaliador. Esse código **é**
+   credencial: só o hash bcrypt é gravado, é de uso único, expira, e é invalidado após N tentativas erradas. A resposta
+   leva o mesmo tempo com ou sem código ativo e tem sempre a mesma mensagem (não revela e-mails).
+
+O aparelho só vale como avaliador (`avaliador_atual()`) **no evento em que foi vinculado, se ele for o evento ativo,
+e enquanto o credenciamento estiver ativo**. "Bloquear" (suspender o credenciamento) no Staff corta o acesso na hora;
+credenciar de novo reativa o mesmo aparelho. Ao trocar de evento, os avaliadores vinculam o celular de novo.
 
 Um avaliador tem **um aparelho ativo**: um vínculo novo revoga o anterior. O Staff pode desvincular um aparelho
 perdido ou trocado. Vincular pelo IP foi descartado: no Wi-Fi da feira todos compartilham o IP, e no 4G ele muda.
@@ -105,6 +110,8 @@ Lista completa em [funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#identid
 | *Anonymous sign-ins* | **ligado** | Sessão do celular do avaliador |
 | Rate limit de logins anônimos por IP | 300/h | Todos os celulares da feira saem pelo mesmo IP |
 | *Confirm email* | **ligado** | Impede que um cadastro se passe pelo e-mail de um Staff |
+| *Minimum password length* | **12** (sem regras de composição) | ASVS 5.0 6.2.1. A tela de redefinir senha exige o mesmo |
+| *Secure password change* | **ligado** | Trocar a senha exige login recente (sessão roubada não troca a senha) |
 | *Site URL* e *Redirect URLs* (*URL Configuration*) | `https://avaliacao-projetos-ifms-nv.web.app` (e `/**`) | Os links de "Esqueci minha senha" e de confirmação levam ao site, não ao `localhost` |
 
 O cadastro público aberto **não dá acesso**. A conta criada não tem papel: não lê pessoas nem notas, não roda funções
@@ -144,6 +151,11 @@ que **precisa falhar** sem a correção. Antes da troca do modelo, 20 desses ata
 
 - **Celular perdido ainda vinculado:** quem estiver com ele avalia como aquele avaliador até o Staff desvincular.
   Desvincular revoga o aparelho na hora.
+- **Sem MFA para Admin e Staff**, e a sessão deles não expira por inatividade (no plano gratuito o Supabase não limita a
+  duração da sessão). Mitigação atual: senha de 12+ caracteres e troca de senha só com login recente. Ver
+  [modelo de ameaças](modelo-de-ameacas.md#etapa-2-autenticação-e-sessão).
+- **Código de acesso pode ser "queimado"**: quem souber o e-mail de um avaliador com código pendente pode errar N vezes
+  e invalidá-lo. O Staff gera outro; o código nunca é revelado.
 - **Cadastro público aberto:** é inofensivo para os dados, mas permite criar contas vazias. Sujeito ao rate limit do
   Auth; se houver abuso, ativar CAPTCHA (Turnstile) no painel do Supabase.
 - **Staff altera nome e e-mail de avaliadores** (balcão). Risco aceito: o Staff já pode vincular qualquer celular a

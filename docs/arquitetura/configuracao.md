@@ -87,7 +87,7 @@ Vale para Admin e Staff:
 
 1. Na aba **Admin** ou **Staff**, digite o e-mail e clique em **Esqueci minha senha**.
 2. O e-mail traz um link para `/redefinir-senha` (`TelaRedefinirSenha`), no mesmo endereço em que o app foi aberto.
-3. A pessoa digita a nova senha duas vezes (mínimo 8 caracteres). O app grava com `supabase.auth.updateUser`,
+3. A pessoa digita a nova senha duas vezes (mínimo 12 caracteres, igual ao *Minimum password length* do Auth). O app grava com `supabase.auth.updateUser`,
    encerra a sessão do link e volta ao login.
 
 Link expirado ou já usado mostra o aviso para pedir outro. O endereço precisa estar nas *Redirect URLs* do Auth

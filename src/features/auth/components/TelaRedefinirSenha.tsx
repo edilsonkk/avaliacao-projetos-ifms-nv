@@ -5,8 +5,11 @@ import { supabase } from '@/lib/supabase';
 /** Caminho para onde o e-mail de "Esqueci minha senha" leva (precisa estar nas Redirect URLs do Auth). */
 export const CAMINHO_REDEFINIR_SENHA = '/redefinir-senha';
 
-/** Mínimo exigido pela tela; o Supabase Auth pode exigir mais e, nesse caso, a mensagem dele é exibida. */
-export const TAMANHO_MINIMO_SENHA = 8;
+/**
+ * Mínimo exigido pela tela (ASVS 5.0, 6.2.1: 12 ou mais, sem regras de composição), igual ao
+ * minimum_password_length do Supabase Auth. Se o Auth recusar por outro motivo, a mensagem dele é exibida.
+ */
+export const TAMANHO_MINIMO_SENHA = 12;
 
 /** URL completa do link de recuperação, no mesmo endereço em que o app está aberto. */
 export const urlRedefinirSenha = () => `${window.location.origin}${CAMINHO_REDEFINIR_SENHA}`;
