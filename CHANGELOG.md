@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.7.3...v0.8.0) (2026-10-31)
+
+
+### Funcionalidades
+
+* **seguranca:** segundo fator (MFA) do Admin e expiração de sessão configuráveis na engrenagem ([#64](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/64)) ([ad1ac70](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/ad1ac70c65e79c893c41263443fafb0f767d514b))
+
+
+### Correções
+
+* **seguranca:** nota exige todas as perguntas do questionário; sorteio só na janela do evento; limites no autocadastro ([#67](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/67)) ([858c2f2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/858c2f2f943a36761c46df7cc1bf71b94029af24))
+
 ## [0.7.3](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.7.2...v0.7.3) (2026-10-31)
 
 
