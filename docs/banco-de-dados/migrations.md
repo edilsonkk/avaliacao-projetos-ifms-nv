@@ -162,3 +162,4 @@ de dados, restaure o backup gerado antes do `db push` ([restaurar backup](../ope
 | `20261030130000_sorteio_concorrente.sql` | `sortear_proximo_projeto` reserva a linha do projeto (`FOR UPDATE SKIP LOCKED`) e reconfere trava/cota: sorteios simultâneos não estouram a cota |
 | `20261031010000_seguranca_matriz_papeis.sql` | Revisão de segurança, etapa 1: trava da fila e ausência/conflito só por função (`fn_assumir_item_fila`, `fn_registrar_impedimento`); CPF/celular fora da leitura; Staff credencia só avaliadores; `anon` sem gravação em cadastros |
 | `20261031020000_seguranca_sessao.sql` | Revisão de segurança, etapa 2: celular só vale no evento ativo e credenciado; código de acesso sem vazamento por tempo e credencia; autocadastro com resposta neutra |
+| `20261031030000_mfa_e_sessao.sql` | `configuracoes_seguranca`: MFA do Admin (`is_admin()` exige `aal2` quando ligado) e tempo de expiração de sessão; usuário lê a própria linha de `usuarios` |

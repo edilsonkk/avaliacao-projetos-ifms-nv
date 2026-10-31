@@ -98,10 +98,10 @@ Achados (corrigidos em `20261031020000_seguranca_sessao.sql`, testes em `20_segu
 | B3 | Baixa | Autocadastro público respondia `ja_cadastrado` para e-mails existentes, inclusive de Admin e Staff | CWE-204 | Resposta sempre `recebido` |
 | B4 | Média (configuração) | Senha mínima de 6 caracteres no Auth; troca de senha sem login recente | ASVS 6.2.1, 6.2.3 | Mínimo 12 (tela e `config.toml`) e *Secure password change*; **produção: ajustar no painel** |
 
-Recomendações que dependem de decisão (não implementadas):
-- **MFA (TOTP) para o Admin** (ASVS 6.3.3, nível 2): o Supabase oferece TOTP no plano gratuito; exige telas de cadastro
-  e verificação do segundo fator.
-- **Expirar a sessão de Admin/Staff por inatividade** (ASVS 7.3): o limite de sessão do Supabase é de plano pago; pode
-  ser feito no front (sair após N minutos sem uso).
-- **Proteção contra senhas vazadas** (HaveIBeenPwned) no Auth: recurso de plano pago.
+Recomendações decididas pelo dono do projeto e implementadas (`20261031030000_mfa_e_sessao.sql`, testes em
+`21_mfa_e_sessao_test.sql`), ambas configuráveis pelo Admin na engrenagem:
+- **MFA (TOTP) opcional para o Admin** (ASVS 6.3.3): ligado, `is_admin()` exige `aal2` no banco.
+- **Expiração da sessão de Admin/Staff por inatividade** (ASVS 7.3), aplicada no navegador.
+
+Pendente: **proteção contra senhas vazadas** (HaveIBeenPwned) no Auth, recurso de plano pago.
 

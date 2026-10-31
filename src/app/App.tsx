@@ -14,7 +14,8 @@ import { TelaAutocadastroAvaliador } from '@/features/avaliacao';
 import { supabase } from '@/lib/supabase';
 import { EVENTO_SESSAO_ADMIN_EXPIRADA, MENSAGEM_SESSAO_EXPIRADA } from '@/lib/sessaoAdmin';
 import { iniciarKeepAliveSessao } from '@/lib/keepAliveSessao';
-import { obterPerfilSessao } from '@/features/auth';
+import { iniciarExpiracaoPorInatividade } from '@/lib/expiracaoSessao';
+import { obterPerfilSessao, lerPoliticaSeguranca, EVENTO_POLITICA_ALTERADA } from '@/features/auth';
 
 export default function App() {
   // Inicialização com suporte a autocadastro via QR Code e rota raiz apontando para TelaLogin
@@ -109,6 +110,38 @@ export default function App() {
     return () => window.removeEventListener(EVENTO_SESSAO_ADMIN_EXPIRADA, aoExpirarSessaoAdmin);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Admin e Staff: encerra a sessão depois do tempo sem uso definido pelo Admin na engrenagem
+  const papel_logado = (localStorage.getItem('usuario_perfil') || '').toLowerCase();
+  const sessao_com_senha = (tela_atual === 'admin' || tela_atual === 'staff') && (papel_logado === 'admin' || papel_logado === 'staff');
+  useEffect(() => {
+    if (!sessao_com_senha) return;
+    let parar = () => {};
+    let ativo = true;
+    const iniciar = () => {
+      parar();
+      lerPoliticaSeguranca()
+        .then(({ minutos_inatividade_sessao: minutos }) => {
+          if (!ativo) return;
+          parar = iniciarExpiracaoPorInatividade(minutos, async () => {
+            await handle_sair();
+            set_aba_login(papel_logado as AbaLogin);
+            alert(`Sua sessão foi encerrada após ${minutos} minutos sem uso. Entre novamente.`);
+          });
+        })
+        .catch(() => {
+          // sem rede: tenta de novo na próxima mudança de tela
+        });
+    };
+    iniciar();
+    window.addEventListener(EVENTO_POLITICA_ALTERADA, iniciar);
+    return () => {
+      ativo = false;
+      parar();
+      window.removeEventListener(EVENTO_POLITICA_ALTERADA, iniciar);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessao_com_senha, papel_logado]);
 
   const handle_mudar_tela = (nova_tela: TipoTelaNavegacao) => {
     const userPerfil = (localStorage.getItem('usuario_perfil') || '').toLowerCase();

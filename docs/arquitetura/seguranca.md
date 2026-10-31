@@ -102,6 +102,23 @@ só tem `SELECT` (sem `INSERT`/`UPDATE`/`DELETE`: a proteção não depende só 
 
 Lista completa em [funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#identidade-e-vínculo-do-celular).
 
+## Segundo fator do Admin e expiração de sessão
+
+Configurados pelo Admin na engrenagem, seção **Segurança das contas** (`SecaoSegurancaContas`), e gravados em
+`configuracoes_seguranca` (linha única) por `admin_salvar_configuracoes_seguranca`.
+
+- **Segundo fator (MFA/TOTP)**: com a exigência ligada, `is_admin()` só reconhece a sessão que passou pelo segundo
+  fator (claim `aal = 'aal2'` do Supabase Auth). A regra vale no banco: pular a tela não adianta. Ligar ou desligar a
+  exigência também exige `aal2`, então ninguém liga sem ter o aplicativo cadastrado (não se tranca fora) e uma sessão
+  roubada só com a senha não desliga a proteção. No login (`TelaLogin`), depois da senha: quem tem aplicativo
+  cadastrado digita o código (`VerificacaoSegundoFator`); com a exigência ligada e sem aplicativo, cadastra
+  (`CadastroSegundoFator`, QR Code). Desligar remove o aplicativo da conta. Só o Admin é afetado; o Staff entra com
+  senha.
+- **Expiração por inatividade**: depois de N minutos (5 a 720; 0 = não expira) sem uso, a sessão de Admin e Staff é
+  encerrada (`src/lib/expiracaoSessao.ts`, ligado no `App`). Vale entre abas e ao reabrir o site. É aplicada no
+  navegador: o limite de sessão no servidor do Supabase é de plano pago. Para projetar o Telão, use `/telao`, que não
+  precisa de login.
+
 ## Configuração do Supabase Auth
 
 | Configuração | Valor | Por quê |
@@ -112,6 +129,7 @@ Lista completa em [funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#identid
 | *Confirm email* | **ligado** | Impede que um cadastro se passe pelo e-mail de um Staff |
 | *Minimum password length* | **12** (sem regras de composição) | ASVS 5.0 6.2.1. A tela de redefinir senha exige o mesmo |
 | *Secure password change* | **ligado** | Trocar a senha exige login recente (sessão roubada não troca a senha) |
+| *Multi-Factor → TOTP* | **habilitado** | Necessário para o segundo fator do Admin |
 | *Site URL* e *Redirect URLs* (*URL Configuration*) | `https://avaliacao-projetos-ifms-nv.web.app` (e `/**`) | Os links de "Esqueci minha senha" e de confirmação levam ao site, não ao `localhost` |
 
 O cadastro público aberto **não dá acesso**. A conta criada não tem papel: não lê pessoas nem notas, não roda funções
@@ -151,9 +169,9 @@ que **precisa falhar** sem a correção. Antes da troca do modelo, 20 desses ata
 
 - **Celular perdido ainda vinculado:** quem estiver com ele avalia como aquele avaliador até o Staff desvincular.
   Desvincular revoga o aparelho na hora.
-- **Sem MFA para Admin e Staff**, e a sessão deles não expira por inatividade (no plano gratuito o Supabase não limita a
-  duração da sessão). Mitigação atual: senha de 12+ caracteres e troca de senha só com login recente. Ver
-  [modelo de ameaças](modelo-de-ameacas.md#etapa-2-autenticação-e-sessão).
+- **Expiração de sessão só no navegador**: quem copiar o token de uma sessão de Admin/Staff consegue usá-lo fora do
+  site até ele expirar (1 h, renovável). O MFA do Admin reduz o impacto: sem o segundo fator, a sessão não é Admin.
+- **Staff sem MFA**: o Staff entra só com a senha (12+ caracteres).
 - **Código de acesso pode ser "queimado"**: quem souber o e-mail de um avaliador com código pendente pode errar N vezes
   e invalidá-lo. O Staff gera outro; o código nunca é revelado.
 - **Cadastro público aberto:** é inofensivo para os dados, mas permite criar contas vazias. Sujeito ao rate limit do

@@ -11,6 +11,7 @@ import {
 import { Settings, X, Save, Loader2, CheckCircle2, AlertTriangle, RotateCcw, History, PlusCircle, Building2, ShieldCheck } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { Dica } from '@/components/ui/Dica';
+import { SecaoSegurancaContas } from './SecaoSegurancaContas';
 
 interface PropriedadesModalConfiguracoes {
   id_evento_ativo: string;
@@ -416,6 +417,8 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
 
               {/* Coluna 3: gestão e zona de perigo */}
               <div className="space-y-4 min-w-0 md:col-span-2 lg:col-span-1">
+                <SecaoSegurancaContas />
+
                 <section aria-labelledby="secao-gestao" className={secao}>
                   <h3 id="secao-gestao" className={tituloSecao}>Gestão de Eventos</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2">
