@@ -25,10 +25,10 @@ jobs:
       BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Configurar CLI do Supabase
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
@@ -57,7 +57,7 @@ jobs:
           rm -rf backup backup.tar.gz
 
       - name: Guardar backup (30 dias)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: backup-banco-${{ github.run_id }}
           path: backup-${{ github.run_id }}.tar.gz.gpg

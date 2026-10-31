@@ -10,7 +10,7 @@ Cada achado vira um teste que precisa falhar sem a correção. Regras de acesso 
 | 2 | Autenticação e sessão (login anônimo, código de acesso, pareamento, senhas, limites) | concluída (migration `20261031020000`) |
 | 3 | Regras de negócio e abuso (sorteio, cota, autocadastro, Telão público) | concluída (migration `20261031040000`) |
 | 4 | Front-end (XSS, cabeçalhos no Firebase, dados no navegador) | concluída (sem migration) |
-| 5 | Dependências, CI e configuração (cadeia de fornecimento, segredos, painel do Supabase) | pendente |
+| 5 | Dependências, CI e configuração (cadeia de fornecimento, segredos, painel do Supabase) | concluída (sem migration) |
 
 ## Atores
 
@@ -143,4 +143,35 @@ noreferrer"`; sem *source maps* publicados; HSTS (do Firebase); CSV com proteç�
 | D3 | Média | Sem internet, a avaliação ia para uma fila no navegador que **nenhum código enviava**: a nota se perdia e o avaliador via "salva para futura sincronização"; as notas ficavam em texto no navegador | CWE-922, A04 | Sem fila: a tela avisa que não foi enviada e mantém as notas para reenviar |
 | D4 | Baixa | Botão "Entrar com Google" com o provedor desligado e sem tratamento do retorno (caminho de login morto, sem checagem de papel e de segundo fator) | ASVS 6.1, redução de superfície | Botão removido |
 | D5 | Baixa | Login do Admin guardava o e-mail no navegador (CodeQL) | CWE-312 | Corrigido no #64 |
+
+## Etapa 5: dependências, CI e configuração
+
+Método: `npm audit` com análise de alcance; busca de segredos e chaves JWT em todo o histórico do Git (com o papel de
+cada chave decodificado); leitura de todos os workflows (gatilhos, `permissions`, ações de terceiros, onde os segredos
+aparecem); configuração do repositório (ruleset da `main`, ambiente `production`, Dependabot, varredura de segredos);
+instalação limpa com `--ignore-scripts`. MITRE ATT&CK T1195 (comprometimento da cadeia de fornecimento).
+
+Confirmado como **protegido**: nenhum segredo no histórico (a única chave JWT já commitada é a `anon`, pública por
+definição); só `.env.example` é rastreado; varredura de segredos e *push protection* ligadas; token padrão dos
+workflows só leitura; segredos de produção no ambiente `production`, só nos passos que os usam; ruleset da `main`
+exige PR, squash e os checks de testes, pgTAP e CodeQL, e bloqueia force push e exclusão; backup do banco
+criptografado; Trivy já fixado por hash; nenhuma dependência com script de instalação.
+
+| # | Gravidade | Achado | Referência | Correção |
+|---|---|---|---|---|
+| E1 | Média | Ações de terceiros por tag/branch (`supabase/setup-cli@v1` era um **branch**; `action-hosting-deploy@v0` recebe a chave do Firebase; `release-please-action@v4` recebe o token): quem mover a tag executa código com esses segredos | ATT&CK T1195.001, CWE-829 | Todas as ações fixadas por hash; Dependabot para atualizar |
+| E2 | Baixa | `npm ci` executaria scripts de instalação de um pacote comprometido no CI/deploy | CWE-829 | `npm ci --ignore-scripts` |
+| E3 | Baixa | `ci.yml` sem `permissions` (dependia do padrão do repositório) | ASVS 14 | `contents: read` |
+| E4 | Baixa | Sem atualização automática de dependências | ASVS 14.2 | `.github/dependabot.yml` |
+
+Risco aceito: 8 alertas *moderate* do `npm audit` (cadeia `exceljs → archiver → glob → minimatch`), sem caminho
+alcançável no uso do sistema ([CI/CD](../operacao/ci-cd-e-deploy.md#segurança)).
+
+Configurações manuais recomendadas (só o dono do repositório e dos painéis pode fazer):
+- GitHub, ambiente `production`: liberar só a branch `main` e as tags `v*`.
+- GitHub, *Actions → General*: desmarcar *Allow GitHub Actions to create and approve pull requests* (o release usa o
+  `RELEASE_PLEASE_TOKEN`).
+- GitHub, *Code security*: ligar *Dependabot alerts* e *security updates*.
+- Supabase: *Minimum password length* 12, *Secure password change* ligado, *TOTP* habilitado (etapas 2 e MFA).
+- Google Cloud: a service account do deploy só com o papel *Firebase Hosting Admin* (ver CI/CD).
 

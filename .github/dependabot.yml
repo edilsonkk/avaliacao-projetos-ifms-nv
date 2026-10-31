@@ -1,0 +1,27 @@
+# Atualizações automáticas de dependências (revisão de segurança, etapa 5).
+# As ações do GitHub ficam fixadas por hash de commit; o Dependabot abre PR para atualizar hash e versão juntos.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      acoes:
+        patterns: ['*']
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      menores:
+        update-types: [minor, patch]
