@@ -84,7 +84,7 @@ O botão de navegação para o **Telão** fica oculto para o Staff (só o Admin 
 ## Autocadastro do avaliador (QR Code)
 
 - A aba de avaliadores do Staff mostra um QR Code com
-  `${window.location.origin}/?cadastro=avaliador&evento=<evento_ativo_id>`, gerado por `api.qrserver.com`, mais os
+  `${window.location.origin}/?cadastro=avaliador&evento=<evento_ativo_id>`, gerado no navegador (`qrcode.react`, sem serviço de terceiros), mais os
   botões `Copiar Link de Autocadastro` e `Abrir Tela de Cadastro`.
 - `TelaAutocadastroAvaliador` (mobile-first): nome, e-mail, instituição (escolher ou digitar nova) e áreas de
   interesse.

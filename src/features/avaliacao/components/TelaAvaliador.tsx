@@ -975,36 +975,10 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
     const timestampSubmissao = new Date().toISOString();
     const timestampInicio = horario_inicio_avaliacao || timestampSubmissao;
 
+    // Sem internet a nota não é guardada no navegador: antes ia para uma fila que nenhum código enviava depois
+    // (a avaliação se perdia e o avaliador achava que tinha sido registrada). As notas ficam na tela para reenviar.
     if (!navigator.onLine || !conexao_banco_configurada) {
-      const desconexao_timestamp = timestampSubmissao;
-
-      const avaliacao_offline = {
-        id_usuario: avaliadorId,
-        id_projeto: id_projeto_alvo,
-        status_presenca,
-        notas_criterios,
-        nota_final,
-        parecer_final: parecer_avaliador,
-        tempo_presenca: timestampInicio,
-        tempo_submissao: timestampSubmissao,
-        desconexao_timestamp,
-      };
-
-      try {
-        const fila_offline_existente = JSON.parse(
-          localStorage.getItem('avaliacoes_offline_pendentes') || '[]'
-        );
-        localStorage.setItem(
-          'avaliacoes_offline_pendentes',
-          JSON.stringify([...fila_offline_existente, avaliacao_offline])
-        );
-      } catch (e: any) {
-        console.error('Erro ao gravar no localStorage:', e);
-        alert(`Erro offline ao gravar no localStorage: ${e?.message || e}`);
-      }
-
-      exibir_notificacao('Dispositivo Offline! Avaliação salva localmente para futura sincronização.');
-      await puxar_novo_projeto();
+      exibir_notificacao('Sem conexão: a avaliação não foi enviada. As notas continuam na tela; envie de novo quando a internet voltar.');
       setIsProcessing(false);
       return;
     }

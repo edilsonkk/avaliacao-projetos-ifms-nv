@@ -119,6 +119,14 @@ describe('TelaLogin', () => {
     expect(await screen.findByText(/instruções de redefinição/i)).toBeInTheDocument();
   });
 
+  it('não oferece login pelo Google (provedor desligado; caminho sem a checagem de papel e do segundo fator)', () => {
+    // Arrange / Act
+    render(<TelaLogin abaInicial="admin" />);
+
+    // Assert
+    expect(screen.queryByRole('button', { name: /google/i })).not.toBeInTheDocument();
+  });
+
   describe('Admin com segundo fator', () => {
     const mfa = () => supabase.auth.mfa as unknown as Record<string, ReturnType<typeof vi.fn>>;
     const entrarComoAdmin = async (user: ReturnType<typeof userEvent.setup>) => {

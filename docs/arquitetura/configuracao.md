@@ -133,7 +133,6 @@ O navegador guarda sessão e dados de contingência nestas chaves:
 | `evento_ativo_data` | `string` | Data do evento ativo |
 | `avaliadores_credenciados_local` | JSON `{ [id_usuario]: boolean }` | Fallback de credenciamento de avaliadores |
 | `staff_credenciados_local` | JSON `{ [id_usuario]: boolean }` | Fallback de credenciamento do staff |
-| `avaliacoes_offline_pendentes` | JSON | Avaliações aguardando envio |
 | `tema_fecin` | `string` | Tema claro/escuro |
 
 Os pares com `/` são nomes legados equivalentes. Ao criar código novo, use as chaves `sessao_*`.

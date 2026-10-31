@@ -148,6 +148,14 @@ ignorados pelo Auth. Fluxo em [configuração](configuracao.md#trocar-a-senha).
   desvinculado, `localStorage` editado, sessão expirada), volta ao login.
 - Vínculo do celular: `src/features/auth/vinculoAparelho.ts` e `VinculoAvaliador`. No balcão:
   `src/features/staff/components/PainelAparelhoAvaliador.tsx`.
+- **Cabeçalhos HTTP** (Firebase, `firebase.json`): CSP restritiva (`script-src 'self'`, sem inline nem `eval`;
+  `connect-src` só o Supabase; `frame-ancestors 'none'`), `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`,
+  `Permissions-Policy`, `Cross-Origin-Opener-Policy`. Validada no Chrome com o build local: nenhuma violação.
+- **Sem terceiros**: o QR Code do autocadastro é gerado no navegador; nenhum script, fonte ou imagem vem de outro
+  domínio (teste `cabecalhosSeguranca.test.ts`).
+- **Sem dados de avaliação no navegador**: sem internet, a nota não é guardada nem enviada depois (a antiga fila
+  "offline" nunca era enviada); as notas ficam na tela para reenviar.
+- O token de sessão do Supabase fica no `localStorage` (padrão do `supabase-js`); a CSP reduz o risco de um XSS lê-lo.
 
 ## Testes de segurança
 

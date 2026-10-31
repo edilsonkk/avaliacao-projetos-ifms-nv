@@ -9,7 +9,7 @@ Cada achado vira um teste que precisa falhar sem a correção. Regras de acesso 
 | 1 | Banco e API: matriz papel × objeto | concluída (migration `20261031010000`) |
 | 2 | Autenticação e sessão (login anônimo, código de acesso, pareamento, senhas, limites) | concluída (migration `20261031020000`) |
 | 3 | Regras de negócio e abuso (sorteio, cota, autocadastro, Telão público) | concluída (migration `20261031040000`) |
-| 4 | Front-end (XSS, cabeçalhos no Firebase, dados no navegador) | pendente |
+| 4 | Front-end (XSS, cabeçalhos no Firebase, dados no navegador) | concluída (sem migration) |
 | 5 | Dependências, CI e configuração (cadeia de fornecimento, segredos, painel do Supabase) | pendente |
 
 ## Atores
@@ -124,4 +124,23 @@ Achados (corrigidos em `20261031040000_seguranca_regras_negocio.sql`, testes em 
 
 Recomendação que depende de decisão: **CAPTCHA** (Cloudflare Turnstile, gratuito) no autocadastro, para barrar robôs
 sem depender do limite global (que um robô pode esgotar por alguns minutos).
+
+## Etapa 4: front-end
+
+Método: varredura do código por pontos de XSS (`dangerouslySetInnerHTML`, `innerHTML`, `eval`, `new Function`,
+`href`/`window.open` dinâmicos), recursos de terceiros, dados guardados no navegador e caminhos de login; leitura dos
+cabeçalhos HTTP de produção; busca de `eval` no bundle; validação da CSP no Chrome (headless) com o build local e o
+Supabase local, com um controle positivo que confirma que o Chrome registra as violações.
+
+Confirmado como **protegido**: sem `innerHTML`/`eval`/`new Function` no código nem no bundle; o único
+`dangerouslySetInnerHTML` é CSS fixo de impressão, sem dado de usuário; links externos com `rel="noopener
+noreferrer"`; sem *source maps* publicados; HSTS (do Firebase); CSV com proteção contra fórmulas.
+
+| # | Gravidade | Achado | Referência | Correção |
+|---|---|---|---|---|
+| D1 | Média | Sem `Content-Security-Policy`, proteção contra exibição em outro site (clickjacking), `nosniff`, `Referrer-Policy`, `Permissions-Policy` | ASVS 3.4, CWE-1021, CWE-693 | Cabeçalhos no `firebase.json`; CSP validada no navegador |
+| D2 | Média | QR Code do autocadastro gerado por `api.qrserver.com`: o link do evento ia a terceiros, que poderiam servir um QR apontando para um site falso | CWE-829, ASVS 14 | QR gerado no navegador (`qrcode.react` 4.2.0, sem dependências) |
+| D3 | Média | Sem internet, a avaliação ia para uma fila no navegador que **nenhum código enviava**: a nota se perdia e o avaliador via "salva para futura sincronização"; as notas ficavam em texto no navegador | CWE-922, A04 | Sem fila: a tela avisa que não foi enviada e mantém as notas para reenviar |
+| D4 | Baixa | Botão "Entrar com Google" com o provedor desligado e sem tratamento do retorno (caminho de login morto, sem checagem de papel e de segundo fator) | ASVS 6.1, redução de superfície | Botão removido |
+| D5 | Baixa | Login do Admin guardava o e-mail no navegador (CodeQL) | CWE-312 | Corrigido no #64 |
 

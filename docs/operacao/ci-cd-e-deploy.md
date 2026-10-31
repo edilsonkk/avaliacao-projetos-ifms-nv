@@ -153,7 +153,12 @@ O front-end é publicado no projeto Firebase `avaliacao-projetos-ifms-nv` (`.fir
 - redireciona todas as rotas para `index.html`, então `/admin` e `/staff` funcionam ao recarregar;
 - `no-cache` para tudo (`**`), inclusive o `index.html` entregue em `/`, `/admin` etc., para que uma nova versão
   apareça na hora; depois, cache de 1 ano para `/assets/**`, que têm hash no nome. A regra listada por último
-  prevalece (conferido no emulador do Hosting).
+  prevalece (conferido no emulador do Hosting);
+- cabeçalhos de segurança em tudo: `Content-Security-Policy` (scripts só do próprio site, sem inline nem `eval`;
+  conexões só com o Supabase; não pode ser exibido dentro de outro site), `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy`, `Permissions-Policy` e `Cross-Origin-Opener-Policy`. O teste
+  `src/__tests__/configuracao/cabecalhosSeguranca.test.ts` trava esses valores. Ao adicionar um serviço externo
+  (imagem, fonte, API), inclua o domínio na diretiva certa da CSP, senão o navegador bloqueia.
 
 ### Criar a service account (uma vez)
 
