@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.8.1...v0.8.2) (2026-10-31)
+
+
+### Correções
+
+* **ci:** ações do GitHub fixadas por hash, instalação sem scripts e Dependabot ([#70](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/70)) ([9a44607](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/9a44607d24714dc051695aac72df42b56966f3e4))
+
 ## [0.8.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.8.0...v0.8.1) (2026-10-31)
 
 
