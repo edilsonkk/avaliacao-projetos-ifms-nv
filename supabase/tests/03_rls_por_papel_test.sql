@@ -70,8 +70,8 @@ SELECT throws_ok($$ SELECT public.sortear_proximo_projeto('c1000000-0000-0000-00
   '42501', NULL, 'anon não sorteia em nome de avaliador');
 SELECT throws_ok($$ INSERT INTO public.instituicoes (id_evento, nome_exibicao, nome_normalizado)
   VALUES ('e1000000-0000-0000-0000-000000000001', 'Spam', 'spam') $$, '42501', NULL, 'anon não insere instituições direto');
-SELECT is(pg_temp.afetadas($q$UPDATE public.projetos SET forcar_topo_fila = true$q$), 0,
-  'H1: anon não altera projetos');
+SELECT throws_ok($$ UPDATE public.projetos SET forcar_topo_fila = true $$, '42501', NULL,
+  'H1: anon não altera projetos (sem permissão de gravação, não só RLS)');
 
 -- ---------------------------------------------------------------------------
 -- Celular com sessão, mas sem vínculo
@@ -106,9 +106,8 @@ SELECT is(pg_temp.afetadas($q$UPDATE public.avaliadores_evento SET is_credenciad
   'H1: avaliador não se credencia sozinho');
 SELECT is(pg_temp.afetadas($q$UPDATE public.projetos SET forcar_topo_fila = true$q$), 0,
   'H1: avaliador não altera projetos');
-SELECT lives_ok($$ INSERT INTO public.locks_ativos (id_usuario, id_projeto, expira_em)
-  VALUES ('c1000000-0000-0000-0000-0000000000a1', 'f1000000-0000-0000-0000-000000000001', now() + interval '1 hour') $$,
-  'Avaliador cria a própria trava');
+SELECT is(public.sortear_proximo_projeto('c1000000-0000-0000-0000-0000000000a1', 'e1000000-0000-0000-0000-000000000001'),
+  'f1000000-0000-0000-0000-000000000001'::uuid, 'Avaliador recebe a trava pelo sorteio (gravação direta é negada, ver 19)');
 SELECT lives_ok($$ SELECT public.fn_fixar_questionario('f1000000-0000-0000-0000-000000000001', NULL) $$,
   'Avaliador com a trava fixa o questionário');
 SELECT is(public.fn_avaliacoes_ativas_do_projeto('f1000000-0000-0000-0000-000000000001'), 1,

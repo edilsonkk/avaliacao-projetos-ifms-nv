@@ -140,91 +140,103 @@ describe('Regras de Negócio: Cota Estrita, Sorteio, Auto-cadastro e De-Para', (
     expect(screen.getByText(/1 com cota atingida/i)).toBeInTheDocument();
   });
 
-  it('2. FILA DIRECIONADA NO AVALIADOR: pula automaticamente projeto da fila se ele já atingiu a cota máxima por outros', async () => {
+  describe('2. FILA DIRECIONADA NO AVALIADOR (resolvida pelo banco: fn_assumir_item_fila)', () => {
     const EVENTO_UUID = '11111111-2222-3333-4444-555555555555';
     const AVALIADOR_UUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-    const PROJETO_UUID = '99999999-8888-7777-6666-555555555555';
+    const PROJETO_FILA = '99999999-8888-7777-6666-555555555555';
 
-    localStorage.setItem('sessao_id_usuario', AVALIADOR_UUID);
-    localStorage.setItem('avaliador_nome', 'Prof. Avaliador');
-
-    mockFrom.mockImplementation((tabela: string) => {
-      if (tabela === 'fila_atribuicoes_direcionadas') {
-        return criarQueryChain({
-          data: {
-            id_atribuicao: 'atrib-999',
-            id_projeto: PROJETO_UUID,
-            status: 'pendente',
-          },
-          error: null,
-        });
-      }
-      if (tabela === 'projetos') {
-        return criarQueryChain({
-          data: { id_projeto: PROJETO_UUID, cota_avaliacoes_customizada: 3 },
-          error: null,
-        });
-      }
-      if (tabela === 'avaliacoes') {
-        const chain = criarQueryChain({ data: [], count: 3, error: null });
-        return chain;
-      }
-      if (tabela === 'locks_ativos') {
+    const mockarTabelas = () => {
+      mockFrom.mockImplementation((tabela: string) => {
+        if (tabela === 'projetos') {
+          return criarQueryChain({ data: { id_projeto: PROJETO_FILA, codigo_projeto: 'FILA-1', titulo: 'Projeto da Fila' }, error: null });
+        }
+        if (tabela === 'eventos') {
+          return criarQueryChain({
+            data: {
+              id_evento: EVENTO_UUID,
+              cota_avaliacoes_padrao: 3,
+              is_ativo: true,
+              data_evento: (() => {
+                const h = new Date();
+                return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${String(h.getDate()).padStart(2, '0')}`;
+              })(),
+              horario_inicio: '00:00',
+              horario_fim: '23:59',
+              sistema_liberado: true,
+            },
+            error: null,
+          });
+        }
+        if (tabela === 'usuarios') {
+          return criarQueryChain({ data: { id_usuario: AVALIADOR_UUID, nome: 'Prof. Avaliador', papel: 'AVALIADOR' }, error: null });
+        }
         return criarQueryChain({ data: null, error: null });
-      }
-      if (tabela === 'eventos') {
-        return criarQueryChain({
-          data: {
-            id_evento: EVENTO_UUID,
-            cota_avaliacoes_padrao: 3,
-            is_ativo: true,
-            data_evento: (() => {
-              const h = new Date();
-              return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${String(h.getDate()).padStart(2, '0')}`;
-            })(),
-            horario_inicio: '00:00',
-            horario_fim: '23:59',
-            sistema_liberado: true,
-          },
-          error: null,
-        });
-      }
-      if (tabela === 'usuarios') {
-        return criarQueryChain({
-          data: { id_usuario: AVALIADOR_UUID, nome: 'Prof. Avaliador', papel: 'AVALIADOR' },
-          error: null,
-        });
-      }
-      return criarQueryChain({ data: [], error: null });
-    });
-
-    // A contagem para a cota vem da RPC (o avaliador não lê avaliações de outros pela RLS)
-    mockRpc.mockImplementation((nome: string) =>
-      Promise.resolve(
-        nome === 'fn_avaliacoes_ativas_do_projeto'
-          ? { data: 3, error: null }
-          : { data: 'proj-sorteado-novo', error: null },
-      ),
-    );
-
-    const { unmount } = render(
-      <TelaAvaliador
-        id_usuario_logado={AVALIADOR_UUID}
-        id_evento_ativo={EVENTO_UUID}
-        onLogout={vi.fn()}
-      />
-    );
-
-    await waitFor(() => {
-      expect(mockFrom).toHaveBeenCalledWith('fila_atribuicoes_direcionadas');
-      expect(mockRpc).toHaveBeenCalledWith('sortear_proximo_projeto', {
-        p_id_usuario: AVALIADOR_UUID,
-        p_id_evento: EVENTO_UUID,
       });
+    };
+
+    const renderizar = () =>
+      render(<TelaAvaliador id_usuario_logado={AVALIADOR_UUID} id_evento_ativo={EVENTO_UUID} onLogout={vi.fn()} />);
+
+    beforeEach(() => {
+      localStorage.setItem('sessao_id_usuario', AVALIADOR_UUID);
+      localStorage.setItem('avaliador_nome', 'Prof. Avaliador');
+      mockarTabelas();
     });
 
-    unmount();
-    localStorage.clear();
+    it('sem item válido na fila, segue para o sorteio sem gravar trava ou fila direto', async () => {
+      // Arrange
+      mockRpc.mockImplementation((nome: string) =>
+        Promise.resolve(nome === 'fn_assumir_item_fila' ? { data: null, error: null } : { data: 'proj-sorteado-novo', error: null })
+      );
+
+      // Act
+      const { unmount } = renderizar();
+
+      // Assert
+      await waitFor(() => {
+        expect(mockRpc).toHaveBeenCalledWith('fn_assumir_item_fila');
+        expect(mockRpc).toHaveBeenCalledWith('sortear_proximo_projeto', { p_id_usuario: AVALIADOR_UUID, p_id_evento: EVENTO_UUID });
+      });
+      expect(mockFrom).not.toHaveBeenCalledWith('fila_atribuicoes_direcionadas');
+      unmount();
+      localStorage.clear();
+    });
+
+    it('com item válido na fila, carrega o projeto entregue pelo banco e não sorteia', async () => {
+      // Arrange
+      mockRpc.mockImplementation((nome: string) =>
+        Promise.resolve(nome === 'fn_assumir_item_fila' ? { data: PROJETO_FILA, error: null } : { data: 'proj-sorteado-novo', error: null })
+      );
+
+      // Act
+      const { unmount } = renderizar();
+
+      // Assert
+      expect(await screen.findByText('Projeto da Fila')).toBeInTheDocument();
+      expect(mockRpc).not.toHaveBeenCalledWith('sortear_proximo_projeto', expect.anything());
+      unmount();
+      localStorage.clear();
+    });
+
+    it('ausência é registrada pela função do banco (no projeto em que o avaliador está), sem gravar a tabela direto', async () => {
+      // Arrange
+      mockRpc.mockImplementation((nome: string) =>
+        Promise.resolve(nome === 'fn_assumir_item_fila' ? { data: PROJETO_FILA, error: null } : { data: null, error: null })
+      );
+      const { unmount } = renderizar();
+      await screen.findByText('Projeto da Fila');
+
+      // Act
+      fireEvent.click(screen.getByRole('button', { name: /ausente/i }));
+
+      // Assert
+      await waitFor(() =>
+        expect(mockRpc).toHaveBeenCalledWith('fn_registrar_impedimento', { p_id_projeto: PROJETO_FILA, p_tipo: 'ausencia' })
+      );
+      expect(mockFrom).not.toHaveBeenCalledWith('historico_impedimentos');
+      unmount();
+      localStorage.clear();
+    });
   });
 
   it('3. DE-PARA DE IMPORTAÇÃO: ao escolher cadastrar novo, salva a instituição e modalidade no banco com id_evento', async () => {

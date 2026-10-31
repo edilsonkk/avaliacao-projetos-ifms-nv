@@ -53,13 +53,13 @@ Base: `ALL` para o Admin em todas as tabelas; `TRUNCATE` revogado de todos.
 |---|---|---|---|
 | `eventos`, `instituicoes`, `areas_tematicas`, `modalidades` | ler | ler | ler |
 | `projetos`, `questionarios`, `perguntas_questionario` | — | ler | ler |
-| `usuarios` | — | só o próprio | ler e alterar avaliadores |
-| `avaliadores_evento` | — | ler o próprio | ler, inserir e alterar |
+| `usuarios` (sem `cpf`/`celular` para logados) | — | só o próprio | ler e alterar avaliadores |
+| `avaliadores_evento` | — | ler o próprio | ler; inserir e alterar **só avaliadores** |
 | `avaliacoes` | — | ler as próprias | apagar pendentes (sem nota) |
 | `respostas_avaliacao` | — | — | — |
-| `locks_ativos` | — | ler, criar e apagar **só as próprias** | ler e apagar |
-| `fila_atribuicoes_direcionadas` | — | ler e alterar só as próprias | ler e apagar |
-| `historico_impedimentos` | — | criar só em nome próprio | — |
+| `locks_ativos` | — | ler e apagar **só as próprias** (criar só via sorteio/fila) | ler e apagar |
+| `fila_atribuicoes_direcionadas` | — | ler só as próprias (assumir via `fn_assumir_item_fila`) | ler e apagar |
+| `historico_impedimentos` | — | ler os próprios (criar via `fn_registrar_impedimento`) | — |
 | `avaliador_modalidades_bloqueadas`, `avaliador_areas` | — | ler as próprias | ler e gravar |
 | `dispositivos_avaliador`, `pareamentos_pendentes`, `codigos_acesso` | — | — (só via funções) | — (só via funções) |
 
@@ -68,8 +68,16 @@ Regras de coluna que a RLS não alcança passam por funções:
 - **Questionário fixado:** o avaliador usa `fn_fixar_questionario`.
 - **Contagem para a cota:** o avaliador usa `fn_avaliacoes_ativas_do_projeto`, que devolve só o número, sem expor
   notas de outros.
+- **Trava da fila direcionada:** `fn_assumir_item_fila` percorre os itens pendentes do próprio avaliador, aplica as
+  regras de elegibilidade e a cota (com o projeto reservado) e só então grava a trava (2 h). O avaliador não grava
+  trava direto: antes podia escolher o projeto fora do sorteio e bloqueá-lo por anos.
+- **Ausência e conflito:** `fn_registrar_impedimento(p_id_projeto, 'ausencia' | 'conflito')` só no projeto em que o
+  avaliador está (com trava); grava o impedimento e libera a trava.
+- **Dados pessoais:** `cpf` e `celular` não podem ser lidos por usuários logados (nenhuma tela usa); o Admin grava
+  pelas funções de importação.
 
-O visitante não tem privilégio algum em `usuarios`, `avaliacoes` e nas tabelas operacionais. Contas sem papel
+O visitante não tem privilégio algum em `usuarios`, `avaliacoes` e nas tabelas operacionais, e nos cadastros públicos
+só tem `SELECT` (sem `INSERT`/`UPDATE`/`DELETE`: a proteção não depende só da RLS). Contas sem papel
 (qualquer cadastro feito pelo Auth público) só leem os catálogos públicos.
 
 **Views** usam `security_invoker` (respeitam a RLS de quem consulta) e são somente leitura.
@@ -82,6 +90,8 @@ O visitante não tem privilégio algum em `usuarios`, `avaliacoes` e nas tabelas
 | `fn_relatorio_*` | Autenticados, como `SECURITY INVOKER`: só o Admin vê todos os dados |
 | `sortear_proximo_projeto`, `fn_enviar_avaliacao` | Avaliador **em nome de si mesmo** (`p_id_usuario = avaliador_atual()`) ou Admin |
 | `fn_parear_dispositivo`, `fn_gerar_codigo_acesso`, `fn_desvincular_dispositivo`, `fn_check_in_projeto` | Staff ou Admin |
+| `fn_assumir_item_fila`, `fn_registrar_impedimento`, `fn_fixar_questionario` | Avaliador vinculado (`avaliador_atual()`) |
+| `fn_avaliacoes_do_questionario` | Admin |
 | `fn_solicitar_pareamento`, `fn_vincular_com_codigo` | Qualquer sessão (é o próprio celular) |
 | `fn_meu_perfil`, `fn_autocadastro_avaliador`, `fn_telao_resumo` | Público. O autocadastro nunca altera cadastro existente; o Telão só devolve totais |
 
@@ -124,6 +134,9 @@ npx supabase@2.122.0 db reset     # banco local com todas as migrations
 npx supabase@2.122.0 test db      # roda supabase/tests/*.sql
 ```
 
+A matriz completa papel × objeto (revisão da etapa 1, ver [modelo de ameaças](modelo-de-ameacas.md)) está em
+`supabase/tests/19_seguranca_matriz_test.sql`.
+
 O CI roda os testes em todo PR, e o check é obrigatório para o merge. Toda falha de segurança corrigida ganha um teste
 que **precisa falhar** sem a correção. Antes da troca do modelo, 20 desses ataques passavam no banco.
 
@@ -133,5 +146,7 @@ que **precisa falhar** sem a correção. Antes da troca do modelo, 20 desses ata
   Desvincular revoga o aparelho na hora.
 - **Cadastro público aberto:** é inofensivo para os dados, mas permite criar contas vazias. Sujeito ao rate limit do
   Auth; se houver abuso, ativar CAPTCHA (Turnstile) no painel do Supabase.
+- **Staff altera nome e e-mail de avaliadores** (balcão). Risco aceito: o Staff já pode vincular qualquer celular a
+  qualquer avaliador; trocar o e-mail não dá a ele poder novo.
 - **Pareamento por QR:** hoje o Staff digita o código mostrado no celular. A leitura do código por câmera pode ser
   adicionada depois, sem mudar o banco.

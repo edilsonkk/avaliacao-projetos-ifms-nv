@@ -11,6 +11,7 @@ Comece pela [visão geral](arquitetura/visao-geral.md). Para contribuir, leia o
 | Onde coloco um arquivo novo? Como crio uma feature? | [Front-end](arquitetura/frontend.md) |
 | Quais padrões de código e de interface seguir? | [Padrões](arquitetura/padroes.md) |
 | Quem pode ler/escrever o quê? | [Segurança](arquitetura/seguranca.md) |
+| Ameaças, revisão OWASP/MITRE e achados | [Modelo de ameaças](arquitetura/modelo-de-ameacas.md) |
 | Variáveis de ambiente e `localStorage` | [Configuração](arquitetura/configuracao.md) |
 | O que significa cada tabela/coluna? | [Modelo de dados](banco-de-dados/modelo-de-dados.md) |
 | Que funções/RPCs existem? | [Funções e RPCs](banco-de-dados/funcoes-e-rpcs.md) |

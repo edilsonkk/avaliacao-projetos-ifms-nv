@@ -72,6 +72,8 @@ describe('Auditoria de Regressão: Bloqueio Estrito por Modalidade no Sorteio e 
 
     vi.mocked(supabase.rpc).mockImplementation((nomeFn: string, params: any) => {
       chamadasRpcSorteio.push({ nomeFn, params });
+      // Fila direcionada vazia: o projeto vem do sorteio
+      if (nomeFn === 'fn_assumir_item_fila') return Promise.resolve({ data: null, error: null }) as any;
       return Promise.resolve({ data: 'p0000000-0000-0000-0000-000000000002', error: null }) as any;
     });
 
@@ -318,8 +320,7 @@ describe('Auditoria de Regressão: Bloqueio Estrito por Modalidade no Sorteio e 
 
     // Deve detectar a violação e disparar o sorteio pela RPC
     await waitFor(() => {
-      expect(chamadasRpcSorteio.length).toBeGreaterThanOrEqual(1);
-      expect(chamadasRpcSorteio[0].nomeFn).toBe('sortear_proximo_projeto');
+      expect(chamadasRpcSorteio.map((c) => c.nomeFn)).toContain('sortear_proximo_projeto');
     });
   });
 });

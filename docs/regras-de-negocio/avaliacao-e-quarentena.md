@@ -8,7 +8,8 @@ Código: `src/features/avaliacao/components/TelaAvaliador.tsx`, `src/features/at
 1. Celular vinculado no credenciamento (pareamento ou código de acesso; ver [credenciamento](credenciamento-e-pessoas.md#login)).
 2. A `TelaAvaliador` valida a [janela de avaliação](eventos.md#janela-de-avaliação). Fora da janela, mostra o estado
    correspondente e não sorteia.
-3. Consome primeiro a fila direcionada; se vazia, chama o [sorteio](sorteio-e-atribuicao.md).
+3. Consome primeiro a fila direcionada (`fn_assumir_item_fila`: o banco pula itens inelegíveis ou com cota cheia e
+   grava a trava); se não houver item válido, chama o [sorteio](sorteio-e-atribuicao.md).
 4. Ao confirmar presença no estande, registra o horário de início (`tempo_presenca`).
 5. Preenche as notas por critério do questionário (escala Likert do questionário) e o parecer.
 6. Envia por `supabase.rpc('fn_enviar_avaliacao', ...)`. Regras do servidor em
@@ -19,8 +20,9 @@ Código: `src/features/avaliacao/components/TelaAvaliador.tsx`, `src/features/at
 e enviar normalmente. Depois disso, novos sorteios ficam bloqueados e a tela mostra `"Avaliações Encerradas"`.
 
 **Ausência e conflito:** ao chegar ao estande, o avaliador pode marcar o projeto como **ausente** ou declarar
-**conflito** de interesse. O sistema grava `historico_impedimentos` (`tipo = 'ausencia'` ou `'conflito'`), libera a
-trava e sorteia outro projeto. Esse projeto não volta a ser sorteado para o mesmo avaliador.
+**conflito** de interesse. O sistema grava `historico_impedimentos` (`tipo = 'ausencia'` ou `'conflito'`) por
+`fn_registrar_impedimento`, que só aceita o projeto em que o avaliador está (com trava), libera a trava e sorteia outro
+projeto. Esse projeto não volta a ser sorteado para o mesmo avaliador.
 (`projetos.contagem_ausencia` é usado como critério de ordenação do sorteio, mas não é incrementado por esse fluxo.)
 
 ## Nota final
