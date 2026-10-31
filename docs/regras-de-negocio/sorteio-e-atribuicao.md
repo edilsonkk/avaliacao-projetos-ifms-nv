@@ -71,8 +71,13 @@ Tabela `avaliador_areas (id_usuario, id_evento, id_area)`. Um avaliador pode ter
 
 - Nenhum projeto recebe avaliações além da cota (`cota_avaliacoes_customizada` ou `cota_avaliacoes_padrao`, padrão 3).
 - Avaliações canceladas **não** contam. O projeto volta à fila para **outros** avaliadores.
+- **Sorteios simultâneos**: o sorteio reserva a linha do projeto (`FOR UPDATE OF p SKIP LOCKED`) e confere de novo
+  trava e cota antes de gravar a trava. Assim, dois avaliadores que sorteiam no mesmo instante nunca recebem o
+  mesmo projeto, e ninguém avalia um projeto cuja cota fecha antes do envio. Teste de carga: 60 sorteios
+  simultâneos para 20 vagas resultam em exatamente 20 travas.
 - Quando nenhum projeto é elegível e todos atingiram a cota, a `TelaAvaliador` mostra:
-  `"Avaliações da Feira Concluídas! Todos os projetos atingiram a cota necessária."`
+  `"Avaliações da Feira Concluídas! Todos os projetos atingiram a cota necessária."` (`fn_feira_concluida`: todos
+  os projetos presentes na competição; projeto sem check-in não impede o fim).
 
 ## Forçar topo da fila
 

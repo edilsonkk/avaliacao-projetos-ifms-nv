@@ -78,9 +78,11 @@ describe('Auditoria de Regressão: Impedir Reatribuição do Mesmo Projeto ao Me
     expect(migrationSql).toContain('SELECT a.id_projeto FROM public.avaliacoes a \n      WHERE a.id_usuario = p_id_usuario');
     expect(migrationSql).not.toContain("WHERE a.id_usuario = p_id_usuario \n        AND (a.status IS NULL OR a.status != 'CANCELADA')");
 
-    expect(schemaSql).toContain('p.id_projeto NOT IN (');
-    expect(schemaSql).toContain('SELECT a.id_projeto FROM public.avaliacoes a \n      WHERE a.id_usuario = p_id_usuario');
-    expect(schemaSql).not.toContain("WHERE a.id_usuario = p_id_usuario \n        AND (a.status IS NULL OR a.status != 'CANCELADA')");
+    // No schema gerado a indentação acompanha a versão atual da função: compara ignorando espaços
+    const schemaCompacto = schemaSql.replace(/\s+/g, ' ');
+    expect(schemaCompacto).toContain('p.id_projeto NOT IN (');
+    expect(schemaCompacto).toContain('SELECT a.id_projeto FROM public.avaliacoes a WHERE a.id_usuario = p_id_usuario )');
+    expect(schemaCompacto).not.toContain("WHERE a.id_usuario = p_id_usuario AND (a.status IS NULL OR a.status != 'CANCELADA')");
 
     // 2. A cota do projeto continua ignorando avaliações CANCELADA para abrir vaga a outros avaliadores
     expect(migrationSql).toContain("(a.status IS NULL OR a.status != 'CANCELADA')");

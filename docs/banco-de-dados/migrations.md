@@ -159,3 +159,4 @@ de dados, restaure o backup gerado antes do `db push` ([restaurar backup](../ope
 | `20261030100000_atribuicao_sem_staff.sql` | `fn_motivo_inelegivel` recusa quem não tem papel Avaliador: banca e fila não aceitam mais Staff credenciado |
 | `20261030110000_relatorio_cota_projeto.sql` | `fn_relatorio_projetos_completo` devolve `cota_avaliacoes` (customizada ou padrão do evento) para a meta dos Indicadores |
 | `20261030120000_avaliacao_finalizada.sql` | `avaliacao_finalizada` no `fn_telao_resumo`; `fn_feira_concluida` ignora projetos sem check-in; cronômetro do Telão usa `data_evento` |
+| `20261030130000_sorteio_concorrente.sql` | `sortear_proximo_projeto` reserva a linha do projeto (`FOR UPDATE SKIP LOCKED`) e reconfere trava/cota: sorteios simultâneos não estouram a cota |

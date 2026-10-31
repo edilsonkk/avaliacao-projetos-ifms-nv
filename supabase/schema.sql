@@ -2662,6 +2662,8 @@ CREATE OR REPLACE FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uu
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 DECLARE
+  v_descartados UUID[] := '{}';
+  v_tentativas INTEGER := 0;
   v_id_instituicao_avaliador UUID;
   v_id_projeto_sorteado UUID;
   v_minutos_lock INTEGER := 30;
@@ -2699,66 +2701,86 @@ BEGIN
   --    f) Não possui impedimento registrado (ausência/conflito) por este avaliador;
   --    g) Respeita a cota estrita (avaliações ativas não-canceladas + locks < cota);
   --    h) Ordena prioritariamente por topo da fila, afinidade temática, menos avaliações ativas recebidas, menos faltas e estande.
-  SELECT p.id_projeto INTO v_id_projeto_sorteado
-  FROM public.projetos p
-  LEFT JOIN public.locks_ativos l ON l.id_projeto = p.id_projeto
-  WHERE p.id_evento = p_id_evento
-    AND p.is_check_in_realizado = true
-    AND p.is_fora_da_competicao = false
-    AND l.id_projeto IS NULL
-    AND (v_id_instituicao_avaliador IS NULL OR p.id_instituicao IS DISTINCT FROM v_id_instituicao_avaliador)
-    AND (
-      p.id_modalidade IS NULL OR p.id_modalidade NOT IN (
-        SELECT amb.id_modalidade 
-        FROM public.avaliador_modalidades_bloqueadas amb 
-        WHERE amb.id_usuario = p_id_usuario AND amb.id_evento = p_id_evento
+  -- Concorrência: dois avaliadores sorteando ao mesmo tempo viam o mesmo projeto livre e ambos
+  -- recebiam trava (o segundo avaliava e o envio era recusado por cota). Agora a linha do projeto
+  -- é reservada (FOR UPDATE ... SKIP LOCKED) e, com ela reservada, trava e cota são conferidas de
+  -- novo com dados atualizados (cada comando vê o que outros sorteios já gravaram).
+  LOOP
+    SELECT p.id_projeto INTO v_id_projeto_sorteado
+    FROM public.projetos p
+    LEFT JOIN public.locks_ativos l ON l.id_projeto = p.id_projeto
+    WHERE p.id_evento = p_id_evento
+      AND NOT (p.id_projeto = ANY (v_descartados))
+      AND p.is_check_in_realizado = true
+      AND p.is_fora_da_competicao = false
+      AND l.id_projeto IS NULL
+      AND (v_id_instituicao_avaliador IS NULL OR p.id_instituicao IS DISTINCT FROM v_id_instituicao_avaliador)
+      AND (
+        p.id_modalidade IS NULL OR p.id_modalidade NOT IN (
+          SELECT amb.id_modalidade 
+          FROM public.avaliador_modalidades_bloqueadas amb 
+          WHERE amb.id_usuario = p_id_usuario AND amb.id_evento = p_id_evento
+        )
       )
-    )
-    -- REGRA CRÍTICA: Bloqueia incondicionalmente qualquer projeto já avaliado (ativo ou cancelado) pelo mesmo avaliador.
-    -- Evita colisão na constraint UNIQUE (id_projeto, id_usuario) e impede reavaliação pelo mesmo usuário.
-    AND p.id_projeto NOT IN (
-      SELECT a.id_projeto FROM public.avaliacoes a 
-      WHERE a.id_usuario = p_id_usuario
-    )
-    AND p.id_projeto NOT IN (
-      SELECT hi.id_projeto FROM public.historico_impedimentos hi WHERE hi.id_usuario = p_id_usuario
-    )
-    -- COTA DO PROJETO: Avaliações canceladas NÃO contam para a cota, liberando a vaga para OUTROS avaliadores.
-    AND (
+      -- REGRA CRÍTICA: Bloqueia incondicionalmente qualquer projeto já avaliado (ativo ou cancelado) pelo mesmo avaliador.
+      -- Evita colisão na constraint UNIQUE (id_projeto, id_usuario) e impede reavaliação pelo mesmo usuário.
+      AND p.id_projeto NOT IN (
+        SELECT a.id_projeto FROM public.avaliacoes a 
+        WHERE a.id_usuario = p_id_usuario
+      )
+      AND p.id_projeto NOT IN (
+        SELECT hi.id_projeto FROM public.historico_impedimentos hi WHERE hi.id_usuario = p_id_usuario
+      )
+      -- COTA DO PROJETO: Avaliações canceladas NÃO contam para a cota, liberando a vaga para OUTROS avaliadores.
+      AND (
+        (
+          SELECT COUNT(*) 
+          FROM public.avaliacoes a 
+          WHERE a.id_projeto = p.id_projeto 
+            AND (a.status IS NULL OR a.status != 'CANCELADA')
+        ) +
+        (
+          SELECT COUNT(*) 
+          FROM public.locks_ativos lk 
+          WHERE lk.id_projeto = p.id_projeto
+        )
+      ) < COALESCE(p.cota_avaliacoes_customizada, v_cota_padrao)
+    ORDER BY 
+      p.forcar_topo_fila DESC,
+      -- Prioridade por Afinidade Temática: 0 se o projeto for da área do avaliador, 1 se for de outra área
+      CASE 
+        WHEN EXISTS (SELECT 1 FROM public.avaliador_areas aa WHERE aa.id_usuario = p_id_usuario AND aa.id_evento = p_id_evento)
+        THEN (
+          CASE 
+            WHEN p.id_area IN (SELECT aa.id_area FROM public.avaliador_areas aa WHERE aa.id_usuario = p_id_usuario AND aa.id_evento = p_id_evento) THEN 0 
+            ELSE 1 
+          END
+        )
+        ELSE 0
+      END ASC,
       (
         SELECT COUNT(*) 
         FROM public.avaliacoes a 
         WHERE a.id_projeto = p.id_projeto 
           AND (a.status IS NULL OR a.status != 'CANCELADA')
-      ) +
-      (
-        SELECT COUNT(*) 
-        FROM public.locks_ativos lk 
-        WHERE lk.id_projeto = p.id_projeto
-      )
-    ) < COALESCE(p.cota_avaliacoes_customizada, v_cota_padrao)
-  ORDER BY 
-    p.forcar_topo_fila DESC,
-    -- Prioridade por Afinidade Temática: 0 se o projeto for da área do avaliador, 1 se for de outra área
-    CASE 
-      WHEN EXISTS (SELECT 1 FROM public.avaliador_areas aa WHERE aa.id_usuario = p_id_usuario AND aa.id_evento = p_id_evento)
-      THEN (
-        CASE 
-          WHEN p.id_area IN (SELECT aa.id_area FROM public.avaliador_areas aa WHERE aa.id_usuario = p_id_usuario AND aa.id_evento = p_id_evento) THEN 0 
-          ELSE 1 
-        END
-      )
-      ELSE 0
-    END ASC,
-    (
-      SELECT COUNT(*) 
-      FROM public.avaliacoes a 
-      WHERE a.id_projeto = p.id_projeto 
-        AND (a.status IS NULL OR a.status != 'CANCELADA')
-    ) ASC,
-    p.contagem_ausencia ASC,
-    p.estande ASC
-  LIMIT 1;
+      ) ASC,
+      p.contagem_ausencia ASC,
+      p.estande ASC
+    LIMIT 1
+    FOR UPDATE OF p SKIP LOCKED;
+    EXIT WHEN v_id_projeto_sorteado IS NULL;
+
+    EXIT WHEN NOT EXISTS (SELECT 1 FROM public.locks_ativos lk WHERE lk.id_projeto = v_id_projeto_sorteado)
+      AND (SELECT COUNT(*) FROM public.avaliacoes a
+           WHERE a.id_projeto = v_id_projeto_sorteado AND (a.status IS NULL OR a.status <> 'CANCELADA'))
+          < (SELECT COALESCE(p.cota_avaliacoes_customizada, v_cota_padrao) FROM public.projetos p WHERE p.id_projeto = v_id_projeto_sorteado);
+
+    -- Outro sorteio ocupou este projeto: descarta e tenta o próximo
+    v_descartados := v_descartados || v_id_projeto_sorteado;
+    v_id_projeto_sorteado := NULL;
+    v_tentativas := v_tentativas + 1;
+    EXIT WHEN v_tentativas >= 50;
+  END LOOP;
 
   -- 6. Se encontrou um projeto, insere a trava na tabela locks_ativos
   IF v_id_projeto_sorteado IS NOT NULL THEN
