@@ -30,6 +30,7 @@ interface ResumoTelao {
   avaliacoes_na_meta: number;
   projetos_quarentena: number;
   cota_padrao: number;
+  avaliacao_finalizada: boolean;
 }
 
 // Estado inicial zerado: o Telão é público e não deve projetar números de exemplo.
@@ -48,6 +49,7 @@ const RESUMO_VAZIO: ResumoTelao = {
   avaliacoes_na_meta: 0,
   projetos_quarentena: 0,
   cota_padrao: 3,
+  avaliacao_finalizada: false,
 };
 
 const INTERVALO_ATUALIZACAO_MS = 10_000;
@@ -98,6 +100,7 @@ export const TelaoAoVivo: React.FC = () => {
         avaliacoes_na_meta: numero(r.avaliacoes_na_meta),
         projetos_quarentena: numero(r.projetos_quarentena),
         cota_padrao: numero(r.cota_padrao) || 3,
+        avaliacao_finalizada: r.avaliacao_finalizada === true,
       });
       set_ultima_atualizacao(new Date());
       set_sem_conexao(false);
@@ -187,6 +190,21 @@ export const TelaoAoVivo: React.FC = () => {
           <div aria-hidden="true" className={`w-3 h-3 rounded-full shrink-0 ${sem_conexao ? 'bg-red-500' : 'bg-emerald-500 animate-ping'}`}></div>
         </div>
       </header>
+
+      {resumo.avaliacao_finalizada && (
+        <section
+          role="status"
+          className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-3xl p-6 lg:p-8 shadow-lg flex items-center gap-5"
+        >
+          <Award className="w-14 h-14 shrink-0" aria-hidden="true" />
+          <div>
+            <h2 className="text-3xl lg:text-5xl font-black tracking-tight">Avaliação finalizada</h2>
+            <p className="text-sm lg:text-lg font-semibold text-emerald-50 mt-1">
+              Todos os projetos presentes receberam as avaliações da cota. Obrigado, avaliadores!
+            </p>
+          </div>
+        </section>
+      )}
 
       {/* 5 CARDS GRANDES DE KPIS CONECTADOS */}
       <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 lg:gap-6">

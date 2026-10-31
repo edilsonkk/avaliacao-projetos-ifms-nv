@@ -76,6 +76,8 @@ export const TelaAdmin: React.FC = () => {
   // Vem do evento ativo do banco (o nome guardado no navegador pode ser de outro evento)
   const [nomeEvento, setNomeEvento] = useState<string>('');
 
+  const [avaliacao_finalizada, set_avaliacao_finalizada] = useState<boolean>(false);
+
   // Estado de erro
   const [mensagem_erro_admin, set_mensagem_erro_admin] = useState<string | null>(null);
 
@@ -229,6 +231,13 @@ export const TelaAdmin: React.FC = () => {
       if (error) throw error;
 
       setNomeEvento(dados_evento?.nome_evento || 'Nenhum evento ativo');
+      // Mesma regra do Telão: todos os projetos presentes na competição atingiram a cota
+      if (dados_evento?.id_evento) {
+        const { data: resumo } = await supabase.rpc('fn_telao_resumo', { p_id_evento: dados_evento.id_evento });
+        set_avaliacao_finalizada((resumo as { avaliacao_finalizada?: boolean } | null)?.avaliacao_finalizada === true);
+      } else {
+        set_avaliacao_finalizada(false);
+      }
       set_metricas_admin({
         evento_ativo_id: dados_evento?.id_evento || '',
         evento_ativo_nome: dados_evento?.nome_evento || '',
@@ -245,6 +254,9 @@ export const TelaAdmin: React.FC = () => {
 
   useEffect(() => {
     fetchDashboardData();
+    // Atualiza sozinho para o aviso de avaliação finalizada aparecer sem recarregar
+    const intervalo = setInterval(fetchDashboardData, 30_000);
+    return () => clearInterval(intervalo);
   }, [fetchDashboardData]);
 
   // 2. Função de Execução do Reset Global via RPC
@@ -429,6 +441,12 @@ export const TelaAdmin: React.FC = () => {
         <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white dark:bg-emerald-600 px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-sm font-medium animate-bounce">
           <CheckCircle2 className="w-5 h-5 text-emerald-400 dark:text-white shrink-0" />
           <span>{mensagem_notificacao}</span>
+        </div>
+      )}
+
+      {avaliacao_finalizada && (
+        <div role="status" className="bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 p-4 rounded-2xl text-emerald-800 dark:text-emerald-200 text-sm font-bold">
+          Avaliação finalizada: todos os projetos presentes atingiram a cota de avaliações.
         </div>
       )}
 

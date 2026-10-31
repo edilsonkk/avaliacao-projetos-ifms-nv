@@ -134,6 +134,26 @@ describe('TelaoAoVivo', () => {
     await waitFor(() => expect(supabase.rpc).toHaveBeenCalledTimes(2));
   });
 
+  it('deve anunciar quando a avaliação foi finalizada', async () => {
+    // Arrange
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: { ...RESUMO, avaliacao_finalizada: true }, error: null } as never);
+
+    // Act
+    render(<TelaoAoVivo />);
+
+    // Assert
+    expect(await screen.findByRole('heading', { name: /avaliação finalizada/i })).toBeInTheDocument();
+  });
+
+  it('não deve anunciar o fim enquanto faltam avaliações', async () => {
+    // Arrange / Act
+    render(<TelaoAoVivo />);
+    await screen.findByText('40');
+
+    // Assert
+    expect(screen.queryByRole('heading', { name: /avaliação finalizada/i })).not.toBeInTheDocument();
+  });
+
   it('inicioDoEvento deve ignorar evento sem data ou horário', () => {
     // Arrange / Act / Assert
     expect(inicioDoEvento(null, '08:00:00')).toBeNull();

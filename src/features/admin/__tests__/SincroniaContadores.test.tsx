@@ -73,4 +73,16 @@ describe('Painel do Admin: sincronia do evento ativo', () => {
     expect(screen.getByRole('button', { name: 'Editar Nome do Evento' })).toBeDisabled();
     localStorage.removeItem('evento_ativo_nome');
   });
+
+  it('deve indicar no painel quando a avaliação do evento foi finalizada', async () => {
+    // Arrange
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: { avaliacao_finalizada: true }, error: null } as never);
+
+    // Act
+    render(<TelaAdmin />);
+
+    // Assert
+    expect(await screen.findByText(/avaliação finalizada/i)).toBeInTheDocument();
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_telao_resumo', { p_id_evento: 'evt-1' });
+  });
 });

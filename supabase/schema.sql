@@ -1657,6 +1657,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_feira_concluida"("p_id_evento" "uuid") R
     FROM public.projetos p
     WHERE p.id_evento = coalesce(p_id_evento, public.evento_ativo_id())
       AND coalesce(p.is_fora_da_competicao, false) = false
+      AND p.is_check_in_realizado IS TRUE
   )
   SELECT CASE WHEN public.avaliador_atual() IS NULL AND NOT public.is_staff() AND NOT public.is_admin() THEN NULL
               WHEN NOT EXISTS (SELECT 1 FROM proj) THEN false
@@ -2272,7 +2273,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid" DEFAU
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
   WITH ev AS (
-    SELECT id_evento, nome_evento, edicao, coalesce(data_inicio, data_evento) AS data_evento,
+    SELECT id_evento, nome_evento, edicao, coalesce(data_evento, data_inicio) AS data_evento,
       horario_inicio, horario_fim, coalesce(cota_avaliacoes_padrao, 3) AS cota
     FROM public.eventos WHERE id_evento = coalesce(p_id_evento, public.evento_ativo_id())
   ),
@@ -2319,7 +2320,8 @@ CREATE OR REPLACE FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid" DEFAU
     'meta_global', (SELECT coalesce(sum(cota), 0) FROM presentes),
     'avaliacoes_na_meta', (SELECT coalesce(sum(least(qtd, cota)), 0) FROM presentes),
     'projetos_quarentena', (SELECT count(*) FROM public.view_projetos_quarentena q JOIN ev ON ev.id_evento = q.id_evento),
-    'cota_padrao', (SELECT cota FROM ev)
+    'cota_padrao', (SELECT cota FROM ev),
+    'avaliacao_finalizada', (SELECT count(*) > 0 AND bool_and(qtd >= cota) FROM presentes)
   );
 $$;
 
