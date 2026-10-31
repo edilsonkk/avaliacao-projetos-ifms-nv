@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.7.0...v0.7.1) (2026-10-31)
+
+
+### Correções
+
+* **relatorios:** relatórios voltam a carregar (rpc chamado fora do cliente quebrava com "this.rest") ([#58](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/58)) ([59d1e3c](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/59d1e3c0b215dc14c33bd64e3e7fee0392ffc8f9))
+
 ## [0.7.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.6.10...v0.7.0) (2026-10-31)
 
 
