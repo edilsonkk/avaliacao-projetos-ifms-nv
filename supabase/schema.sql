@@ -238,6 +238,86 @@ $$;
 ALTER FUNCTION "public"."admin_bloquear_modalidade_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid", "p_id_modalidade" "uuid", "p_bloquear" boolean) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_copiar_questionario"("p_id_origem" "uuid", "p_id_evento" "uuid") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_titulo        text;
+  v_base          text;
+  v_min           numeric(5,2);
+  v_max           numeric(5,2);
+  v_evento_origem uuid;
+  v_origem_quest  uuid;
+  v_eh_modelo     boolean;
+  v_origem        uuid;
+  v_id            uuid;
+  v_n             integer := 1;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.eventos WHERE id_evento = p_id_evento) THEN
+    RAISE EXCEPTION 'Evento não encontrado.' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT m.titulo, m.escala_minima, m.escala_maxima INTO v_titulo, v_min, v_max
+  FROM public.modelos_questionario m WHERE m.id_modelo = p_id_origem;
+  v_eh_modelo := FOUND;
+  v_origem := p_id_origem;
+
+  IF NOT v_eh_modelo THEN
+    SELECT q.titulo, q.escala_minima, q.escala_maxima, q.id_evento, q.id_origem
+      INTO v_titulo, v_min, v_max, v_evento_origem, v_origem_quest
+    FROM public.questionarios q WHERE q.id_questionario = p_id_origem;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Questionário de origem não encontrado.' USING ERRCODE = '22023';
+    END IF;
+    IF v_evento_origem IS NOT DISTINCT FROM p_id_evento THEN
+      RAISE EXCEPTION 'Este questionário já pertence ao evento.' USING ERRCODE = '22023';
+    END IF;
+    -- Cópia de um modelo continua apontando para o modelo: o card mostra o modelo como ativo
+    IF v_origem_quest IS NOT NULL AND EXISTS (SELECT 1 FROM public.modelos_questionario WHERE id_modelo = v_origem_quest) THEN
+      v_origem := v_origem_quest;
+    END IF;
+  END IF;
+
+  -- Já copiado para este evento: devolve a cópia existente
+  SELECT q.id_questionario INTO v_id FROM public.questionarios q
+  WHERE q.id_evento = p_id_evento AND q.id_origem = v_origem;
+  IF FOUND THEN
+    RETURN v_id;
+  END IF;
+
+  v_base := left(v_titulo, 240);
+  v_titulo := v_base;
+  WHILE EXISTS (SELECT 1 FROM public.questionarios WHERE id_evento = p_id_evento AND lower(titulo) = lower(v_titulo)) LOOP
+    v_titulo := v_base || CASE WHEN v_n = 1 THEN ' (cópia)' ELSE ' (cópia ' || v_n || ')' END;
+    v_n := v_n + 1;
+  END LOOP;
+
+  INSERT INTO public.questionarios (id_evento, titulo, escala_minima, escala_maxima, id_origem)
+  VALUES (p_id_evento, v_titulo, v_min, v_max, v_origem)
+  RETURNING id_questionario INTO v_id;
+
+  IF v_eh_modelo THEN
+    INSERT INTO public.perguntas_questionario (id_questionario, ordem, texto_pergunta, descricao_lembrete, peso_calculo, peso_desempate)
+    SELECT v_id, pm.ordem, pm.texto_pergunta, pm.descricao_lembrete, pm.peso_calculo, pm.peso_desempate
+    FROM public.perguntas_modelo_questionario pm WHERE pm.id_modelo = p_id_origem;
+  ELSE
+    INSERT INTO public.perguntas_questionario (id_questionario, ordem, texto_pergunta, descricao_lembrete, peso_calculo, peso_desempate)
+    SELECT v_id, pq.ordem, pq.texto_pergunta, pq.descricao_lembrete, pq.peso_calculo, pq.peso_desempate
+    FROM public.perguntas_questionario pq WHERE pq.id_questionario = p_id_origem;
+  END IF;
+
+  RETURN v_id;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_copiar_questionario"("p_id_origem" "uuid", "p_id_evento" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_desbloquear_projeto"("p_id_projeto" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -479,6 +559,37 @@ $$;
 
 
 ALTER FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_id_evento" "uuid") RETURNS TABLE("id_questionario" "uuid", "titulo" "text", "nome_evento" "text", "data_evento" "date", "total_perguntas" integer, "total_avaliacoes" integer, "ja_no_evento" boolean)
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  RETURN QUERY
+  SELECT q.id_questionario,
+         q.titulo::text,
+         e.nome_evento::text,
+         coalesce(e.data_evento, e.data_inicio)::date,
+         (SELECT count(*)::integer FROM public.perguntas_questionario pq WHERE pq.id_questionario = q.id_questionario),
+         (SELECT count(*)::integer FROM public.avaliacoes a WHERE a.id_questionario = q.id_questionario),
+         EXISTS (
+           SELECT 1 FROM public.questionarios c
+           WHERE c.id_evento = p_id_evento
+             AND c.id_origem IN (q.id_questionario, q.id_origem)
+         )
+  FROM public.questionarios q
+  JOIN public.eventos e ON e.id_evento = q.id_evento
+  WHERE q.id_evento IS DISTINCT FROM p_id_evento
+  ORDER BY coalesce(e.data_evento, e.data_inicio) DESC NULLS LAST, e.nome_evento, q.titulo;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_id_evento" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_remover_avaliador_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") RETURNS "jsonb"
@@ -1512,6 +1623,27 @@ $$;
 ALTER FUNCTION "public"."fn_avaliacoes_do_questionario"("p_id_questionario" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_chave_desempate"("p_id_projeto" "uuid") RETURNS numeric[]
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT coalesce(array_agg(x.media ORDER BY x.prioridade, x.ordem), '{}'::numeric[])
+  FROM (
+    SELECT pq.peso_desempate AS prioridade, pq.ordem, round(avg(r.nota_atribuida), 2) AS media
+    FROM public.avaliacoes a
+    JOIN public.respostas_avaliacao r ON r.id_avaliacao = a.id_avaliacao
+    JOIN public.perguntas_questionario pq ON pq.id_pergunta = r.id_pergunta
+    WHERE a.id_projeto = p_id_projeto
+      AND (a.status IS NULL OR a.status <> 'CANCELADA')
+      AND pq.peso_desempate > 0
+    GROUP BY pq.id_pergunta, pq.peso_desempate, pq.ordem
+  ) x;
+$$;
+
+
+ALTER FUNCTION "public"."fn_chave_desempate"("p_id_projeto" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_check_in_projeto"("p_id_projeto" "uuid", "p_check_in" boolean) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1727,8 +1859,15 @@ BEGIN
       USING ERRCODE = '22003';
   END IF;
 
-  -- 9. NOTA FINAL calculada no servidor (média simples, mesma semântica do front).
-  v_nota_final := ROUND(v_soma / v_qtd_respostas, 2);
+  -- 9. NOTA FINAL calculada no servidor: média ponderada pelo peso_calculo de
+  --    cada pergunta (lido do banco, nunca do cliente). Pesos iguais = média simples.
+  SELECT ROUND(SUM((r->>'nota')::numeric * pq.peso_calculo) / NULLIF(SUM(pq.peso_calculo), 0), 2)
+    INTO v_nota_final
+  FROM jsonb_array_elements(p_respostas) AS r
+  JOIN public.perguntas_questionario pq
+    ON pq.id_pergunta::text = r->>'id_pergunta' AND pq.id_questionario = p_id_questionario
+  WHERE pq.peso_calculo > 0;
+  v_nota_final := COALESCE(v_nota_final, ROUND(v_soma / v_qtd_respostas, 2));
 
   -- 10. GRAVAÇÃO ATÔMICA.
   INSERT INTO public.avaliacoes (
@@ -3294,6 +3433,21 @@ CREATE TABLE IF NOT EXISTS "public"."modalidades" (
 ALTER TABLE "public"."modalidades" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."modelos_questionario" (
+    "id_modelo" "uuid" NOT NULL,
+    "codigo" "text" NOT NULL,
+    "titulo" character varying(255) NOT NULL,
+    "descricao" "text",
+    "escala_minima" numeric(5,2) DEFAULT 1 NOT NULL,
+    "escala_maxima" numeric(5,2) DEFAULT 5 NOT NULL,
+    "ordem" integer DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."modelos_questionario" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."pareamentos_pendentes" (
     "codigo" "text" NOT NULL,
     "auth_uid" "uuid" NOT NULL,
@@ -3304,6 +3458,19 @@ CREATE TABLE IF NOT EXISTS "public"."pareamentos_pendentes" (
 
 
 ALTER TABLE "public"."pareamentos_pendentes" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."perguntas_modelo_questionario" (
+    "id_modelo" "uuid" NOT NULL,
+    "ordem" integer NOT NULL,
+    "texto_pergunta" "text" NOT NULL,
+    "descricao_lembrete" "text",
+    "peso_calculo" numeric(5,2) DEFAULT 1 NOT NULL,
+    "peso_desempate" numeric(5,2) DEFAULT 1 NOT NULL
+);
+
+
+ALTER TABLE "public"."perguntas_modelo_questionario" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."perguntas_questionario" (
@@ -3366,11 +3533,16 @@ CREATE TABLE IF NOT EXISTS "public"."questionarios" (
     "titulo" character varying(255) NOT NULL,
     "escala_minima" numeric(5,2) DEFAULT 0.00,
     "escala_maxima" numeric(5,2) DEFAULT 10.00,
-    "created_at" timestamp with time zone DEFAULT "now"()
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "id_origem" "uuid"
 );
 
 
 ALTER TABLE "public"."questionarios" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."questionarios"."id_origem" IS 'Modelo (modelos_questionario) ou questionário de outro evento de onde esta cópia veio.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."registro_autocadastro" (
@@ -3509,6 +3681,21 @@ CREATE OR REPLACE VIEW "public"."view_ranking_top3" WITH ("security_invoker"='tr
              JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")))))
           WHERE (NOT COALESCE("p"."is_fora_da_competicao", false))
           GROUP BY "p"."id_projeto", "p"."codigo_projeto", "p"."titulo", "p"."estande", "p"."corredor", "m"."nome_modalidade", "ar"."nome_area", "inst"."nome_exibicao", "p"."id_evento"
+        ), "com_chave" AS (
+         SELECT "b_1"."id_projeto",
+            "b_1"."codigo_projeto",
+            "b_1"."titulo",
+            "b_1"."estande",
+            "b_1"."corredor",
+            "b_1"."modalidade",
+            "b_1"."area_tematica",
+            "b_1"."nome_instituicao",
+            "b_1"."notas",
+            "b_1"."media_geral",
+            "b_1"."total_avaliacoes",
+            "b_1"."id_evento",
+            "public"."fn_chave_desempate"("b_1"."id_projeto") AS "chave_desempate"
+           FROM "base" "b_1"
         )
  SELECT "id_projeto",
     "codigo_projeto",
@@ -3522,11 +3709,12 @@ CREATE OR REPLACE VIEW "public"."view_ranking_top3" WITH ("security_invoker"='tr
     "media_geral",
     "total_avaliacoes",
     "id_evento",
-    "rank"() OVER (PARTITION BY "id_evento", "modalidade", "area_tematica" ORDER BY "media_geral" DESC) AS "posicao",
+    "rank"() OVER (PARTITION BY "id_evento", "modalidade", "area_tematica" ORDER BY "media_geral" DESC, "chave_desempate" DESC) AS "posicao",
     (EXISTS ( SELECT 1
            FROM "public"."view_projetos_quarentena" "q"
-          WHERE ("q"."id_projeto" = "b"."id_projeto"))) AS "em_quarentena"
-   FROM "base" "b"
+          WHERE ("q"."id_projeto" = "b"."id_projeto"))) AS "em_quarentena",
+    "chave_desempate"
+   FROM "com_chave" "b"
   ORDER BY "media_geral" DESC, "codigo_projeto";
 
 
@@ -3724,6 +3912,16 @@ ALTER TABLE ONLY "public"."modalidades"
 
 
 
+ALTER TABLE ONLY "public"."modelos_questionario"
+    ADD CONSTRAINT "modelos_questionario_codigo_key" UNIQUE ("codigo");
+
+
+
+ALTER TABLE ONLY "public"."modelos_questionario"
+    ADD CONSTRAINT "modelos_questionario_pkey" PRIMARY KEY ("id_modelo");
+
+
+
 ALTER TABLE ONLY "public"."pareamentos_pendentes"
     ADD CONSTRAINT "pareamentos_pendentes_auth_uid_key" UNIQUE ("auth_uid");
 
@@ -3731,6 +3929,11 @@ ALTER TABLE ONLY "public"."pareamentos_pendentes"
 
 ALTER TABLE ONLY "public"."pareamentos_pendentes"
     ADD CONSTRAINT "pareamentos_pendentes_pkey" PRIMARY KEY ("codigo");
+
+
+
+ALTER TABLE ONLY "public"."perguntas_modelo_questionario"
+    ADD CONSTRAINT "perguntas_modelo_questionario_pkey" PRIMARY KEY ("id_modelo", "ordem");
 
 
 
@@ -3894,6 +4097,10 @@ CREATE UNIQUE INDEX "uq_idx_modalidades_evento_nome" ON "public"."modalidades" U
 
 
 
+CREATE UNIQUE INDEX "uq_questionarios_evento_origem" ON "public"."questionarios" USING "btree" ("id_evento", "id_origem") WHERE ("id_origem" IS NOT NULL);
+
+
+
 CREATE OR REPLACE TRIGGER "instituicoes_normalizar" BEFORE INSERT OR UPDATE OF "nome_exibicao", "nome_normalizado", "sigla" ON "public"."instituicoes" FOR EACH ROW EXECUTE FUNCTION "public"."trg_instituicoes_normalizar"();
 
 
@@ -4048,6 +4255,11 @@ ALTER TABLE ONLY "public"."pareamentos_pendentes"
 
 
 
+ALTER TABLE ONLY "public"."perguntas_modelo_questionario"
+    ADD CONSTRAINT "perguntas_modelo_questionario_id_modelo_fkey" FOREIGN KEY ("id_modelo") REFERENCES "public"."modelos_questionario"("id_modelo") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."perguntas_questionario"
     ADD CONSTRAINT "perguntas_questionario_id_questionario_fkey" FOREIGN KEY ("id_questionario") REFERENCES "public"."questionarios"("id_questionario") ON DELETE CASCADE;
 
@@ -4146,7 +4358,13 @@ ALTER TABLE "public"."modalidade_aliases" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."modalidades" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."modelos_questionario" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."pareamentos_pendentes" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."perguntas_modelo_questionario" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."perguntas_questionario" ENABLE ROW LEVEL SECURITY;
@@ -4318,6 +4536,14 @@ CREATE POLICY "rls_modalidades_leitura" ON "public"."modalidades" FOR SELECT TO 
 
 
 
+CREATE POLICY "rls_modelos_questionario_leitura" ON "public"."modelos_questionario" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+
+
+
+CREATE POLICY "rls_perguntas_modelo_questionario_leitura" ON "public"."perguntas_modelo_questionario" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+
+
+
 CREATE POLICY "rls_perguntas_questionario_admin" ON "public"."perguntas_questionario" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
 
 
@@ -4392,6 +4618,12 @@ GRANT ALL ON FUNCTION "public"."admin_bloquear_modalidade_avaliador"("p_id_usuar
 
 
 
+REVOKE ALL ON FUNCTION "public"."admin_copiar_questionario"("p_id_origem" "uuid", "p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_copiar_questionario"("p_id_origem" "uuid", "p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_copiar_questionario"("p_id_origem" "uuid", "p_id_evento" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."admin_desbloquear_projeto"("p_id_projeto" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_desbloquear_projeto"("p_id_projeto" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_desbloquear_projeto"("p_id_projeto" "uuid") TO "service_role";
@@ -4437,6 +4669,12 @@ GRANT ALL ON FUNCTION "public"."admin_excluir_questionario"("p_id_questionario" 
 REVOKE ALL ON FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_id_evento" "uuid") TO "service_role";
 
 
 
@@ -4559,6 +4797,12 @@ GRANT ALL ON FUNCTION "public"."fn_avaliacoes_ativas_do_projeto"("p_id_projeto" 
 REVOKE ALL ON FUNCTION "public"."fn_avaliacoes_do_questionario"("p_id_questionario" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_avaliacoes_do_questionario"("p_id_questionario" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_avaliacoes_do_questionario"("p_id_questionario" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_chave_desempate"("p_id_projeto" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_chave_desempate"("p_id_projeto" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_chave_desempate"("p_id_projeto" "uuid") TO "service_role";
 
 
 
@@ -4857,7 +5101,17 @@ GRANT ALL ON TABLE "public"."modalidades" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."modelos_questionario" TO "service_role";
+GRANT SELECT ON TABLE "public"."modelos_questionario" TO "authenticated";
+
+
+
 GRANT ALL ON TABLE "public"."pareamentos_pendentes" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."perguntas_modelo_questionario" TO "service_role";
+GRANT SELECT ON TABLE "public"."perguntas_modelo_questionario" TO "authenticated";
 
 
 

@@ -164,3 +164,4 @@ de dados, restaure o backup gerado antes do `db push` ([restaurar backup](../ope
 | `20261031020000_seguranca_sessao.sql` | Revisão de segurança, etapa 2: celular só vale no evento ativo e credenciado; código de acesso sem vazamento por tempo e credencia; autocadastro com resposta neutra |
 | `20261031030000_mfa_e_sessao.sql` | `configuracoes_seguranca`: MFA do Admin (`is_admin()` exige `aal2` quando ligado) e tempo de expiração de sessão; usuário lê a própria linha de `usuarios` |
 | `20261031040000_seguranca_regras_negocio.sql` | Revisão de segurança, etapa 3: nota exige todas as perguntas do questionário do projeto; sorteio e fila só na janela do evento; limites no autocadastro |
+| `20261031050000_modelos_questionario.sql` | 7 questionários prontos (modelos), cópia para o evento e reaproveitamento de eventos anteriores; nota ponderada pelo peso das perguntas; desempate do ranking pela prioridade das perguntas |

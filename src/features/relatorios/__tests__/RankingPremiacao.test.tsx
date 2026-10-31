@@ -84,6 +84,23 @@ describe('RankingPremiacao', () => {
     expect(screen.queryByText('Projeto R-009')).not.toBeInTheDocument();
   });
 
+  it('deve marcar o empate na média desfeito pela prioridade das perguntas', async () => {
+    // Arrange
+    linhas = [
+      linha({ codigo_projeto: 'D-001', media_geral: 4, posicao: 1, chave_desempate: [5, 3] }),
+      linha({ codigo_projeto: 'D-002', media_geral: 4, posicao: 2, chave_desempate: [3, 5] }),
+    ];
+
+    // Act
+    render(<RankingPremiacao id_evento_ativo={ID_EVENTO} />);
+
+    // Assert
+    const primeiro = await screen.findByRole('listitem', { name: '1º lugar: Projeto D-001' });
+    expect(within(primeiro).getByText('Desempate')).toHaveAttribute('title', 'Médias por pergunta, na ordem de prioridade: 5.00 · 3.00');
+    expect(within(primeiro).queryByText('1º Lugar (empate)')).not.toBeInTheDocument();
+    expect(chamadas.find((c) => c.metodo === 'select')?.args[0]).toContain('chave_desempate');
+  });
+
   it('deve avisar quando um projeto do pódio está em quarentena', async () => {
     // Arrange / Act
     render(<RankingPremiacao id_evento_ativo={ID_EVENTO} />);

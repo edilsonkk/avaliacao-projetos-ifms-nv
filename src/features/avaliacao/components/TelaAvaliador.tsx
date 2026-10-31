@@ -316,20 +316,18 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
   const carregar_questionarios_disponiveis = async (): Promise<QuestionarioItem[]> => {
     set_carregando_lista_questionarios(true);
     try {
-      let { data: dados, error } = await supabase
+      // Só os questionários do evento: os de eventos anteriores seriam recusados no envio
+      const id_evt = await obter_id_evento_ativo();
+      const { data: dados, error } = await supabase
         .from('questionarios')
-        .select('*');
-
-      if (error || !dados || dados.length === 0) {
-        const { data: dadosSing } = await supabase.from('questionario').select('*');
-        if (dadosSing && dadosSing.length > 0) {
-          dados = dadosSing;
-        }
-      }
+        .select('id_questionario, titulo, escala_minima, escala_maxima')
+        .eq('id_evento', id_evt)
+        .order('titulo', { ascending: true });
+      if (error) throw error;
 
       const formatados: QuestionarioItem[] = (dados || []).map((q: any) => ({
-        id_questionario: q.id_questionario || q.id || 'quest-default',
-        titulo: q.titulo_questionario || q.titulo || 'Questionário IFMS',
+        id_questionario: q.id_questionario,
+        titulo: q.titulo || 'Questionário IFMS',
         escala_minima: q.escala_minima || 1,
         escala_maxima: q.escala_maxima || 5,
       }));

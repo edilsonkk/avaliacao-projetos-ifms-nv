@@ -436,5 +436,38 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
       expect(localStorage.getItem('avaliacoes_offline_pendentes')).toBeNull();
       online.mockRestore();
     });
+    it('lista só os questionários do evento ativo (os de eventos anteriores seriam recusados no envio)', async () => {
+      // Arrange
+      const idProjeto = 'p0000000-0000-0000-0000-000000000088';
+      localStorage.clear();
+      vi.mocked(supabase.rpc).mockReset().mockResolvedValue({ data: null, error: null } as any);
+      const consultaQuestionarios = criarQueryChain({
+        data: [
+          { id_questionario: 'quest-1', titulo: 'Técnico · Nível 1 Ideia', escala_minima: 1, escala_maxima: 5 },
+          { id_questionario: 'quest-2', titulo: 'Técnico · Nível 2 Protótipo', escala_minima: 1, escala_maxima: 5 },
+        ],
+        error: null,
+      });
+      vi.mocked(supabase.from).mockImplementation((tabela: string) => {
+        if (tabela === 'eventos') {
+          return criarQueryChain({ data: { id_evento: eventoIdTeste, data_evento: '2020-01-01', horario_inicio: '08:00', horario_fim: '18:00', sistema_liberado: true }, error: null });
+        }
+        if (tabela === 'locks_ativos') return criarQueryChain({ data: { id_projeto: idProjeto }, error: null });
+        if (tabela === 'projetos') {
+          return criarQueryChain({ data: { id_projeto: idProjeto, titulo: 'Projeto Sem Questionário', estande: 'EST-8', id_questionario_fixado: null }, error: null });
+        }
+        if (tabela === 'questionarios') return consultaQuestionarios;
+        return criarQueryChain({ data: [], error: null });
+      });
+
+      // Act
+      render(<TelaAvaliador id_usuario_logado={usuarioAvaliadorId} id_evento_ativo={eventoIdTeste} />);
+      expect(await screen.findByText('Projeto Sem Questionário')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Presente/i }));
+
+      // Assert
+      expect(await screen.findByText('Técnico · Nível 2 Protótipo')).toBeInTheDocument();
+      expect(consultaQuestionarios.eq).toHaveBeenCalledWith('id_evento', eventoIdTeste);
+    });
   });
 });

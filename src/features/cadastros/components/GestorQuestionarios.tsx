@@ -16,11 +16,14 @@ import {
   X,
   Pencil,
   Lock,
+  History,
 } from 'lucide-react';
 import { lerPlanilhaParaJson, validarArquivoPlanilha } from '@/lib/excel/excelUtils';
 import { supabase } from '@/lib/supabase';
 import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { normalizarChave } from '@/lib/parsers/planilhaAvaliadoresParser';
+import { ModelosQuestionario } from './ModelosQuestionario';
+import { ReaproveitarQuestionario } from './ReaproveitarQuestionario';
 
 interface ItemPerguntaForm {
   id_temp: string;
@@ -37,6 +40,7 @@ interface QuestionarioSalvo {
   escala_minima: number;
   escala_maxima: number;
   total_perguntas: number;
+  id_origem: string | null;
 }
 
 let contadorTemp = 0;
@@ -91,6 +95,7 @@ export const GestorQuestionarios: React.FC<{
 
   const [questionario_para_excluir, set_questionario_para_excluir] = useState<QuestionarioSalvo | null>(null);
   const [excluindo, set_excluindo] = useState<boolean>(false);
+  const [mostrar_reaproveitar, set_mostrar_reaproveitar] = useState<boolean>(false);
 
   const input_file_ref = useRef<HTMLInputElement | null>(null);
   const [processando_arquivo, set_processando_arquivo] = useState<boolean>(false);
@@ -127,7 +132,7 @@ export const GestorQuestionarios: React.FC<{
     try {
       const { data, error } = await supabase
         .from('questionarios')
-        .select('id_questionario, titulo, escala_minima, escala_maxima, perguntas_questionario(count)')
+        .select('id_questionario, titulo, escala_minima, escala_maxima, id_origem, perguntas_questionario(count)')
         .eq('id_evento', idEvento)
         .order('titulo', { ascending: true });
       if (error) throw error;
@@ -138,6 +143,7 @@ export const GestorQuestionarios: React.FC<{
           escala_minima: Number(q.escala_minima ?? 0),
           escala_maxima: Number(q.escala_maxima ?? 10),
           total_perguntas: q.perguntas_questionario?.[0]?.count ?? 0,
+          id_origem: q.id_origem ?? null,
         }))
       );
     } catch (err) {
@@ -405,6 +411,15 @@ export const GestorQuestionarios: React.FC<{
             {processando_arquivo ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
             <span>{processando_arquivo ? 'Processando planilha...' : 'Importar (.xlsx/.csv)'}</span>
           </button>
+          <button
+            type="button"
+            onClick={() => set_mostrar_reaproveitar(true)}
+            disabled={!idEvento}
+            className="px-3.5 py-2.5 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs shrink-0 cursor-pointer disabled:opacity-60"
+          >
+            <History className="w-4 h-4" />
+            <span>Reaproveitar de eventos anteriores</span>
+          </button>
           {aoFechar && (
             <button
               type="button"
@@ -449,6 +464,22 @@ export const GestorQuestionarios: React.FC<{
             ))}
           </ul>
         </div>
+      )}
+
+      {idEvento && (
+        <ModelosQuestionario
+          idEvento={idEvento}
+          ativos={questionarios_salvos}
+          aoAtivar={async () => {
+            await carregar_questionarios_existentes();
+            aoAtualizarMetricas?.();
+          }}
+          aoDesativar={(copia) => {
+            const alvo = questionarios_salvos.find((q) => q.id_questionario === copia.id_questionario);
+            if (alvo) set_questionario_para_excluir(alvo);
+          }}
+          aoErro={setErroQuest}
+        />
       )}
 
       <form onSubmit={salvar_questionario_completo} aria-label={idQuestionarioEdicao ? 'Editar questionário' : 'Novo questionário'} className="space-y-6">
@@ -547,8 +578,8 @@ export const GestorQuestionarios: React.FC<{
             </button>
           </div>
           <p className="text-[11px] text-slate-500 dark:text-slate-400">
-            A nota final de cada avaliação é a média simples das notas dos critérios. Os pesos ficam registrados, mas ainda não
-            entram no cálculo nem no desempate.
+            A nota final de cada avaliação é a média das notas ponderada pelo peso de cada pergunta. No ranking, um empate na
+            média é desfeito pela pergunta de prioridade 1, depois a 2, e assim por diante (prioridade 0 fica fora do desempate).
           </p>
 
           <ol className="space-y-3">
@@ -762,6 +793,17 @@ export const GestorQuestionarios: React.FC<{
             </div>
           </div>
         </div>
+      )}
+
+      {mostrar_reaproveitar && idEvento && (
+        <ReaproveitarQuestionario
+          idEvento={idEvento}
+          aoCopiar={async () => {
+            await carregar_questionarios_existentes();
+            aoAtualizarMetricas?.();
+          }}
+          aoFechar={() => set_mostrar_reaproveitar(false)}
+        />
       )}
 
       {importacao_pendente && (

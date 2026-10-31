@@ -229,7 +229,7 @@ usuarios ─┬─ avaliador_areas / avaliador_modalidades_bloqueadas (por event
 | L8 | Componentes muito grandes (`RelatoriosAdmin` com 3,2 mil linhas, `GestorAvaliadores` 2,5 mil, `GestorProjetos` 2,1 mil) | Manutenção cara e regressões | Extrair hooks e serviços de dados (o `schema.sql` duplicado foi resolvido em 2026-10-27) | Média |
 | L9 | ~~Documentação desatualizada (ANTIGRAVITY.MD)~~ **Resolvido em 2026-10-27**: conteúdo revisado e dividido em `docs/` por assunto. `supabase/schema.sql` atualizado com as `20261026*` | Decisões tomadas com base em informação errada | — | Baixa |
 | L10 | Sem multi-evento simultâneo nem histórico consultável após o reset global | Perda de dados históricos se o reset for usado no lugar do arquivamento | Arquivar o evento (flag `is_ativo`) em vez de apagar; exportação completa antes do reset | Média |
-| L11 | ~~`view_ranking_top3` sem filtrar "fora da competição" e sem posição de empate~~ **Resolvido** (migration `20261030060000`): fora da competição não entra; `posicao` por `RANK()` (empate divide) por modalidade e área; marca `em_quarentena`. Continua sem usar `peso_desempate` | Empates sem critério oficial (a comissão decide; ver questão 3) | Definir o critério oficial de desempate | Média |
+| L11 | ~~`view_ranking_top3` sem filtrar "fora da competição" e sem posição de empate~~ **Resolvido** (migration `20261030060000`): fora da competição não entra; `posicao` por `RANK()` (empate divide) por modalidade e área; marca `em_quarentena`. Desde a migration `20261031050000`, o empate na média é desfeito pelo `peso_desempate` (prioridade das perguntas) | ~~Empates sem critério oficial~~ (questão 3 decidida) | — | Média |
 
 **Roadmap sugerido**
 - **Aplicar já (via `supabase db push`, após [recriar o banco](banco-de-dados/migrations.md#recriar-o-banco-remoto-do-zero)):** L14 e L13 (migrations `...030000` e `...020000`, não dependem de frontend), depois L12 (migration `...010000` junto da troca de `TelaAvaliador` para `rpc('fn_enviar_avaliacao')`).
@@ -241,7 +241,7 @@ usuarios ─┬─ avaliador_areas / avaliador_modalidades_bloqueadas (por event
 
 1. O login sem senha de avaliadores é requisito de produto (atrito zero) ou pode virar código/OTP? **Decidido (2026-10-28):** continua sem senha, com o celular vinculado no credenciamento.
 2. O telão deve revelar notas em algum momento, ou só o ranking final na premiação?
-3. Qual o critério oficial de desempate: `peso_desempate` por critério, decisão da comissão ou ambos?
+3. Qual o critério oficial de desempate: `peso_desempate` por critério, decisão da comissão ou ambos? **Decidido (2026-10-31):** ambos. Desempata pela prioridade das perguntas; se tudo empatar, a comissão decide.
 4. A divergência de 2,5 pontos deve ser configurável por evento/escala?
 5. Hoje a ausência bloqueia o projeto só para o avaliador que a registrou. Após N ausências, o projeto deveria sair de todos os sorteios?
 6. Há exigência de retenção de dados (LGPD) para CPF e celular dos avaliadores após o evento?

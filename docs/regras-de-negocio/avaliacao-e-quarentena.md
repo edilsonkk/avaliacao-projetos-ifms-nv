@@ -27,7 +27,7 @@ projeto. Esse projeto não volta a ser sorteado para o mesmo avaliador.
 
 ## Nota final
 
-- Calculada **no servidor** por `fn_enviar_avaliacao` (média simples das notas dos critérios). O valor enviado pelo
+- Calculada **no servidor** por `fn_enviar_avaliacao` (média das notas dos critérios **ponderada pelo `peso_calculo`** de cada pergunta, lido do banco; com pesos iguais, é a média simples). O valor enviado pelo
   cliente é ignorado.
 - Cada nota deve estar dentro de `escala_minima`–`escala_maxima` do questionário.
 - O banco exige **todas as perguntas do questionário, uma vez cada, com nota**: responder só algumas, repetir uma
@@ -39,8 +39,19 @@ projeto. Esse projeto não volta a ser sorteado para o mesmo avaliador.
 ## Gestor de Questionários (Admin)
 
 - Lista os questionários do **evento ativo** (título, escala e número de perguntas). Sem evento ativo, não cria.
-- Cada pergunta tem texto, texto de ajuda opcional (aparece para o avaliador), peso e prioridade de desempate. Os
-  pesos ficam registrados, mas a nota final hoje é a **média simples** e o desempate não os usa (a tela avisa).
+- Cada pergunta tem texto, texto de ajuda opcional (aparece para o avaliador), peso e prioridade de desempate. O
+  **peso** entra na nota final (média ponderada) e a **prioridade** define a ordem do desempate no ranking (1, 2, 3…;
+  0 = fora do desempate). Ver [relatórios](relatorios-e-monitoramento.md).
+- **Questionários prontos:** 7 modelos (Feira de Software: Técnico Ideia, Protótipo e Produção; Convalidação de TCC;
+  Voto popular; Feira de Ciências científica e tecnológica), escala 1 a 5, peso 1. Em cada item "Critério: texto de
+  ajuda" do documento de origem, o critério é o texto da pergunta e o resto é o texto de ajuda (com as âncoras 1/3/5,
+  quando houver). O interruptor **"Ativo neste evento"** copia o modelo para o evento (`admin_copiar_questionario`);
+  desligar exclui a cópia, o que o banco recusa se ela já foi usada. A cópia é editável sem alterar o modelo. O voto
+  popular não tem fluxo de visitante: se ativado, aparece aos avaliadores como mais um questionário.
+- **Reaproveitar de eventos anteriores:** lista os questionários dos outros eventos, agrupados por evento, e copia o
+  escolhido para o evento ativo com perguntas, textos de ajuda e pesos. O original não muda. Copiar de novo não
+  duplica; a cópia de algo que veio de um modelo fica ligada ao modelo (o interruptor aparece ligado).
+- O avaliador só vê os questionários do evento do projeto.
 - Criar e editar passam por `admin_salvar_questionario`, numa transação. A edição atualiza as perguntas no lugar
   (mesmo `id_pergunta`), sem apagar e recriar.
 - **Questionário já usado em avaliação:** só o título pode mudar. Perguntas, pesos e escala ficam travados, e excluir
