@@ -27,7 +27,7 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
   // Admin que passou pela senha e ainda precisa do segundo fator (cadastro ou código)
   const [etapaMfa, setEtapaMfa] = useState<Exclude<EtapaSegundoFator, 'nenhuma'> | null>(null);
-  const [adminPendente, setAdminPendente] = useState<{ id_usuario: string; papel: string; email: string } | null>(null);
+  const [adminPendente, setAdminPendente] = useState<{ id_usuario: string; papel: string } | null>(null);
 
   const mudarAba = (novaAba: AbaLogin) => {
     // Sair no meio do segundo fator não deixa a sessão só de senha aberta
@@ -69,16 +69,13 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
     if (aoAutenticarSucesso) aoAutenticarSucesso('staff');
   };
 
-  // Grava a sessão do Admin no navegador e abre o painel (depois da senha e, se houver, do segundo fator)
-  const concluirLoginAdmin = (admin: { id_usuario: string; papel: string; email: string }) => {
+  // Grava a sessão do Admin no navegador e abre o painel (depois da senha e, se houver, do segundo fator).
+  // O e-mail não é guardado: nenhuma tela do Admin o lê, e dado pessoal não fica em texto no navegador.
+  const concluirLoginAdmin = (admin: { id_usuario: string; papel: string }) => {
     localStorage.setItem('sessao_id_usuario', admin.id_usuario);
     localStorage.setItem('sessao_papel', admin.papel);
-    localStorage.setItem('sessao_email', admin.email);
-
     localStorage.setItem('usuario_id', admin.id_usuario);
     localStorage.setItem('avaliador_id_usuario', admin.id_usuario);
-    localStorage.setItem('usuario_email', admin.email);
-    localStorage.setItem('avaliador_email', admin.email);
     localStorage.setItem('usuario_perfil', 'admin');
 
     if (aoAutenticarSucesso) {
@@ -168,11 +165,7 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
           return;
         }
 
-        const dadosAdmin = {
-          id_usuario: usuarioDb.id_usuario,
-          papel: usuarioDb.papel || 'admin',
-          email: authData.user.email || email.trim().toLowerCase(),
-        };
+        const dadosAdmin = { id_usuario: usuarioDb.id_usuario, papel: usuarioDb.papel || 'admin' };
 
         // Segundo fator: quem cadastrou o aplicativo confirma o código; com o MFA exigido, quem não cadastrou cadastra
         const politica = await lerPoliticaSeguranca().catch(() => POLITICA_PADRAO);

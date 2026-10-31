@@ -149,6 +149,8 @@ describe('TelaLogin', () => {
 
       // Assert
       await waitFor(() => expect(aoAutenticarSucesso).toHaveBeenCalledWith('admin'));
+      // Dado pessoal não fica em texto no navegador (CodeQL js/clear-text-storage-of-sensitive-data)
+      expect(Object.values({ ...localStorage })).not.toContain('admin@ifms.edu.br');
     });
 
     it('com aplicativo cadastrado, só entra depois do código', async () => {
