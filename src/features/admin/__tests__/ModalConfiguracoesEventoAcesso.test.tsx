@@ -139,13 +139,17 @@ describe('ModalConfiguracoesEvento - acesso dos avaliadores', () => {
   });
 
   it('deve ter dica em todos os campos da configuração', async () => {
-    // Arrange / Act
+    // Arrange
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: { exigir_mfa_admin: false, minutos_inatividade_sessao: 0 }, error: null } as never);
+
+    // Act: espera também a seção de segurança, que carrega a política à parte
     renderizar();
     await screen.findByLabelText(/tamanho dos códigos/i);
+    await screen.findByRole('checkbox', { name: /exigir segundo fator/i });
 
-    // Assert: 7 campos do evento + 5 de acesso + zona de perigo
+    // Assert: 7 campos do evento + 5 de acesso + 2 de segurança das contas + zona de perigo
     const dicas = screen.getAllByRole('button', { name: /mais informações/i });
-    expect(dicas).toHaveLength(13);
+    expect(dicas).toHaveLength(15);
     dicas.forEach((d) => expect(d).toHaveAccessibleDescription(/.{30,}/));
   });
 
