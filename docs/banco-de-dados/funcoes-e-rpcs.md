@@ -20,7 +20,7 @@ Funções PostgreSQL chamadas pelo front-end via `supabase.rpc()`. Quem pode exe
 3. Valida a janela temporal. Com trava ativa, o avaliador pode concluir mesmo após o horário; só é bloqueado se
    `sistema_liberado = false`.
 4. Valida a faixa de cada nota conforme o questionário.
-5. Calcula `nota_final` no servidor (média simples; o valor enviado pelo cliente é ignorado).
+5. Calcula `nota_final` no servidor (média ponderada pelo `peso_calculo` das perguntas; o valor enviado pelo cliente é ignorado).
 6. Grava `avaliacoes` + `respostas_avaliacao`, remove a trava e conclui o item da fila.
 7. Aplica quarentena se a divergência entre maior e menor nota ativa do projeto passar de 2,5.
 
@@ -79,6 +79,9 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `admin_excluir_staff(p_id_usuario)` | Exclui membro do Staff/Monitor (recusa outros papéis) |
 | `admin_salvar_questionario(p_id_questionario, p_id_evento, p_titulo, p_escala_minima, p_escala_maxima, p_perguntas jsonb)` → `uuid` | Cria (`p_id_questionario` nulo) ou edita o questionário numa transação; perguntas atualizadas no lugar. Questionário já usado só muda o título |
 | `admin_excluir_questionario(p_id_questionario)` | Exclui questionário nunca usado em avaliação |
+| `admin_copiar_questionario(p_id_origem, p_id_evento)` → `uuid` | Copia um modelo ou um questionário de outro evento para o evento (perguntas, ajuda e pesos). Não duplica: devolve a cópia existente |
+| `admin_listar_questionarios_reaproveitaveis(p_id_evento)` | Questionários dos outros eventos, com evento, data, perguntas, avaliações e se já estão no evento |
+| `fn_chave_desempate(p_id_projeto)` → `numeric[]` | Médias do projeto por pergunta, na ordem de `peso_desempate` (usada por `view_ranking_top3`) |
 | `fn_avaliacoes_do_questionario(p_id_questionario)` → `integer` | Quantas avaliações usaram o questionário (trava a edição na tela) |
 | `admin_salvar_instituicoes(p_id_evento uuid, p_itens jsonb)` → `jsonb` | Cadastro manual e importação de instituições por `(id_evento, nome_normalizado)`. Devolve `{cadastradas, atualizadas, ignoradas}` |
 | `admin_excluir_instituicao(p_id_instituicao)` | Exclui instituição sem projeto nem avaliador vinculado |

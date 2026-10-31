@@ -160,6 +160,8 @@ export interface QuestionarioDinamico {
   escala_minima: number;
   escala_maxima: number;
   id_evento?: string;
+  /** Modelo ou questionário de outro evento de onde esta cópia veio. */
+  id_origem?: string | null;
   criado_em?: string;
 }
 

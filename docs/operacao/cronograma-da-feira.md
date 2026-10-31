@@ -26,8 +26,8 @@ SEGUNDA              TERÇA                QUARTA               QUINTA          
 
 - **08:00–11:00**: importar a planilha final de projetos (`GestorProjetos`) e conferir estandes e corredores.
 - **11:00–12:00**: conferir duplicidades por `codigo_projeto`.
-- **13:00–15:30**: cadastrar os questionários oficiais (`GestorQuestionarios`): critérios, escala e pesos de cálculo e
-  desempate.
+- **13:00–15:30**: ativar os questionários prontos ou reaproveitar os de eventos anteriores (`GestorQuestionarios`), e
+  conferir critérios, escala, pesos de cálculo e prioridade de desempate.
 - **15:30–17:00**: importar avaliadores (instituição, áreas, modalidades bloqueadas) e equipe Staff. Criar a conta
   de cada Staff no painel do Supabase ([como](../arquitetura/configuracao.md#criar-um-membro-do-staff)) e conferir a
   seção **Acesso dos avaliadores** nas Configurações do evento.

@@ -61,8 +61,11 @@ não consulta nada). Os dados vêm de `view_ranking_top3`:
 
 - Entram os projetos com ao menos uma avaliação não cancelada; projetos **fora da competição não entram**.
 - A média é a simples das notas finais, calculada no banco. A `posicao` também vem do banco: `RANK()` por evento,
-  modalidade e área. **Empate divide a posição** (1º, 1º, 3º) e o card mostra "(empate)". Não há critério oficial de
-  desempate (`peso_desempate` não é usado): a comissão decide.
+  modalidade e área. **Empate na média é desfeito pela prioridade das perguntas** (`peso_desempate` 1, 2, 3…; 0 fica
+  fora): vence a maior média do projeto na pergunta de prioridade 1; persistindo, a 2, e assim por diante
+  (`fn_chave_desempate`, coluna `chave_desempate`). O card desempatado mostra o selo "Desempate", com as médias no
+  `title`. Se tudo empatar, a posição é dividida (1º, 1º, 3º), o card mostra "(empate)" e a comissão decide. Projetos
+  com questionários diferentes na mesma modalidade/área são comparados posição a posição da prioridade.
 - O pódio de cada modalidade/área mostra todos com posição até 3 (um empate pode colocar mais de três).
 - Projeto com notas divergentes ainda não resolvidas na Quarentena (`em_quarentena`) aparece marcado, e a tela avisa
   para resolver antes de homologar.

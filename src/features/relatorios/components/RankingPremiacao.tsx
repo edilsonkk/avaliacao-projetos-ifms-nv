@@ -30,10 +30,12 @@ export interface ItemRankingTop3 {
   posicao: number;
   /** Notas divergentes ainda não auditadas na Quarentena. */
   em_quarentena: boolean;
+  /** Médias por pergunta, na ordem de prioridade de desempate definida no questionário. */
+  chave_desempate: number[];
 }
 
 const COLUNAS_RANKING =
-  'id_projeto, codigo_projeto, titulo, estande, nome_instituicao, modalidade, area_tematica, notas, media_geral, total_avaliacoes, posicao, em_quarentena';
+  'id_projeto, codigo_projeto, titulo, estande, nome_instituicao, modalidade, area_tematica, notas, media_geral, total_avaliacoes, posicao, em_quarentena, chave_desempate';
 
 const lerNotas = (valor: unknown): number[] => {
   if (Array.isArray(valor)) return valor.map(Number);
@@ -100,6 +102,7 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
           total_avaliacoes: Number(item.total_avaliacoes ?? 0),
           posicao: Number(item.posicao ?? 0),
           em_quarentena: item.em_quarentena === true,
+          chave_desempate: lerNotas(item.chave_desempate),
         }))
       );
     } catch (e) {
@@ -238,7 +241,8 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
       )}
 
       <p className="text-[11px] text-slate-500 dark:text-slate-400">
-        Projetos fora da competição não entram. Empate na média divide a posição; o desempate é decidido pela comissão.
+        Projetos fora da competição não entram. Empate na média é desfeito pelas perguntas na ordem de prioridade de
+        desempate definida no questionário; se tudo empatar, a posição é dividida e a comissão decide.
       </p>
 
       <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center gap-4">
@@ -322,6 +326,9 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
                           {podio.map((item) => {
                             const medalha = MEDALHAS[item.posicao] ?? MEDALHAS[3];
                             const empatado = lista_ordenada.some((o) => o !== item && o.posicao === item.posicao);
+                            const desempatado = lista_ordenada.some(
+                              (o) => o !== item && o.media_geral === item.media_geral && o.posicao !== item.posicao
+                            );
                             return (
                               <li
                                 key={item.id_projeto}
@@ -334,6 +341,14 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
                                       <span className="text-base" aria-hidden="true">{medalha.icone}</span>
                                       <span>{item.posicao}º Lugar{empatado ? ' (empate)' : ''}</span>
                                     </span>
+                                    {desempatado && (
+                                      <span
+                                        title={`Médias por pergunta, na ordem de prioridade: ${item.chave_desempate.map((n) => n.toFixed(2)).join(' · ')}`}
+                                        className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200 dark:border-sky-800"
+                                      >
+                                        Desempate
+                                      </span>
+                                    )}
 
                                     <div className="flex items-center gap-1.5 font-mono text-xs font-bold">
                                       {item.codigo_projeto && (
