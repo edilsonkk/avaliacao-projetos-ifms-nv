@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.7.1...v0.7.2) (2026-10-31)
+
+
+### Correções
+
+* **seguranca:** avaliador sem gravação direta de trava, fila e impedimentos; CPF fora da leitura ([#60](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/60)) ([1bea484](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/1bea4844032365e2730a97d03f9305e1216c7db9))
+
 ## [0.7.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.7.0...v0.7.1) (2026-10-31)
 
 
