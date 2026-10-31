@@ -839,6 +839,43 @@ $_$;
 ALTER FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_salvar_configuracoes_seguranca"("p_exigir_mfa_admin" boolean, "p_minutos_inatividade" integer) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_atual public.configuracoes_seguranca;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  IF p_minutos_inatividade IS NULL OR NOT (p_minutos_inatividade = 0 OR p_minutos_inatividade BETWEEN 5 AND 720) THEN
+    RAISE EXCEPTION 'Tempo de expiração inválido: use 0 (não expira) ou de 5 a 720 minutos.' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT * INTO v_atual FROM public.configuracoes_seguranca WHERE id;
+  -- Mudar a exigência do MFA só com o segundo fator confirmado nesta sessão
+  IF coalesce(p_exigir_mfa_admin, false) IS DISTINCT FROM coalesce(v_atual.exigir_mfa_admin, false)
+     AND coalesce(auth.jwt() ->> 'aal', 'aal1') <> 'aal2' THEN
+    RAISE EXCEPTION 'Confirme o código do aplicativo autenticador antes de mudar a exigência do segundo fator.' USING ERRCODE = '42501';
+  END IF;
+
+  INSERT INTO public.configuracoes_seguranca (id, exigir_mfa_admin, minutos_inatividade_sessao, atualizado_em, atualizado_por)
+  VALUES (true, coalesce(p_exigir_mfa_admin, false), p_minutos_inatividade, now(), auth.uid())
+  ON CONFLICT (id) DO UPDATE
+    SET exigir_mfa_admin = EXCLUDED.exigir_mfa_admin,
+        minutos_inatividade_sessao = EXCLUDED.minutos_inatividade_sessao,
+        atualizado_em = now(),
+        atualizado_por = auth.uid();
+
+  RETURN public.fn_politica_seguranca();
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_salvar_configuracoes_seguranca"("p_exigir_mfa_admin" boolean, "p_minutos_inatividade" integer) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_salvar_instituicoes"("p_id_evento" "uuid", "p_itens" "jsonb") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1946,6 +1983,22 @@ $$;
 ALTER FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_politica_seguranca"() RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_build_object(
+    'exigir_mfa_admin', coalesce(c.exigir_mfa_admin, false),
+    'minutos_inatividade_sessao', coalesce(c.minutos_inatividade_sessao, 0)
+  )
+  FROM (SELECT 1) x
+  LEFT JOIN public.configuracoes_seguranca c ON c.id;
+$$;
+
+
+ALTER FUNCTION "public"."fn_politica_seguranca"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") RETURNS boolean
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -2582,6 +2635,11 @@ CREATE OR REPLACE FUNCTION "public"."is_admin"() RETURNS boolean
     FROM public.usuarios u
     WHERE (u.id_usuario = auth.uid() OR u.id_auth = auth.uid())
       AND upper(u.papel::text) = 'ADMIN'
+  )
+  -- Com o MFA exigido, só a sessão que passou pelo segundo fator é Admin
+  AND (
+    NOT coalesce((SELECT c.exigir_mfa_admin FROM public.configuracoes_seguranca c WHERE c.id), false)
+    OR coalesce(auth.jwt() ->> 'aal', 'aal1') = 'aal2'
   );
 $$;
 
@@ -3035,6 +3093,20 @@ CREATE TABLE IF NOT EXISTS "public"."codigos_acesso" (
 
 
 ALTER TABLE "public"."codigos_acesso" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."configuracoes_seguranca" (
+    "id" boolean DEFAULT true NOT NULL,
+    "exigir_mfa_admin" boolean DEFAULT false NOT NULL,
+    "minutos_inatividade_sessao" integer DEFAULT 0 NOT NULL,
+    "atualizado_em" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "atualizado_por" "uuid",
+    CONSTRAINT "configuracoes_seguranca_id_check" CHECK ("id"),
+    CONSTRAINT "configuracoes_seguranca_minutos_inatividade_sessao_check" CHECK ((("minutos_inatividade_sessao" = 0) OR (("minutos_inatividade_sessao" >= 5) AND ("minutos_inatividade_sessao" <= 720))))
+);
+
+
+ALTER TABLE "public"."configuracoes_seguranca" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."dispositivos_avaliador" (
@@ -3501,6 +3573,11 @@ ALTER TABLE ONLY "public"."codigos_acesso"
 
 
 
+ALTER TABLE ONLY "public"."configuracoes_seguranca"
+    ADD CONSTRAINT "configuracoes_seguranca_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."dispositivos_avaliador"
     ADD CONSTRAINT "dispositivos_avaliador_pkey" PRIMARY KEY ("auth_uid");
 
@@ -3934,6 +4011,9 @@ ALTER TABLE "public"."avaliadores_evento" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."codigos_acesso" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."configuracoes_seguranca" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."dispositivos_avaliador" ENABLE ROW LEVEL SECURITY;
 
 
@@ -4162,7 +4242,7 @@ CREATE POLICY "rls_usuarios_admin" ON "public"."usuarios" TO "authenticated" USI
 
 
 
-CREATE POLICY "rls_usuarios_leitura" ON "public"."usuarios" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR ("id_usuario" = "public"."avaliador_atual"()) OR ("id_auth" = "auth"."uid"()) OR ("public"."is_staff"() AND ("upper"(("papel")::"text") = 'AVALIADOR'::"text"))));
+CREATE POLICY "rls_usuarios_leitura" ON "public"."usuarios" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR ("id_usuario" = "auth"."uid"()) OR ("id_usuario" = "public"."avaliador_atual"()) OR ("id_auth" = "auth"."uid"()) OR ("public"."is_staff"() AND ("upper"(("papel")::"text") = 'AVALIADOR'::"text"))));
 
 
 
@@ -4285,6 +4365,12 @@ GRANT ALL ON FUNCTION "public"."admin_reset_global"("p_id_evento" "uuid") TO "se
 REVOKE ALL ON FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_salvar_avaliadores"("p_id_evento" "uuid", "p_itens" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_salvar_configuracoes_seguranca"("p_exigir_mfa_admin" boolean, "p_minutos_inatividade" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_salvar_configuracoes_seguranca"("p_exigir_mfa_admin" boolean, "p_minutos_inatividade" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_salvar_configuracoes_seguranca"("p_exigir_mfa_admin" boolean, "p_minutos_inatividade" integer) TO "service_role";
 
 
 
@@ -4430,6 +4516,12 @@ GRANT ALL ON FUNCTION "public"."fn_normalizar_nome"("p_texto" "text") TO "servic
 REVOKE ALL ON FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_politica_seguranca"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_politica_seguranca"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_politica_seguranca"() TO "service_role";
 
 
 
@@ -4601,6 +4693,10 @@ GRANT ALL ON TABLE "public"."avaliadores_evento" TO "service_role";
 
 
 GRANT ALL ON TABLE "public"."codigos_acesso" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."configuracoes_seguranca" TO "service_role";
 
 
 

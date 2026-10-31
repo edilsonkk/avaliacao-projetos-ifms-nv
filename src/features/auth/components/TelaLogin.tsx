@@ -4,6 +4,8 @@ import { supabase } from '@/lib/supabase';
 import { VinculoAvaliador } from './VinculoAvaliador';
 import { urlRedefinirSenha } from './TelaRedefinirSenha';
 import { obterPerfilSessao, salvarPerfilLocal, type PerfilSessao } from '../vinculoAparelho';
+import { CadastroSegundoFator, VerificacaoSegundoFator } from './SegundoFator';
+import { POLITICA_PADRAO, etapaSegundoFator, lerPoliticaSeguranca, type EtapaSegundoFator } from '../segundoFator';
 
 export type AbaLogin = 'avaliador' | 'staff' | 'admin';
 
@@ -23,8 +25,17 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
   const [carregando, setCarregando] = useState<boolean>(false);
   const [mensagemErro, setMensagemErro] = useState<string | null>(null);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
+  // Admin que passou pela senha e ainda precisa do segundo fator (cadastro ou código)
+  const [etapaMfa, setEtapaMfa] = useState<Exclude<EtapaSegundoFator, 'nenhuma'> | null>(null);
+  const [adminPendente, setAdminPendente] = useState<{ id_usuario: string; papel: string; email: string } | null>(null);
 
   const mudarAba = (novaAba: AbaLogin) => {
+    // Sair no meio do segundo fator não deixa a sessão só de senha aberta
+    if (etapaMfa) {
+      supabase.auth.signOut().catch(() => {});
+      setEtapaMfa(null);
+      setAdminPendente(null);
+    }
     setAbaAtiva(novaAba);
     setMensagemErro(null);
     setMensagemSucesso(null);
@@ -56,6 +67,30 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
     }
     salvarPerfilLocal(perfil);
     if (aoAutenticarSucesso) aoAutenticarSucesso('staff');
+  };
+
+  // Grava a sessão do Admin no navegador e abre o painel (depois da senha e, se houver, do segundo fator)
+  const concluirLoginAdmin = (admin: { id_usuario: string; papel: string; email: string }) => {
+    localStorage.setItem('sessao_id_usuario', admin.id_usuario);
+    localStorage.setItem('sessao_papel', admin.papel);
+    localStorage.setItem('sessao_email', admin.email);
+
+    localStorage.setItem('usuario_id', admin.id_usuario);
+    localStorage.setItem('avaliador_id_usuario', admin.id_usuario);
+    localStorage.setItem('usuario_email', admin.email);
+    localStorage.setItem('avaliador_email', admin.email);
+    localStorage.setItem('usuario_perfil', 'admin');
+
+    if (aoAutenticarSucesso) {
+      aoAutenticarSucesso('admin');
+    }
+  };
+
+  const cancelarSegundoFator = async () => {
+    await supabase.auth.signOut().catch(() => {});
+    setEtapaMfa(null);
+    setAdminPendente(null);
+    setPassword('');
   };
 
   // Submissão principal do formulário (Login)
@@ -133,20 +168,21 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
           return;
         }
 
-        const userEmail = authData.user.email || email.trim().toLowerCase();
-        localStorage.setItem('sessao_id_usuario', usuarioDb.id_usuario);
-        localStorage.setItem('sessao_papel', usuarioDb.papel || 'admin');
-        localStorage.setItem('sessao_email', userEmail);
+        const dadosAdmin = {
+          id_usuario: usuarioDb.id_usuario,
+          papel: usuarioDb.papel || 'admin',
+          email: authData.user.email || email.trim().toLowerCase(),
+        };
 
-        localStorage.setItem('usuario_id', usuarioDb.id_usuario);
-        localStorage.setItem('avaliador_id_usuario', usuarioDb.id_usuario);
-        localStorage.setItem('usuario_email', userEmail);
-        localStorage.setItem('avaliador_email', userEmail);
-        localStorage.setItem('usuario_perfil', papelUsuario);
-
-        if (aoAutenticarSucesso) {
-          aoAutenticarSucesso('admin');
+        // Segundo fator: quem cadastrou o aplicativo confirma o código; com o MFA exigido, quem não cadastrou cadastra
+        const politica = await lerPoliticaSeguranca().catch(() => POLITICA_PADRAO);
+        const etapa = await etapaSegundoFator(politica);
+        if (etapa !== 'nenhuma') {
+          setAdminPendente(dadosAdmin);
+          setEtapaMfa(etapa);
+          return;
         }
+        concluirLoginAdmin(dadosAdmin);
       }
     } catch (err: any) {
       console.error('Erro inesperado na autenticação:', err);
@@ -273,11 +309,20 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
           </div>
         )}
 
+        {/* Admin: segundo fator depois da senha */}
+        {etapaMfa && adminPendente && (
+          etapaMfa === 'verificar' ? (
+            <VerificacaoSegundoFator aoConcluir={() => concluirLoginAdmin(adminPendente)} aoCancelar={cancelarSegundoFator} />
+          ) : (
+            <CadastroSegundoFator aoConcluir={() => concluirLoginAdmin(adminPendente)} aoCancelar={cancelarSegundoFator} />
+          )
+        )}
+
         {/* Avaliador: vínculo do celular, sem senha */}
         {abaAtiva === 'avaliador' && <VinculoAvaliador aoVincular={aoVincularAvaliador} />}
 
         {/* Staff e Admin: e-mail e senha */}
-        {abaAtiva !== 'avaliador' && (
+        {abaAtiva !== 'avaliador' && !etapaMfa && (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="email-login" className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
@@ -354,7 +399,7 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
         )}
 
         {/* Recuperação de senha (Staff e Admin) */}
-        {abaAtiva !== 'avaliador' && (
+        {abaAtiva !== 'avaliador' && !etapaMfa && (
           <div className="text-center">
             <button
               type="button"
@@ -368,7 +413,7 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
         )}
 
         {/* FLUXO DA ABA ADMIN (OAuth) */}
-        {abaAtiva === 'admin' && (
+        {abaAtiva === 'admin' && !etapaMfa && (
           <div className="space-y-4 pt-1">
             <div className="relative flex items-center justify-center my-4">
               <div className="border-t border-slate-200 dark:border-slate-700 w-full"></div>

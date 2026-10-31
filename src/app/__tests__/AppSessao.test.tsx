@@ -28,6 +28,8 @@ vi.mock('@/features/auth', () => ({
   TelaRedefinirSenha: () => <p>Tela de Redefinir Senha</p>,
   CAMINHO_REDEFINIR_SENHA: '/redefinir-senha',
   obterPerfilSessao: vi.fn(),
+  lerPoliticaSeguranca: vi.fn(),
+  EVENTO_POLITICA_ALTERADA: 'politica-seguranca-alterada',
 }));
 
 const perfil = (papel: 'avaliador' | 'staff' | 'admin' | null) => ({
@@ -94,5 +96,31 @@ describe('App - sessão confirmada pelo banco', () => {
 
     // Assert
     expect(await screen.findByText('Tela de Redefinir Senha')).toBeInTheDocument();
+  });
+
+  it('deve encerrar a sessão do Admin depois do tempo sem uso definido na engrenagem', async () => {
+    // Arrange
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    window.history.replaceState({}, '', '/admin');
+    localStorage.setItem('usuario_perfil', 'admin');
+    vi.mocked(auth.obterPerfilSessao).mockResolvedValue(perfil('admin'));
+    vi.mocked(auth.lerPoliticaSeguranca).mockResolvedValue({ exigir_mfa_admin: false, minutos_inatividade_sessao: 30 });
+    vi.mocked(supabase.auth.signOut).mockResolvedValue({ error: null } as never);
+    const alerta = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    render(<App />);
+    expect(await screen.findByText('Tela do Admin')).toBeInTheDocument();
+    await waitFor(() => expect(auth.lerPoliticaSeguranca).toHaveBeenCalled());
+
+    // Act
+    await act(async () => {
+      vi.advanceTimersByTime(31 * 60_000);
+    });
+
+    // Assert
+    expect(await screen.findByText('Tela de Login')).toBeInTheDocument();
+    expect(supabase.auth.signOut).toHaveBeenCalled();
+    expect(alerta).toHaveBeenCalledWith(expect.stringMatching(/30 minutos sem uso/));
+    vi.useRealTimers();
+    alerta.mockRestore();
   });
 });

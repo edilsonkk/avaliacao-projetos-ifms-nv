@@ -30,7 +30,10 @@ O evento (feira) é a unidade de isolamento de todos os dados. Código: `src/fea
   `PGRST204` e perda silenciosa da data (ver [troubleshooting](../operacao/troubleshooting.md#data-do-evento-não-era-salva)).
 - Ao salvar, `ao_salvar_sucesso(nome_evento, dataFormatada)` atualiza o painel e o `localStorage` na hora, sem F5.
 - Também dá acesso à **Gestão de Administradores**.
-- Layout em três colunas (Evento, Acesso dos avaliadores, Gestão de Eventos + Zona de Perigo), sem rolagem a partir
+- **Segurança das contas** (gravada à parte, botão **Salvar segurança**; vale para o sistema todo, não por evento):
+  exigir segundo fator (MFA) no login do Admin e encerrar a sessão de Admin e Staff após N minutos sem uso. Detalhes
+  em [segurança](../arquitetura/seguranca.md#segundo-fator-do-admin-e-expiração-de-sessão).
+- Layout em três colunas (Evento, Acesso dos avaliadores, Segurança das contas + Gestão de Eventos + Zona de Perigo), sem rolagem a partir
   de 1280×720; em telas menores as colunas empilham e o modal rola por dentro.
 - Cada campo tem um ícone de dica (`Dica`, em `src/components/ui/`) que explica o campo ao passar o mouse, ao focar
   pelo teclado ou ao tocar. Os textos das dicas de acesso ficam em `LIMITES_ACESSO` (`acessoAvaliadores.ts`).

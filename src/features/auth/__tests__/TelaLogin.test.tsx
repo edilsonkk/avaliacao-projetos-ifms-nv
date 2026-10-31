@@ -9,7 +9,13 @@ vi.mock('@/lib/supabase', () => ({
   supabase: {
     rpc: vi.fn(),
     from: vi.fn(),
-    auth: { signInWithPassword: vi.fn(), signOut: vi.fn(), resetPasswordForEmail: vi.fn(), signInWithOAuth: vi.fn() },
+    auth: {
+      signInWithPassword: vi.fn(),
+      signOut: vi.fn(),
+      resetPasswordForEmail: vi.fn(),
+      signInWithOAuth: vi.fn(),
+      mfa: { getAuthenticatorAssuranceLevel: vi.fn(), listFactors: vi.fn(), challengeAndVerify: vi.fn(), enroll: vi.fn(), unenroll: vi.fn() },
+    },
   },
 }));
 
@@ -111,5 +117,91 @@ describe('TelaLogin', () => {
       redirectTo: `${window.location.origin}/redefinir-senha`,
     });
     expect(await screen.findByText(/instruções de redefinição/i)).toBeInTheDocument();
+  });
+
+  describe('Admin com segundo fator', () => {
+    const mfa = () => supabase.auth.mfa as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    const entrarComoAdmin = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.type(screen.getByLabelText(/e-mail de acesso/i), 'admin@ifms.edu.br');
+      await user.type(screen.getByLabelText(/senha de acesso/i), 'SenhaDoAdmin2026');
+      await user.click(screen.getByRole('button', { name: /entrar no painel admin/i }));
+    };
+
+    beforeEach(() => {
+      const cadeia: any = {};
+      ['select', 'eq'].forEach((m) => (cadeia[m] = vi.fn(() => cadeia)));
+      cadeia.single = vi.fn().mockResolvedValue({ data: { id_usuario: 'auth-1', papel: 'ADMIN' }, error: null });
+      vi.mocked(supabase.from).mockReturnValue(cadeia);
+      vi.mocked(supabase.rpc).mockResolvedValue({ data: { exigir_mfa_admin: false, minutos_inatividade_sessao: 0 }, error: null } as never);
+      mfa().listFactors.mockResolvedValue({ data: { all: [{ id: 'f-1', factor_type: 'totp', status: 'verified' }], totp: [{ id: 'f-1', status: 'verified' }] }, error: null });
+      mfa().challengeAndVerify.mockResolvedValue({ data: {}, error: null });
+    });
+
+    it('sem aplicativo cadastrado e sem exigência, entra direto', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      const aoAutenticarSucesso = vi.fn();
+      mfa().getAuthenticatorAssuranceLevel.mockResolvedValue({ data: { currentLevel: 'aal1', nextLevel: 'aal1' }, error: null });
+      render(<TelaLogin abaInicial="admin" aoAutenticarSucesso={aoAutenticarSucesso} />);
+
+      // Act
+      await entrarComoAdmin(user);
+
+      // Assert
+      await waitFor(() => expect(aoAutenticarSucesso).toHaveBeenCalledWith('admin'));
+    });
+
+    it('com aplicativo cadastrado, só entra depois do código', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      const aoAutenticarSucesso = vi.fn();
+      mfa().getAuthenticatorAssuranceLevel.mockResolvedValue({ data: { currentLevel: 'aal1', nextLevel: 'aal2' }, error: null });
+      render(<TelaLogin abaInicial="admin" aoAutenticarSucesso={aoAutenticarSucesso} />);
+
+      // Act
+      await entrarComoAdmin(user);
+      expect(await screen.findByRole('heading', { name: /verificação em duas etapas/i })).toBeInTheDocument();
+      expect(aoAutenticarSucesso).not.toHaveBeenCalled();
+      expect(localStorage.getItem('usuario_perfil')).toBeNull();
+      await user.type(await screen.findByLabelText(/código de 6 dígitos/i), '123456');
+      await user.click(screen.getByRole('button', { name: /confirmar/i }));
+
+      // Assert
+      await waitFor(() => expect(aoAutenticarSucesso).toHaveBeenCalledWith('admin'));
+      expect(mfa().challengeAndVerify).toHaveBeenCalledWith({ factorId: 'f-1', code: '123456' });
+    });
+
+    it('MFA exigido e sem aplicativo: abre o cadastro antes de entrar', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      vi.mocked(supabase.rpc).mockResolvedValue({ data: { exigir_mfa_admin: true, minutos_inatividade_sessao: 0 }, error: null } as never);
+      mfa().getAuthenticatorAssuranceLevel.mockResolvedValue({ data: { currentLevel: 'aal1', nextLevel: 'aal1' }, error: null });
+      mfa().listFactors.mockResolvedValue({ data: { all: [], totp: [] }, error: null });
+      mfa().enroll.mockResolvedValue({ data: { id: 'novo', totp: { qr_code: 'data:image/svg+xml;utf-8,<svg/>', secret: 'S', uri: 'u' } }, error: null });
+      render(<TelaLogin abaInicial="admin" aoAutenticarSucesso={vi.fn()} />);
+
+      // Act
+      await entrarComoAdmin(user);
+
+      // Assert
+      expect(await screen.findByRole('heading', { name: /cadastrar o aplicativo autenticador/i })).toBeInTheDocument();
+    });
+
+    it('cancelar a verificação encerra a sessão só de senha', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      const aoAutenticarSucesso = vi.fn();
+      mfa().getAuthenticatorAssuranceLevel.mockResolvedValue({ data: { currentLevel: 'aal1', nextLevel: 'aal2' }, error: null });
+      render(<TelaLogin abaInicial="admin" aoAutenticarSucesso={aoAutenticarSucesso} />);
+      await entrarComoAdmin(user);
+
+      // Act
+      await user.click(await screen.findByRole('button', { name: /cancelar/i }));
+
+      // Assert
+      await waitFor(() => expect(supabase.auth.signOut).toHaveBeenCalled());
+      expect(aoAutenticarSucesso).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: /entrar no painel admin/i })).toBeInTheDocument();
+    });
   });
 });

@@ -104,6 +104,18 @@ No local, os e-mails não saem da máquina: abra o **Mailpit** em http://127.0.0
 
 No local, faça o mesmo pelo Studio (http://127.0.0.1:54323).
 
+## Segundo fator (MFA) do Admin
+
+- **Produção:** confira em *Authentication → Multi-Factor* que **TOTP (App Authenticator)** está habilitado (vem
+  ligado nos projetos do Supabase). Local: `[auth.mfa.totp]` com `enroll_enabled` e `verify_enabled` em
+  `supabase/config.toml`.
+- O Admin liga a exigência na engrenagem (**Segurança das contas**). Ao salvar, cadastra o aplicativo autenticador lendo
+  o QR Code e confirma um código; só então a exigência é gravada.
+- **Celular perdido:** quem tem acesso ao painel do Supabase abre *Authentication → Users*, escolhe a conta do Admin e
+  remove o fator MFA. No próximo login, o sistema pede para cadastrar o aplicativo de novo. Se nenhum Admin conseguir
+  entrar, desligue a exigência pelo *Table Editor* do painel: tabela `configuracoes_seguranca`, coluna
+  `exigir_mfa_admin` = `false` (medida de emergência).
+
 ## Chaves do `localStorage`
 
 O navegador guarda sessão e dados de contingência nestas chaves:
@@ -115,6 +127,7 @@ O navegador guarda sessão e dados de contingência nestas chaves:
 | `sessao_email` / `usuario_email` | `string` | E-mail do usuário em sessão |
 | `avaliador_id_usuario`, `avaliador_email`, `avaliador_nome` | `string` | Dados do avaliador logado |
 | `staff_id_usuario` | UUID | Membro do staff logado |
+| `ultima_atividade_sessao` | número (ms) | Último uso de Admin/Staff, para encerrar a sessão por inatividade entre abas |
 | `evento_ativo_id` | UUID | Só registro: as telas usam o evento ativo do banco (ou o recebido do painel), nunca este valor, que pode ser de outro evento |
 | `evento_ativo_nome` | `string` | Nome do evento exibido no cabeçalho (ex.: `FETEC MS 2026`) |
 | `evento_ativo_data` | `string` | Data do evento ativo |
