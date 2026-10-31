@@ -136,11 +136,16 @@ Feita uma vez, por quem administra o repositório:
      merge sem aprovação de terceiros.
 2. **Merge**: em *Settings → General → Pull Requests*, deixe só *Allow squash merging* e use o título do PR como
    mensagem.
-3. **Permitir que o release-please abra PRs**: *Settings → Actions → General → Workflow permissions* → marque
-   *Allow GitHub Actions to create and approve pull requests*.
-4. **Ambiente `production`**: crie em *Settings → Environments* e cadastre os secrets acima. Sem environments
-   (privado + Free), cadastre-os em *Settings → Secrets and variables → Actions → Repository secrets*.
+3. **PRs do release-please**: com o `RELEASE_PLEASE_TOKEN` cadastrado ([abaixo](#token-do-release-please)), deixe
+   **desmarcado** *Settings → Actions → General → Allow GitHub Actions to create and approve pull requests* (um
+   workflow não deve poder aprovar PR). Só sem o token essa opção precisa ficar marcada.
+4. **Ambiente `production`**: crie em *Settings → Environments* e cadastre os secrets acima. Em *Deployment branches
+   and tags*, escolha *Selected branches and tags* e libere só a branch `main` e as tags `v*`: assim um workflow
+   rodado de outra branch não usa os segredos de produção. Sem environments (privado + Free), cadastre-os em
+   *Settings → Secrets and variables → Actions → Repository secrets*.
 5. **Firebase Hosting**: crie a service account e o secret `FIREBASE_SERVICE_ACCOUNT` ([abaixo](#hospedagem-firebase-hosting)).
+6. **Dependabot**: em *Settings → Code security*, ligue *Dependabot alerts* e *Dependabot security updates*. As
+   atualizações de rotina vêm de `.github/dependabot.yml`.
 
 ## Hospedagem (Firebase Hosting)
 
@@ -204,6 +209,16 @@ O repositório tem *auto-merge* habilitado. PRs de código marcados com
 - **Trivy** varre o repositório e envia SARIF para *Security → Code scanning*; falha em HIGH ou CRITICAL.
 - **npm audit** falha em vulnerabilidade `high` ou maior.
 - A execução semanal pega vulnerabilidades novas mesmo sem commits.
+- **Ações fixadas por hash de commit** (com a versão em comentário), nunca por tag ou branch: uma tag pode ser movida
+  para código malicioso (como no caso `tj-actions/changed-files`, 2025). O Dependabot (`.github/dependabot.yml`)
+  abre PR semanal atualizando hash e versão juntos.
+- **`npm ci --ignore-scripts`** no CI e no deploy: um pacote comprometido não executa código na instalação (nenhuma
+  dependência do projeto precisa de script de instalação).
+- Workflows com `permissions` mínimas declaradas; os segredos de produção só aparecem nos passos que os usam.
+- **Risco aceito (2026-10-31)**: 8 alertas *moderate* do `npm audit`, todos da cadeia `exceljs → archiver → glob →
+  minimatch` (negação de serviço em padrões de busca de arquivos). O sistema só usa `xlsx.load` e `writeBuffer` em
+  memória, no navegador; o `glob` nunca é chamado. A "correção" do npm é rebaixar o `exceljs` para a 4.1.1 (2020).
+  Reavaliar quando o `exceljs` publicar versão nova.
 
 ## Migrations do banco
 
