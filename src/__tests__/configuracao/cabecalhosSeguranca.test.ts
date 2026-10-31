@@ -12,6 +12,10 @@ const cabecalhosDeTudo: Record<string, string> = Object.fromEntries(
 const diretivas = (csp: string) =>
   Object.fromEntries(csp.split(';').map((d) => d.trim()).filter(Boolean).map((d) => [d.split(/\s+/)[0], d.split(/\s+/).slice(1)]));
 
+// Compara o nome do host inteiro (e não um trecho da URL): `supabase.co.atacante.com` não passa
+const hostPermitido = (host: string) =>
+  ['localhost', '127.0.0.1', 'www.w3.org'].includes(host) || host.endsWith('.supabase.co') || host.endsWith('.invalid');
+
 describe('cabeçalhos de segurança do site', () => {
   it('tem Content-Security-Policy restritiva', () => {
     // Arrange
@@ -50,7 +54,7 @@ describe('cabeçalhos de segurança do site', () => {
     // Act
     const externos = arquivos.flatMap((a) =>
       (fs.readFileSync(a, 'utf-8').match(/https?:\/\/[a-z0-9.-]+\.[a-z]{2,}/gi) || [])
-        .filter((u) => !/supabase\.co|localhost|127\.0\.0\.1|w3\.org|\.invalid$/i.test(u))
+        .filter((u) => !hostPermitido(new URL(u).hostname))
         .map((u) => `${path.relative(raiz, a)}: ${u}`)
     );
 
