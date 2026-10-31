@@ -88,7 +88,11 @@ hora em que a tela volta do segundo plano. O Telão **não** mostra o ranking (a
 - **Avaliadores**: credenciados no evento com papel **Avaliador** (o credenciamento do Staff, guardado na mesma
   tabela, não entra), igual às telas Avaliadores e Staff.
 - **Quarentena**: número de projetos com quarentena pendente (`view_projetos_quarentena`).
-- **Tempo decorrido**: desde a data e o horário de início do evento, no relógio do computador do telão ("Começa às
+- **Avaliação finalizada**: quando há projetos presentes na competição e todos atingiram a sua cota, o Telão mostra
+  o aviso "Avaliação finalizada" e o painel do Admin mostra a mesma faixa (atualizada a cada 30 s). A tela do
+  avaliador usa a mesma regra (`fn_feira_concluida`). Projeto sem check-in não impede o fim (o sorteio não o entrega);
+  se ele fizer check-in depois, a avaliação reabre.
+- **Tempo decorrido**: desde a data (`data_evento`) e o horário de início do evento, no relógio do computador do telão ("Começa às
   HH:MM" antes do início; "Início não configurado" sem horário).
 - Selo "Ao vivo — atualizado às HH:MM:SS"; se a consulta falhar, "Sem conexão — dados de HH:MM:SS", mantendo os
   últimos números.

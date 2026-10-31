@@ -206,7 +206,11 @@ describe('Rotina de Testes de Regressão: Reset Global do Evento Ativo', () => {
 
   it('4. TRATAMENTO DE ERRO RESILIENTE: captura falha do banco e mantém a integridade da aplicação', async () => {
     // Configura falha na RPC
-    mockRpc.mockResolvedValueOnce({ error: { message: 'Falha de conexão com o Supabase' } });
+    mockRpc.mockImplementation((nome: string) =>
+      Promise.resolve(
+        nome === 'admin_reset_global' ? { error: { message: 'Falha de conexão com o Supabase' } } : { error: null, data: null }
+      )
+    );
 
     const { unmount } = render(<TelaAdmin />);
 

@@ -2,7 +2,7 @@
 -- Rodar: npx supabase@2.122.0 test db
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(12);
+SELECT plan(16);
 
 -- Só o evento do teste fica ativo dentro desta transação
 UPDATE public.eventos SET is_ativo = false WHERE is_ativo;
@@ -58,8 +58,32 @@ SELECT is(public.fn_telao_resumo(NULL)->>'avaliacoes_na_meta', '4', 'avaliação
 SELECT is(public.fn_telao_resumo(NULL)->>'projetos_quarentena', '1', 'quarentena pendente do evento');
 SELECT is(public.fn_telao_resumo(NULL)->>'data_evento' || ' ' || (public.fn_telao_resumo(NULL)->>'horario_inicio'), '2026-10-30 08:00:00',
   'devolve data e horário de início para o cronômetro');
+SELECT is(public.fn_telao_resumo(NULL)->>'avaliacao_finalizada', 'false', 'P2 ainda abaixo da cota: avaliação não finalizada');
+
 SELECT ok(NOT (public.fn_telao_resumo(NULL)::text ~* 'nota|media|titulo|email'), 'só agregados: sem notas, títulos ou e-mails');
 SELECT is(public.fn_telao_resumo('e1800000-0000-0000-0000-000000000002')->>'total_projetos', '1', 'evento pedido explicitamente');
+
+-- Completa a cota de P2 (3): fica finalizada, mesmo com o ausente (P3) e o fora da competição (P4) sem cota
+RESET role;
+DELETE FROM public.locks_ativos WHERE id_projeto = 'f1800000-0000-0000-0000-000000000002';
+INSERT INTO public.avaliacoes (id_projeto, id_usuario, nota_final, status) VALUES
+  ('f1800000-0000-0000-0000-000000000002', 'c1800000-0000-0000-0000-0000000000a3', 6, 'CONCLUIDA');
+SET LOCAL role anon;
+SELECT is(public.fn_telao_resumo(NULL)->>'avaliacao_finalizada', 'true', 'todos os presentes na competição atingiram a cota: finalizada');
+
+-- A tela do avaliador usa fn_feira_concluida: mesma regra (projeto sem check-in não é sorteado, então não trava o fim)
+RESET role;
+UPDATE public.usuarios SET id_auth = NULL WHERE id_usuario = 'c1800000-0000-0000-0000-0000000000b1';
+INSERT INTO auth.users (id, email, is_anonymous, email_confirmed_at) VALUES
+  ('d1800000-0000-0000-0000-0000000000b1', 'staff18@teste.local', false, now());
+UPDATE public.usuarios SET id_auth = 'd1800000-0000-0000-0000-0000000000b1' WHERE id_usuario = 'c1800000-0000-0000-0000-0000000000b1';
+SELECT set_config('role', 'authenticated', true);
+SELECT set_config('request.jwt.claims', json_build_object('sub', 'd1800000-0000-0000-0000-0000000000b1', 'role', 'authenticated')::text, true);
+SELECT is(public.fn_feira_concluida(NULL), true, 'fn_feira_concluida igual ao Telão: ausente não impede o fim');
+RESET role;
+UPDATE public.projetos SET is_check_in_realizado = true WHERE id_projeto = 'f1800000-0000-0000-0000-000000000003';
+SELECT set_config('role', 'authenticated', true);
+SELECT is(public.fn_feira_concluida(NULL), false, 'projeto que faz check-in e ainda não tem avaliações reabre a avaliação');
 
 SELECT * FROM finish();
 ROLLBACK;
