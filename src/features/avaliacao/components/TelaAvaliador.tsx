@@ -662,124 +662,12 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
         // Falha momentânea: segue para a fila e o sorteio normais
       }
 
-      // Exclusão explícita de trava anterior usando a chave primária real obtida do cache
-      await supabase.from('locks_ativos').delete().eq('id_usuario', avaliadorId);
-
-      // 1. Verifica se há projeto direcionado pendente na fila do avaliador
+      // 1. Fila direcionada pelo Admin: o banco descarta a trava anterior, valida elegibilidade e cota
+      //    de cada item pendente e grava a trava do primeiro que puder ser avaliado
       let idProjetoAtribuido: string | null = null;
-      try {
-        const { data: itemFila } = await supabase
-          .from('fila_atribuicoes_direcionadas')
-          .select('id_atribuicao, id_projeto')
-          .eq('id_usuario', avaliadorId)
-          .eq('status', 'pendente')
-          .order('ordem', { ascending: true })
-          .limit(1)
-          .maybeSingle();
-
-        if (itemFila?.id_projeto) {
-          // Checagem de bloqueio de modalidade e se o avaliador já avaliou este projeto
-          let modalidadeBloqueada = false;
-          let jaAvaliado = false;
-          try {
-            const [resProjMod, resBloqMod, resAvExistente] = await Promise.all([
-              supabase
-                .from('projetos')
-                .select('id_modalidade')
-                .eq('id_projeto', itemFila.id_projeto)
-                .maybeSingle(),
-              supabase
-                .from('avaliador_modalidades_bloqueadas')
-                .select('id_modalidade')
-                .eq('id_usuario', avaliadorId),
-              supabase
-                .from('avaliacoes')
-                .select('id_avaliacao')
-                .eq('id_projeto', itemFila.id_projeto)
-                .eq('id_usuario', avaliadorId)
-                .maybeSingle(),
-            ]);
-
-            const idModProj = resProjMod.data?.id_modalidade;
-            const modsBloqueadas = new Set((resBloqMod.data || []).map((b: any) => b.id_modalidade));
-            if (idModProj && modsBloqueadas.has(idModProj)) {
-              modalidadeBloqueada = true;
-            }
-            if (resAvExistente.data?.id_avaliacao) {
-              jaAvaliado = true;
-            }
-          } catch (_eBloq) {
-            // Em caso de erro na consulta de bloqueios, não interrompe
-          }
-
-          if (modalidadeBloqueada || jaAvaliado) {
-            // Projeto da fila pertence a modalidade bloqueada ou já foi avaliado: descarta e segue para sorteio
-            await supabase
-              .from('fila_atribuicoes_direcionadas')
-              .update({ status: jaAvaliado ? 'ja_avaliado' : 'bloqueada_por_modalidade' })
-              .eq('id_atribuicao', itemFila.id_atribuicao);
-          } else {
-            // Checagem de cota: verifica se o projeto já completou a cota de avaliações ativas
-            let cotaAlcancada = false;
-            try {
-              const [resProj, resCountAv] = await Promise.all([
-                supabase
-                  .from('projetos')
-                  .select('cota_avaliacoes_customizada, id_evento')
-                  .eq('id_projeto', itemFila.id_projeto)
-                  .maybeSingle(),
-                // Só a contagem: o avaliador não lê avaliações de outros (RLS)
-                supabase.rpc('fn_avaliacoes_ativas_do_projeto', { p_id_projeto: itemFila.id_projeto }),
-              ]);
-
-              const cotaProjeto = resProj.data?.cota_avaliacoes_customizada;
-              let cotaLimite = cotaProjeto || 3;
-              if (!cotaProjeto && id_evento_ativo) {
-                const { data: evData } = await supabase
-                  .from('eventos')
-                  .select('cota_avaliacoes_padrao')
-                  .eq('id_evento', id_evento_ativo)
-                  .maybeSingle();
-                if (evData?.cota_avaliacoes_padrao) {
-                  cotaLimite = evData.cota_avaliacoes_padrao;
-                }
-              }
-
-              const totalFeitas = Number(resCountAv.data) || 0;
-              if (totalFeitas >= cotaLimite) {
-                cotaAlcancada = true;
-              }
-            } catch (_eCota) {
-              // Em caso de falha de consulta, não bloqueia
-            }
-
-            if (cotaAlcancada) {
-              // Projeto da fila já atingiu cota: descarta e segue para o sorteio normal
-              await supabase
-                .from('fila_atribuicoes_direcionadas')
-                .update({ status: 'concluida_por_outros' })
-                .eq('id_atribuicao', itemFila.id_atribuicao);
-            } else {
-              const expiracao2Horas = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-              const { error: lockFilaErr } = await supabase.from('locks_ativos').insert([{
-                id_usuario: avaliadorId,
-                id_projeto: itemFila.id_projeto,
-                expira_em: expiracao2Horas,
-              }]);
-
-              if (!lockFilaErr) {
-                idProjetoAtribuido = itemFila.id_projeto;
-                await supabase
-                  .from('fila_atribuicoes_direcionadas')
-                  .update({ status: 'em_andamento' })
-                  .eq('id_atribuicao', itemFila.id_atribuicao);
-              }
-            }
-          }
-        }
-      } catch (_errFila) {
-        // Fallback resiliente caso a tabela da fila ainda não exista no Supabase
-      }
+      const { data: idDaFila, error: erroFila } = await supabase.rpc('fn_assumir_item_fila');
+      if (erroFila) console.error('Erro ao consultar a fila direcionada:', erroFila.message);
+      else if (idDaFila) idProjetoAtribuido = idDaFila as string;
 
       let idSorteado: any = idProjetoAtribuido;
 
@@ -983,20 +871,16 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
     set_mostrar_modal_conflito(false);
 
     try {
-      const { error: erro_impedimento } = await supabase
-        .from('historico_impedimentos')
-        .insert({
-          id_usuario: avaliadorId,
-          id_projeto: id_projeto,
-          tipo: 'conflito',
-        });
+      // O banco grava o impedimento só no projeto em que o avaliador está (com trava) e libera a trava
+      const { error: erro_impedimento } = await supabase.rpc('fn_registrar_impedimento', {
+        p_id_projeto: id_projeto,
+        p_tipo: 'conflito',
+      });
 
       if (erro_impedimento) {
         console.error('Erro ao registrar conflito em historico_impedimentos:', erro_impedimento.message);
         alert(`Aviso ao registrar conflito: ${erro_impedimento.message}`);
       }
-
-      await supabase.from('locks_ativos').delete().eq('id_usuario', avaliadorId);
 
       set_projeto_atual(null);
       exibir_notificacao('Conflito registrado. Trava liberada e buscando próximo projeto...');
@@ -1023,23 +907,16 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
     const id_projeto = projeto_atual.id_projeto || projeto_atual.id;
 
     try {
-      const { error: erro_impedimento } = await supabase
-        .from('historico_impedimentos')
-        .insert({
-          id_usuario: avaliadorId,
-          id_projeto: id_projeto,
-          tipo: 'ausencia',
-        });
+      // O banco grava o impedimento só no projeto em que o avaliador está (com trava) e libera a trava
+      const { error: erro_impedimento } = await supabase.rpc('fn_registrar_impedimento', {
+        p_id_projeto: id_projeto,
+        p_tipo: 'ausencia',
+      });
 
       if (erro_impedimento) {
         console.error('Erro ao registrar ausência em historico_impedimentos:', erro_impedimento.message);
         alert(`Aviso ao registrar ausência: ${erro_impedimento.message}`);
       }
-
-      await supabase
-        .from('locks_ativos')
-        .delete()
-        .eq('id_usuario', avaliadorId);
 
       set_projeto_atual(null);
       exibir_notificacao('Ausência registrada. Liberando trava e buscando próximo projeto...');
@@ -1217,16 +1094,8 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
             p_id_questionario: idQuestionarioEscolhido,
           });
         }
+        // fn_enviar_avaliacao já liberou a trava e concluiu o item da fila
         await supabase.from('locks_ativos').delete().eq('id_usuario', avaliadorId);
-        try {
-          await supabase
-            .from('fila_atribuicoes_direcionadas')
-            .update({ status: 'concluido' })
-            .eq('id_usuario', avaliadorId)
-            .eq('id_projeto', projetoAtual.id_projeto || projetoAtual.id);
-        } catch (_errConcluirFila) {
-          // Fallback silencioso
-        }
       }
 
       set_projeto_atual(null);

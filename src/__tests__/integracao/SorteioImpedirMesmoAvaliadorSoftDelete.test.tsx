@@ -147,12 +147,11 @@ describe('Auditoria de Regressão: Impedir Reatribuição do Mesmo Projeto ao Me
     );
 
     await waitFor(() => {
-      // O lock ativo deve ser deletado
-      expect(chamadasDeleteLocks.length).toBeGreaterThanOrEqual(1);
-      expect(chamadasDeleteLocks[0]).toEqual({ col: 'id_usuario', val: usuarioAvaliadorId });
-      // Um novo sorteio limpo deve ser acionado
-      expect(chamadasRpcSorteio.length).toBeGreaterThanOrEqual(1);
-      expect(chamadasRpcSorteio[0].nomeFn).toBe('sortear_proximo_projeto');
+      // O lock ativo é descartado no banco (fn_assumir_item_fila e o sorteio apagam a trava anterior do avaliador)
+      // e um novo sorteio limpo é acionado em seguida
+      const nomes = chamadasRpcSorteio.map((c) => c.nomeFn);
+      expect(nomes.indexOf('fn_assumir_item_fila')).toBeGreaterThanOrEqual(0);
+      expect(nomes.indexOf('sortear_proximo_projeto')).toBeGreaterThan(nomes.indexOf('fn_assumir_item_fila'));
     });
   });
 

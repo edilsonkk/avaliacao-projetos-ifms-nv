@@ -608,7 +608,7 @@ ALTER FUNCTION "public"."admin_remover_quarentena_todos"() OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."admin_reset_global"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public'
+    SET "search_path" TO 'public', 'pg_temp'
     AS $_$
 DECLARE
   v_id_evento UUID;
@@ -1287,6 +1287,64 @@ $_$;
 ALTER FUNCTION "public"."fn_aparar_texto"("p_texto" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_assumir_item_fila"() RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_usuario uuid := public.avaliador_atual();
+  v_item    record;
+  v_motivo  text;
+BEGIN
+  IF v_usuario IS NULL THEN
+    RAISE EXCEPTION 'Acesso negado: este aparelho não está vinculado a um avaliador.' USING ERRCODE = '42501';
+  END IF;
+
+  -- Mesma regra do sorteio: a trava anterior do próprio avaliador é descartada
+  DELETE FROM public.locks_ativos WHERE id_usuario = v_usuario;
+
+  FOR v_item IN
+    SELECT f.id_atribuicao, f.id_projeto
+    FROM public.fila_atribuicoes_direcionadas f
+    JOIN public.projetos p ON p.id_projeto = f.id_projeto
+    WHERE f.id_usuario = v_usuario
+      AND f.status = 'pendente'
+      AND p.id_evento = public.evento_ativo_id()
+    ORDER BY f.ordem, f.created_at
+    FOR UPDATE OF f
+  LOOP
+    -- Projeto reservado: cota conferida sem corrida com o sorteio
+    PERFORM 1 FROM public.projetos WHERE id_projeto = v_item.id_projeto FOR UPDATE;
+    v_motivo := public.fn_motivo_inelegivel(v_item.id_projeto, v_usuario);
+    IF v_motivo IS NULL AND public.fn_vagas_projeto(v_item.id_projeto) <= 0 THEN
+      v_motivo := 'cota';
+    END IF;
+
+    IF v_motivo IS NULL THEN
+      INSERT INTO public.locks_ativos (id_usuario, id_projeto, bloqueado_em, expira_em)
+      VALUES (v_usuario, v_item.id_projeto, now(), now() + interval '2 hours');
+      UPDATE public.fila_atribuicoes_direcionadas SET status = 'em_andamento' WHERE id_atribuicao = v_item.id_atribuicao;
+      RETURN v_item.id_projeto;
+    END IF;
+
+    UPDATE public.fila_atribuicoes_direcionadas
+    SET status = CASE
+      WHEN v_motivo = 'Já avaliou este projeto' THEN 'ja_avaliado'
+      WHEN v_motivo LIKE 'Bloqueio: modalidade%' THEN 'bloqueada_por_modalidade'
+      WHEN v_motivo = 'cota' THEN 'concluida_por_outros'
+      ELSE 'inelegivel'
+    END
+    WHERE id_atribuicao = v_item.id_atribuicao;
+  END LOOP;
+
+  RETURN NULL;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_assumir_item_fila"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "uuid", "p_nome" "text", "p_email" "text", "p_id_instituicao" "uuid", "p_nome_instituicao_nova" "text", "p_ids_areas" "uuid"[]) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1370,16 +1428,23 @@ ALTER FUNCTION "public"."fn_avaliacoes_ativas_do_projeto"("p_id_projeto" "uuid")
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_avaliacoes_do_questionario"("p_id_questionario" "uuid") RETURNS integer
-    LANGUAGE "sql" STABLE SECURITY DEFINER
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  SELECT count(DISTINCT x.id_avaliacao)::integer FROM (
-    SELECT a.id_avaliacao FROM public.avaliacoes a WHERE a.id_questionario = p_id_questionario
-    UNION
-    SELECT r.id_avaliacao FROM public.respostas_avaliacao r
-    JOIN public.perguntas_questionario pq ON pq.id_pergunta = r.id_pergunta
-    WHERE pq.id_questionario = p_id_questionario
-  ) x;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  RETURN (
+    SELECT count(DISTINCT x.id_avaliacao)::integer FROM (
+      SELECT a.id_avaliacao FROM public.avaliacoes a WHERE a.id_questionario = p_id_questionario
+      UNION
+      SELECT r.id_avaliacao FROM public.respostas_avaliacao r
+      JOIN public.perguntas_questionario pq ON pq.id_pergunta = r.id_pergunta
+      WHERE pq.id_questionario = p_id_questionario
+    ) x
+  );
+END;
 $$;
 
 
@@ -1900,6 +1965,35 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_registrar_impedimento"("p_id_projeto" "uuid", "p_tipo" "text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_usuario uuid := public.avaliador_atual();
+BEGIN
+  IF v_usuario IS NULL THEN
+    RAISE EXCEPTION 'Acesso negado: este aparelho não está vinculado a um avaliador.' USING ERRCODE = '42501';
+  END IF;
+  IF p_tipo IS NULL OR p_tipo NOT IN ('ausencia', 'conflito') THEN
+    RAISE EXCEPTION 'Tipo de impedimento inválido: use ausencia ou conflito.' USING ERRCODE = '22023';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.locks_ativos
+    WHERE id_usuario = v_usuario AND id_projeto = p_id_projeto AND expira_em > now()
+  ) THEN
+    RAISE EXCEPTION 'Só é possível registrar ausência ou conflito no projeto em que você está.' USING ERRCODE = '42501';
+  END IF;
+
+  INSERT INTO public.historico_impedimentos (id_usuario, id_projeto, tipo) VALUES (v_usuario, p_id_projeto, p_tipo);
+  DELETE FROM public.locks_ativos WHERE id_usuario = v_usuario;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_registrar_impedimento"("p_id_projeto" "uuid", "p_tipo" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_relatorio_ausencias_completo"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id_usuario" "uuid", "avaliador_nome" "text", "avaliador_email" "text", "total_ausencias" integer, "ausencias" "jsonb")
@@ -3935,11 +4029,17 @@ CREATE POLICY "rls_avaliadores_evento_leitura" ON "public"."avaliadores_evento" 
 
 
 
-CREATE POLICY "rls_avaliadores_evento_staff_atualiza" ON "public"."avaliadores_evento" FOR UPDATE TO "authenticated" USING ("public"."is_staff"()) WITH CHECK ("public"."is_staff"());
+CREATE POLICY "rls_avaliadores_evento_staff_atualiza" ON "public"."avaliadores_evento" FOR UPDATE TO "authenticated" USING (("public"."is_staff"() AND (EXISTS ( SELECT 1
+   FROM "public"."usuarios" "u"
+  WHERE (("u"."id_usuario" = "avaliadores_evento"."id_usuario") AND ("upper"(("u"."papel")::"text") = 'AVALIADOR'::"text")))))) WITH CHECK (("public"."is_staff"() AND (EXISTS ( SELECT 1
+   FROM "public"."usuarios" "u"
+  WHERE (("u"."id_usuario" = "avaliadores_evento"."id_usuario") AND ("upper"(("u"."papel")::"text") = 'AVALIADOR'::"text"))))));
 
 
 
-CREATE POLICY "rls_avaliadores_evento_staff_insere" ON "public"."avaliadores_evento" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_staff"());
+CREATE POLICY "rls_avaliadores_evento_staff_insere" ON "public"."avaliadores_evento" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_staff"() AND (EXISTS ( SELECT 1
+   FROM "public"."usuarios" "u"
+  WHERE (("u"."id_usuario" = "avaliadores_evento"."id_usuario") AND ("upper"(("u"."papel")::"text") = 'AVALIADOR'::"text"))))));
 
 
 
@@ -3955,10 +4055,6 @@ CREATE POLICY "rls_fila_atribuicoes_direcionadas_admin" ON "public"."fila_atribu
 
 
 
-CREATE POLICY "rls_fila_avaliador_atualiza" ON "public"."fila_atribuicoes_direcionadas" FOR UPDATE TO "authenticated" USING (("id_usuario" = "public"."avaliador_atual"())) WITH CHECK (("id_usuario" = "public"."avaliador_atual"()));
-
-
-
 CREATE POLICY "rls_fila_leitura" ON "public"."fila_atribuicoes_direcionadas" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
 
 
@@ -3968,10 +4064,6 @@ CREATE POLICY "rls_fila_staff_apaga" ON "public"."fila_atribuicoes_direcionadas"
 
 
 CREATE POLICY "rls_historico_impedimentos_admin" ON "public"."historico_impedimentos" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
-
-
-
-CREATE POLICY "rls_historico_impedimentos_avaliador_insere" ON "public"."historico_impedimentos" FOR INSERT TO "authenticated" WITH CHECK (("id_usuario" = "public"."avaliador_atual"()));
 
 
 
@@ -4000,10 +4092,6 @@ CREATE POLICY "rls_locks_ativos_admin" ON "public"."locks_ativos" TO "authentica
 
 
 CREATE POLICY "rls_locks_ativos_apaga" ON "public"."locks_ativos" FOR DELETE TO "authenticated" USING (("public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
-
-
-
-CREATE POLICY "rls_locks_ativos_avaliador_insere" ON "public"."locks_ativos" FOR INSERT TO "authenticated" WITH CHECK (("id_usuario" = "public"."avaliador_atual"()));
 
 
 
@@ -4240,6 +4328,12 @@ GRANT ALL ON FUNCTION "public"."fn_aparar_texto"("p_texto" "text") TO "service_r
 
 
 
+REVOKE ALL ON FUNCTION "public"."fn_assumir_item_fila"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_assumir_item_fila"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_assumir_item_fila"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "uuid", "p_nome" "text", "p_email" "text", "p_id_instituicao" "uuid", "p_nome_instituicao_nova" "text", "p_ids_areas" "uuid"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "uuid", "p_nome" "text", "p_email" "text", "p_id_instituicao" "uuid", "p_nome_instituicao_nova" "text", "p_ids_areas" "uuid"[]) TO "anon";
 GRANT ALL ON FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "uuid", "p_nome" "text", "p_email" "text", "p_id_instituicao" "uuid", "p_nome_instituicao_nova" "text", "p_ids_areas" "uuid"[]) TO "authenticated";
@@ -4326,6 +4420,12 @@ GRANT ALL ON FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_
 
 REVOKE ALL ON FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_registrar_impedimento"("p_id_projeto" "uuid", "p_tipo" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_registrar_impedimento"("p_id_projeto" "uuid", "p_tipo" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_registrar_impedimento"("p_id_projeto" "uuid", "p_tipo" "text") TO "service_role";
 
 
 
@@ -4419,7 +4519,7 @@ GRANT ALL ON FUNCTION "public"."normalizar_codigo"("p_codigo" "text") TO "servic
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."eventos" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."eventos" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."eventos" TO "authenticated";
 GRANT ALL ON TABLE "public"."eventos" TO "service_role";
 
@@ -4459,7 +4559,7 @@ GRANT ALL ON FUNCTION "public"."validar_avaliador_do_evento"("p_id_usuario" "uui
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."areas_tematicas" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."areas_tematicas" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."areas_tematicas" TO "authenticated";
 GRANT ALL ON TABLE "public"."areas_tematicas" TO "service_role";
 
@@ -4503,13 +4603,13 @@ GRANT ALL ON TABLE "public"."historico_impedimentos" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."instituicao_aliases" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."instituicao_aliases" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."instituicao_aliases" TO "authenticated";
 GRANT ALL ON TABLE "public"."instituicao_aliases" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."instituicoes" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."instituicoes" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."instituicoes" TO "authenticated";
 GRANT ALL ON TABLE "public"."instituicoes" TO "service_role";
 
@@ -4520,13 +4620,13 @@ GRANT ALL ON TABLE "public"."locks_ativos" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."modalidade_aliases" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."modalidade_aliases" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."modalidade_aliases" TO "authenticated";
 GRANT ALL ON TABLE "public"."modalidade_aliases" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."modalidades" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."modalidades" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."modalidades" TO "authenticated";
 GRANT ALL ON TABLE "public"."modalidades" TO "service_role";
 
@@ -4536,19 +4636,19 @@ GRANT ALL ON TABLE "public"."pareamentos_pendentes" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."perguntas_questionario" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."perguntas_questionario" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."perguntas_questionario" TO "authenticated";
 GRANT ALL ON TABLE "public"."perguntas_questionario" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."projetos" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."projetos" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."projetos" TO "authenticated";
 GRANT ALL ON TABLE "public"."projetos" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."questionarios" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."questionarios" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."questionarios" TO "authenticated";
 GRANT ALL ON TABLE "public"."questionarios" TO "service_role";
 
@@ -4559,8 +4659,32 @@ GRANT ALL ON TABLE "public"."respostas_avaliacao" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."usuarios" TO "authenticated";
+GRANT INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."usuarios" TO "authenticated";
 GRANT ALL ON TABLE "public"."usuarios" TO "service_role";
+
+
+
+GRANT SELECT("id_usuario") ON TABLE "public"."usuarios" TO "authenticated";
+
+
+
+GRANT SELECT("email") ON TABLE "public"."usuarios" TO "authenticated";
+
+
+
+GRANT SELECT("nome") ON TABLE "public"."usuarios" TO "authenticated";
+
+
+
+GRANT SELECT("papel") ON TABLE "public"."usuarios" TO "authenticated";
+
+
+
+GRANT SELECT("created_at") ON TABLE "public"."usuarios" TO "authenticated";
+
+
+
+GRANT SELECT("id_auth") ON TABLE "public"."usuarios" TO "authenticated";
 
 
 

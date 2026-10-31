@@ -44,6 +44,8 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `fn_check_in_projeto(id_projeto, bool)` | Staff/Admin | Check-in do estande |
 | `fn_fixar_questionario(id_projeto, id_questionario)` | Avaliador com a trava | Fixa o questionário na primeira avaliação |
 | `fn_avaliacoes_ativas_do_projeto(id_projeto)` | Avaliador/Staff/Admin | Contagem para a cota, sem expor notas |
+| `fn_assumir_item_fila()` | Avaliador | Primeiro item pendente da própria fila que pode ser avaliado (elegibilidade e cota no banco); grava a trava de 2 h e devolve o projeto, ou nulo |
+| `fn_registrar_impedimento(id_projeto, tipo)` | Avaliador | Ausência ou conflito no projeto em que está (com trava); libera a trava |
 | `fn_feira_concluida(id_evento)` | Avaliador/Staff/Admin | Avaliação finalizada: há projetos presentes (check-in) na competição e todos atingiram a cota (mesma regra de `avaliacao_finalizada` do Telão) |
 | `fn_autocadastro_avaliador(...)` | Público | Autocadastro pelo QR; nunca altera cadastro existente |
 | `fn_telao_resumo(id_evento)` | Público | Totais do Telão (evento ativo se nulo): nome/data/horário do evento, projetos presentes, meta pela cota de cada projeto, avaliações na meta, travas (todas e as que cabem na meta), avaliadores credenciados (só papel Avaliador), quarentena pendente, `avaliacao_finalizada`; sem nomes de pessoas, títulos nem notas |
