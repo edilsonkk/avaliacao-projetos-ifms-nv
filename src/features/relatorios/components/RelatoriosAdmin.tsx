@@ -431,7 +431,8 @@ export const RelatoriosAdmin: React.FC<{
     }
 
     try {
-      const rpc = supabase.rpc as any;
+      // Chamada como método do cliente: rpc usa `this` (passada solta, quebrava com "this.rest")
+      const rpc = (funcao: string, args: Record<string, unknown>) => (supabase as any).rpc(funcao, args);
       const { data: infoEvento, error: erroEvento } = await supabase
         .from('eventos')
         .select('nome_evento, data_evento, horario_inicio, horario_fim, cota_avaliacoes_padrao')

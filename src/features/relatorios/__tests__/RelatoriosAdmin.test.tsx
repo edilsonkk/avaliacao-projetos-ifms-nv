@@ -44,7 +44,11 @@ describe('RelatoriosAdmin', () => {
       fn_relatorio_avaliadores_completo: { data: [], error: null },
       fn_relatorio_ausencias_completo: { data: [], error: null },
     };
-    vi.mocked(supabase.rpc).mockImplementation(((funcao: string) => cadeia(respostasRpc[funcao] ?? { data: [], error: null })) as never);
+    // Como o supabase-js real, rpc usa `this` (this.rest): chamar a função solta, fora do cliente, quebra
+    vi.mocked(supabase.rpc).mockImplementation(function (this: unknown, funcao: string) {
+      if (this !== supabase) throw new TypeError("undefined is not an object (evaluating 'this.rest')");
+      return cadeia(respostasRpc[funcao] ?? { data: [], error: null });
+    } as never);
     vi.mocked(supabase.from).mockImplementation(((tabela: string) =>
       cadeia(tabela === 'eventos' ? { data: { nome_evento: 'Feira Teste' }, error: null } : { data: [], error: null, count: 0 })) as never);
   });
