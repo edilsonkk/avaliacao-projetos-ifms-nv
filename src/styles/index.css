@@ -1,3 +1,109 @@
 @import "tailwindcss";
 
 @variant dark (&:where(.dark, .dark *));
+
+/* ==============================================================================
+   TOKENS DE INTERFACE
+   Cores, escala de texto, raios e sombras usados por src/components/ui.
+   O contraste de cada cor foi medido contra o texto que fica em cima dela
+   (WCAG 2.2 AA, 4,5:1 para texto normal) — a razão está no comentário.
+   Ver docs/arquitetura/design-e-acessibilidade.md e scripts/contraste.mjs.
+   ============================================================================== */
+
+@layer base {
+  :root {
+    /* Tamanho do texto escolhido pela pessoa no cabeçalho (100% = padrão do navegador) */
+    --escala-texto: 100%;
+
+    /* Ação (verde da marca): emerald-700 dá 5,37:1 com branco — o emerald-600 dava 3,67:1 */
+    --cor-acao: oklch(50.8% 0.118 165.612);
+    --cor-acao-ativa: oklch(43.2% 0.095 166.913); /* emerald-800 */
+    /* Perigo: rose-600 dá 4,51:1 com branco */
+    --cor-perigo: oklch(58.6% 0.253 17.585);
+    --cor-perigo-ativa: oklch(51.4% 0.222 16.935); /* rose-700 */
+    /* Aviso: amber-700 dá 5,05:1 com branco — o amber-500 dava 2,15:1 */
+    --cor-aviso: oklch(55.5% 0.163 48.998);
+    /* Informação: sky-700 */
+    --cor-info: oklch(50% 0.134 242.749);
+
+    /* Texto e superfícies no tema claro */
+    --cor-texto: oklch(20.8% 0.042 265.755); /* slate-900 */
+    --cor-texto-secundario: oklch(55.4% 0.046 257.417); /* slate-500: 4,77:1 — slate-400 dava 2,63:1 */
+    --cor-superficie: #ffffff;
+    --cor-superficie-alta: oklch(98.4% 0.003 247.858); /* slate-50 */
+    /* Borda decorativa (cartões, divisórias): não precisa de 3:1, não identifica controle */
+    --cor-borda: oklch(92.9% 0.013 255.508); /* slate-200 */
+    /* Borda de controle (campos, botão secundário): a WCAG 1.4.11 exige 3:1 — slate-200 dava 1,23:1 */
+    --cor-borda-controle: oklch(55.4% 0.046 257.417); /* slate-500: 4,77:1 sobre branco */
+  }
+
+  .dark {
+    /* As cores de ação, perigo e aviso continuam as mesmas: o contraste é com o texto branco em cima */
+    --cor-info: oklch(82.8% 0.111 230.318); /* sky-300: texto claro sobre fundo escuro */
+    --cor-texto: oklch(96.8% 0.007 247.896); /* slate-100 */
+    --cor-texto-secundario: oklch(70.4% 0.04 256.788); /* slate-400: 6,79:1 sobre slate-900 */
+    --cor-superficie: oklch(27.9% 0.041 260.031); /* slate-800 */
+    --cor-superficie-alta: oklch(20.8% 0.042 265.755); /* slate-900 */
+    --cor-borda: oklch(37.2% 0.044 257.287); /* slate-700 */
+    --cor-borda-controle: oklch(70.4% 0.04 256.788); /* slate-400: 5,58:1 sobre slate-800 */
+  }
+}
+
+/* Cores semânticas: `inline` para a utilidade apontar direto para a variável do tema */
+@theme inline {
+  --color-acao: var(--cor-acao);
+  --color-acao-ativa: var(--cor-acao-ativa);
+  --color-perigo: var(--cor-perigo);
+  --color-perigo-ativa: var(--cor-perigo-ativa);
+  --color-aviso: var(--cor-aviso);
+  --color-info: var(--cor-info);
+  --color-texto: var(--cor-texto);
+  --color-texto-secundario: var(--cor-texto-secundario);
+  --color-superficie: var(--cor-superficie);
+  --color-superficie-alta: var(--cor-superficie-alta);
+  --color-borda: var(--cor-borda);
+  --color-borda-controle: var(--cor-borda-controle);
+}
+
+@theme {
+  /* Escala de texto em rem, para acompanhar o controle do cabeçalho e o ajuste do celular.
+     Nunca use tamanho em px fixo (`text-[10px]`): ele ignora as duas coisas. */
+  --text-legenda: 0.75rem; /* 12px — piso absoluto: selos e cabeçalho de tabela */
+  --text-apoio: 0.875rem; /* 14px — rótulos, legendas e metadados */
+  --text-corpo: 1rem; /* 16px — o que a pessoa lê e digita (evita o zoom automático do iOS) */
+  --text-titulo-3: 1.25rem;
+  --text-titulo-2: 1.5rem;
+  --text-titulo-1: 1.875rem;
+
+  --radius-controle: 0.75rem; /* botões e campos */
+  --radius-cartao: 1rem;
+  --radius-painel: 1.5rem; /* modais e painéis */
+
+  --shadow-cartao: 0 1px 2px 0 rgb(0 0 0 / 0.06);
+  --shadow-flutuante: 0 10px 25px -5px rgb(0 0 0 / 0.15);
+  --shadow-painel: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+}
+
+@layer base {
+  html {
+    font-size: var(--escala-texto);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Um único anel de foco em todo o app, visível só na navegação por teclado */
+  :focus-visible {
+    outline: 2px solid var(--cor-acao);
+    outline-offset: 2px;
+  }
+
+  /* Quem pede menos movimento no sistema operacional não recebe animação */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
