@@ -21,6 +21,9 @@ Código: `src/features/staff/` (`TelaStaff`, `GestorStaff`), `src/features/avali
 - Validade, tamanho dos códigos, tentativas e formas liberadas ficam nas Configurações do evento (engrenagem),
   seção **Acesso dos avaliadores**.
 - Celular perdido ou trocado: **Aparelho → Desvincular aparelho** e parear o novo.
+- A aba Avaliador precisa de um navegador **sem a conta do Admin/Staff**. No mesmo navegador em que a equipe está
+  logada, a tela avisa e oferece **Sair desta conta e preparar o aparelho** (sai só ali); o pareamento e o código de
+  acesso são recusados antes disso, para o código de uso único não ser gasto à toa.
 - `App.tsx` decide a tela pelo caminho da URL e pelo papel em `localStorage` e impede o avaliador de abrir telas
   de Admin ou Staff.
 
