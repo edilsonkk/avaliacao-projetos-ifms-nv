@@ -65,8 +65,33 @@ Importe sempre pelo índice: `import { Botao, Campo } from '@/components/ui'`.
 | `Cartao` | superfície/região | título vira cabeçalho no nível indicado; como `section`, nomeia a região |
 | `Selo` | etiqueta de situação | piso de 12px, não quebra linha |
 | `Estado` | carregando / vazio / erro | `role="status"` ao carregar, `role="alert"` no erro |
+| `Modal` | qualquer diálogo | `role="dialog"`/`alertdialog`, `aria-modal`, foco inicial (`data-foco-inicial`), foco preso, `Esc`, foco devolvido a quem abriu, rolagem do fundo travada |
+| `Aviso` | o que antes era `alert()` | diálogo com a tipografia da tela, foco no botão de ciência |
+| `ConfirmacaoPerigo` | o que antes era `confirm()` | `alertdialog`; o caminho seguro é o primário, recebe o foco e responde ao `Esc` |
+| `ProvedorAvisos` + `useAvisos()` | `avisar`, `confirmar` e `notificar` | uma única região viva (`aria-live`), `assertive` só no erro |
+| `Abas` + `PainelAba` | navegação por abas | `role="tablist"/"tab"/"tabpanel"`, tabulação só na aba ativa, setas e Home/End |
 | `Dica` | explicação curta | `role="tooltip"`, abre no toque e fecha com `Esc` |
 | `CabecalhoOrdenavel` | coluna de tabela | `aria-sort` e ordenação pelo teclado |
+
+## Avisos, confirmações e notificações
+
+Nenhum diálogo do navegador. A tela pede o que precisa ao `useAvisos()`:
+
+```tsx
+const { avisar, confirmar, notificar } = useAvisos();
+
+await avisar({ tipo: 'sucesso', titulo: 'Avaliação enviada', mensagem: 'A nota foi gravada.' });
+
+if (await confirmar({ titulo: 'Sair e desvincular?', rotuloConfirmar: 'Sair e desvincular', rotuloCancelar: 'Continuar avaliando' })) {
+  // só aqui a ação destrutiva acontece
+}
+
+notificar('Novo projeto sorteado', 'sucesso'); // passageiro, não interrompe
+```
+
+Quando usar cada um: **`avisar`** para o que precisa de ciência, relata falha ou conclui uma ação (era o
+`alert()`); **`confirmar`** para ação destrutiva (era o `window.confirm()`); **`notificar`** para o aviso
+passageiro que não deve interromper — agora anunciado, ao contrário das caixas flutuantes antigas.
 
 ## Regras para tela nova
 
@@ -93,6 +118,5 @@ a razão da WCAG e falha se algum par ficar abaixo do mínimo (4,5:1 para texto,
 
 ## Ainda por fazer
 
-`Modal` (com armadilha de foco e `Esc`), `Aviso` (o substituto do `alert()`), `ConfirmacaoPerigo`, `Abas`
-(`role="tablist"`), região viva de notificações, `Tabela` responsiva, controle de tamanho de texto no cabeçalho e
-a migração das telas — ver o plano de execução por etapas.
+`Tabela` responsiva, o controle de tamanho de texto no cabeçalho, o `ProvedorAvisos` montado no shell da
+aplicação e a migração das telas — ver o plano de execução por etapas.
