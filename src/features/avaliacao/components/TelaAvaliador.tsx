@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { Projeto } from '@/types/database';
 import { Botao, CampoArea, Dica, Modal, useAvisos } from '@/components/ui';
+import { ImagemEvento } from '@/components/layout/IdentidadeVisual';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { TelaLogin } from '@/features/auth';
 
@@ -1158,6 +1159,9 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
     <main className="max-w-md mx-auto px-4 py-4 space-y-5 pb-24 font-sans">
       {/* Título único da tela: os cartões abaixo usam h2 (o cabeçalho não tem mais h1) */}
       <h1 className="sr-only">Avaliação de projetos</h1>
+
+      {/* Imagem do evento: no fluxo da página, então sai de vista ao descer para as perguntas */}
+      <ImagemEvento altura="baixa" />
       {/* Barra Informativa do Avaliador Logado com Botão Sair */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl px-4 py-2.5 border border-slate-200 dark:border-slate-700 shadow-xs flex items-center justify-between text-xs">
         <div className="flex items-center gap-2 overflow-hidden">

@@ -26,6 +26,8 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 import { TelaAdmin } from '@/features/admin';
+import { ProvedorAvisos } from '@/components/ui';
+import { ProvedorIdentidadeVisual } from '@/components/layout/IdentidadeVisual';
 
 describe('Rotina de Testes de Regressão: Gestão e Criação de Novo Evento', () => {
   let eventosRegistrados: any[] = [];
@@ -161,7 +163,7 @@ describe('Rotina de Testes de Regressão: Gestão e Criação de Novo Evento', (
   });
 
   it('1. BOTÃO NOVO EVENTO: deve existir no Header e abrir o modal de cadastro', async () => {
-    render(<TelaAdmin />);
+    render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     const botaoNovoEvento = await screen.findByRole('button', { name: /novo evento/i });
     expect(botaoNovoEvento).toBeInTheDocument();
@@ -173,7 +175,7 @@ describe('Rotina de Testes de Regressão: Gestão e Criação de Novo Evento', (
   });
 
   it('2. VALIDAÇÃO: o botão de submissão do modal deve ficar desabilitado se o nome estiver vazio', async () => {
-    render(<TelaAdmin />);
+    render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     fireEvent.click(await screen.findByRole('button', { name: /novo evento/i }));
 
@@ -189,7 +191,7 @@ describe('Rotina de Testes de Regressão: Gestão e Criação de Novo Evento', (
   });
 
   it('3. CADASTRO COM ATIVAÇÃO IMEDIATA: inclui data do evento, horários e ativa imediatamente no painel', async () => {
-    render(<TelaAdmin />);
+    render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     fireEvent.click(await screen.findByRole('button', { name: /novo evento/i }));
 
@@ -248,7 +250,7 @@ describe('Rotina de Testes de Regressão: Gestão e Criação de Novo Evento', (
     // ATIVA A SIMULAÇÃO DO ERRO EXATO QUE OCORREU NO SUPABASE EM PRODUÇÃO
     simularErroSchemaCacheDataEvento = true;
 
-    render(<TelaAdmin />);
+    render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     fireEvent.click(await screen.findByRole('button', { name: /novo evento/i }));
 
@@ -289,7 +291,7 @@ describe('Rotina de Testes de Regressão: Gestão e Criação de Novo Evento', (
   });
 
   it('5. CADASTRO INATIVO: ao desmarcar a ativação imediata, salva com is_ativo: false sem alterar o evento ativo', async () => {
-    render(<TelaAdmin />);
+    render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     fireEvent.click(await screen.findByRole('button', { name: /novo evento/i }));
 
@@ -333,7 +335,7 @@ describe('Rotina de Testes de Regressão: Gestão e Criação de Novo Evento', (
         }),
       };
     });
-    render(<TelaAdmin />);
+    render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
     fireEvent.click(await screen.findByRole('button', { name: /novo evento/i }));
     fireEvent.change(screen.getByPlaceholderText('Ex: FETEC MS 2027'), { target: { value: 'Evento Com Erro' } });
 
@@ -347,7 +349,7 @@ describe('Rotina de Testes de Regressão: Gestão e Criação de Novo Evento', (
   });
 
   it('6. HISTÓRICO DE EVENTOS: exibe edições anteriores e permite alternar o evento ativo', async () => {
-    render(<TelaAdmin />);
+    render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     // Abre configurações
     fireEvent.click(await screen.findByTitle('Configurações Gerais'));

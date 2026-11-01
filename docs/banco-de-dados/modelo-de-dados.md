@@ -44,6 +44,8 @@ A feira. Quase todas as tabelas são isoladas por `id_evento`.
 | `tamanho_codigo` | Tamanho dos dois códigos (padrão 6; 6–10) |
 | `max_tentativas_codigo` | Tentativas por código de acesso antes de invalidá-lo (padrão 5; 1–10) |
 | `metodos_vinculo` | `ambos`, `pareamento` ou `codigo` |
+| `url_icone` | Ícone do evento (bucket `identidade-visual`): substitui o "IF" do cabeçalho e serve de favicon |
+| `url_imagem_evento` | Imagem do evento: login, autocadastro, Telão, relatórios impressos e topo da tela do avaliador |
 
 Os limites ficam em `CHECK` no banco e são editados nas Configurações do evento (engrenagem).
 
@@ -185,3 +187,12 @@ ausências.
 | `view_avaliadores_credenciados` | Avaliadores com check-in no evento ativo |
 
 Todas as views usam `security_invoker` e são somente leitura.
+
+## Storage
+
+| Bucket | Leitura | Escrita | Conteúdo |
+|---|---|---|---|
+| `identidade-visual` | pública (o login mostra a imagem antes de existir sessão) | só Admin, por policy em `storage.objects` | `eventos/<id_evento>/icone.<ext>` e `.../imagem.<ext>`, até 2 MB, só PNG/JPG/WEBP/SVG |
+
+Apagar e substituir passam pela Storage API: um gatilho do Supabase proíbe `DELETE` direto nas tabelas de
+storage. Os caminhos são fixos por evento e por tipo (`upsert`), então trocar a imagem não deixa arquivo órfão.

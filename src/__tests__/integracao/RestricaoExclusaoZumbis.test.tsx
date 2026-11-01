@@ -29,6 +29,8 @@ Object.defineProperty(window, 'location', {
 
 import { ModalConfiguracoesEvento } from '@/features/admin';
 import { ProjetosBloqueados } from '@/features/atribuicoes';
+import { ProvedorAvisos } from '@/components/ui';
+import { ProvedorIdentidadeVisual } from '@/components/layout/IdentidadeVisual';
 
 describe('Auditoria de Regressão: Restrição de Exclusão (Erradicação de Código Zumbi)', () => {
   const criarQueryChain = (resultado: any) => {
@@ -86,13 +88,11 @@ describe('Auditoria de Regressão: Restrição de Exclusão (Erradicação de C�
   });
 
   it('O botão "Reset Global" DEVE acionar .rpc("admin_reset_global") e NUNCA utilizar .delete() direto no frontend', async () => {
-    render(
-      <ModalConfiguracoesEvento
+    render(<ProvedorAvisos><ProvedorIdentidadeVisual><ModalConfiguracoesEvento
         id_evento_ativo="evt-ativo-uuid"
         nome_evento_atual="FETEC MS 2026"
         ao_fechar={vi.fn()}
-      />
-    );
+      /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     // Aguarda carregar dados do formulário
     const btnResetGlobal = await screen.findByRole('button', { name: /reset global/i });

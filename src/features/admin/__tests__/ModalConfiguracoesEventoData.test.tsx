@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { ModalConfiguracoesEvento } from '@/features/admin';
 import { supabase } from '@/lib/supabase';
+import { ProvedorAvisos } from '@/components/ui';
+import { ProvedorIdentidadeVisual } from '@/components/layout/IdentidadeVisual';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -66,13 +68,11 @@ describe('Auditoria e Testes de Persistência de data_evento no ModalConfiguraco
       return criarQueryChain({ data: [], error: null });
     });
 
-    render(
-      <ModalConfiguracoesEvento
+    render(<ProvedorAvisos><ProvedorIdentidadeVisual><ModalConfiguracoesEvento
         id_evento_ativo={eventoIdTeste}
         nome_evento_atual="FETEC MS 2026"
         ao_fechar={vi.fn()}
-      />
-    );
+      /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     const inputData = await screen.findByDisplayValue('2026-11-15');
     expect(inputData).toBeInTheDocument();
@@ -102,14 +102,12 @@ describe('Auditoria e Testes de Persistência de data_evento no ModalConfiguraco
     const aoSalvarSucessoMock = vi.fn();
     const aoFecharMock = vi.fn();
 
-    render(
-      <ModalConfiguracoesEvento
+    render(<ProvedorAvisos><ProvedorIdentidadeVisual><ModalConfiguracoesEvento
         id_evento_ativo={eventoIdTeste}
         nome_evento_atual="FETEC MS 2026"
         ao_fechar={aoFecharMock}
         ao_salvar_sucesso={aoSalvarSucessoMock}
-      />
-    );
+      /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     // Aguarda carregar dados existentes
     const inputData = await screen.findByDisplayValue('2026-10-24');
@@ -168,13 +166,11 @@ describe('Auditoria e Testes de Persistência de data_evento no ModalConfiguraco
       return criarQueryChain({ data: [], error: null });
     });
 
-    render(
-      <ModalConfiguracoesEvento
+    render(<ProvedorAvisos><ProvedorIdentidadeVisual><ModalConfiguracoesEvento
         id_evento_ativo={eventoIdTeste}
         nome_evento_atual="FETEC MS 2026"
         ao_fechar={vi.fn()}
-      />
-    );
+      /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     const btnSalvar = await screen.findByRole('button', { name: /Salvar Configurações/i });
     fireEvent.click(btnSalvar);

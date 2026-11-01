@@ -14,6 +14,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
+import { ImagemEvento } from '@/components/layout/IdentidadeVisual';
 
 interface InstituicaoItem {
   id_instituicao: string;
@@ -193,6 +194,8 @@ export const TelaAutocadastroAvaliador: React.FC<TelaAutocadastroAvaliadorProps>
   return (
     <main className="min-h-screen bg-slate-50 dark:bg-slate-900 py-8 px-4 sm:px-6 flex items-center justify-center font-sans">
       <div className="w-full max-w-lg bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-700 shadow-xl space-y-6">
+        <ImagemEvento />
+
         {/* Cabeçalho */}
         <div className="text-center space-y-2">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold">

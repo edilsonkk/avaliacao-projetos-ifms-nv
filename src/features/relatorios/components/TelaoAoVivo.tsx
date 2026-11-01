@@ -13,6 +13,7 @@ import {
   WifiOff
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
+import { ImagemEvento } from '@/components/layout/IdentidadeVisual';
 
 /** Resumo público do evento ativo (fn_telao_resumo): só agregados, sem nomes, títulos ou notas. */
 interface ResumoTelao {
@@ -175,6 +176,7 @@ export const TelaoAoVivo: React.FC = () => {
             <h1 className="text-2xl lg:text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-tight mt-0.5">
               {titulo_evento}
             </h1>
+            <ImagemEvento altura="baixa" className="mt-2 max-w-xs" />
           </div>
         </div>
 
