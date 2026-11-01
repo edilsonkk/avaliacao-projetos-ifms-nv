@@ -12,5 +12,10 @@ export {
 export { Cartao } from './Cartao';
 export { Selo, type TomSelo } from './Selo';
 export { Estado, type SituacaoEstado } from './Estado';
+export { Modal, type TamanhoModal } from './Modal';
+export { Aviso, type TipoAviso } from './Aviso';
+export { ConfirmacaoPerigo } from './ConfirmacaoPerigo';
+export { ProvedorAvisos, useAvisos, type ApiAvisos, type TipoNotificacao } from './Avisos';
+export { Abas, PainelAba, idPainelAba, type DefinicaoAba } from './Abas';
 export { Dica } from './Dica';
 export { CabecalhoOrdenavel, compararNatural } from './CabecalhoOrdenavel';
