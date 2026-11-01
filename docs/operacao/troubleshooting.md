@@ -97,6 +97,18 @@ gravado ([criação de evento](../regras-de-negocio/eventos.md#configurações-d
 
 ---
 
+## Erro `invalid input syntax for type uuid: ""` ao salvar as Configurações
+
+**Sintoma**: salvar as Configurações do evento mostrava `Erro ao salvar configurações do evento: invalid input syntax
+for type uuid: ""`. Acontecia em produção e não no local.
+**Causa**: não havia nenhum evento ativo no banco (em produção, nenhum evento cadastrado). O painel guardava o id do
+evento ativo como texto vazio, e o `update` em `eventos` filtrava por `id_evento = ''`.
+**Solução**: sem evento ativo, o modal avisa, desabilita "Salvar Configurações" e oferece "Criar um evento agora" e
+"Ativar um evento anterior". Para usar o sistema, crie ou ative um evento.
+**Teste**: `src/features/admin/__tests__/ModalConfiguracoesEventoSemEvento.test.tsx`.
+
+---
+
 ## Contagem duplicada de credenciados
 
 **Sintoma**: ao credenciar alguém, o contador pulava de 1 para 2.
