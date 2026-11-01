@@ -42,6 +42,19 @@ describe('App - sessão confirmada pelo banco', () => {
     window.history.replaceState({}, '', '/avaliador');
   });
 
+  it('deve oferecer o link de pular para o conteúdo como primeiro item da tabulação', async () => {
+    // Arrange
+    vi.mocked(auth.obterPerfilSessao).mockResolvedValue(perfil(null));
+
+    // Act
+    render(<App />);
+
+    // Assert
+    const pular = screen.getByRole('link', { name: /pular para o conteúdo/i });
+    expect(pular).toHaveAttribute('href', '#conteudo');
+    expect(document.getElementById('conteudo')).toBeInTheDocument();
+  });
+
   it('deve voltar ao login quando o papel do navegador não bate com a sessão real', async () => {
     // Arrange: alguém editou o localStorage para se passar por avaliador
     localStorage.setItem('usuario_perfil', 'avaliador');
@@ -119,7 +132,9 @@ describe('App - sessão confirmada pelo banco', () => {
     // Assert
     expect(await screen.findByText('Tela de Login')).toBeInTheDocument();
     expect(supabase.auth.signOut).toHaveBeenCalled();
-    expect(alerta).toHaveBeenCalledWith(expect.stringMatching(/30 minutos sem uso/));
+    // O aviso é um diálogo da própria tela, não o alert() do navegador
+    expect(await screen.findByRole('dialog', { name: 'Sessão encerrada' })).toHaveTextContent(/30 minutos sem uso/);
+    expect(alerta).not.toHaveBeenCalled();
     vi.useRealTimers();
     alerta.mockRestore();
   });

@@ -16,7 +16,8 @@ export const supabase = configuracao_supabase.valida
   ? createClient<any>(configuracao_supabase.url, configuracao_supabase.chaveAnonima)
   : createClient<any>(URL_CONFIGURACAO_AUSENTE, 'configuracao-ausente');
 
-/** Banco em uso: `local` (Docker), `producao` (nuvem) ou `null` se não configurado. Exibido no cabeçalho. */
+/** Banco em uso: `local` (Docker), `producao` (nuvem) ou `null` se não configurado.
+ *  O cabeçalho mostra "local", "produção" ou "não configurado". */
 export const ambiente_supabase: AmbienteSupabase | null = configuracao_supabase.valida
   ? identificarAmbienteSupabase(configuracao_supabase.url)
   : null;

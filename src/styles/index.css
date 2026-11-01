@@ -18,11 +18,14 @@
     /* Ação (verde da marca): emerald-700 dá 5,37:1 com branco — o emerald-600 dava 3,67:1 */
     --cor-acao: oklch(50.8% 0.118 165.612);
     --cor-acao-ativa: oklch(43.2% 0.095 166.913); /* emerald-800 */
+    /* Verde usado como TEXTO (não como fundo): precisa clarear no tema escuro */
+    --cor-acao-texto: oklch(50.8% 0.118 165.612); /* emerald-700: 5,37:1 sobre branco */
     /* Perigo: rose-600 dá 4,51:1 com branco */
     --cor-perigo: oklch(58.6% 0.253 17.585);
     --cor-perigo-ativa: oklch(51.4% 0.222 16.935); /* rose-700 */
     /* Aviso: amber-700 dá 5,05:1 com branco — o amber-500 dava 2,15:1 */
     --cor-aviso: oklch(55.5% 0.163 48.998);
+    --cor-aviso-texto: oklch(55.5% 0.163 48.998); /* amber-700 sobre branco */
     /* Informação: sky-700 */
     --cor-info: oklch(50% 0.134 242.749);
 
@@ -38,7 +41,10 @@
   }
 
   .dark {
-    /* As cores de ação, perigo e aviso continuam as mesmas: o contraste é com o texto branco em cima */
+    /* As cores de ação, perigo e aviso continuam as mesmas: o contraste é com o texto branco em cima.
+       Já as versões de TEXTO clareiam, porque o fundo agora é escuro. */
+    --cor-acao-texto: oklch(76.5% 0.177 163.223); /* emerald-400: 9,23:1 sobre slate-900 */
+    --cor-aviso-texto: oklch(87.9% 0.169 91.605); /* amber-300 */
     --cor-info: oklch(82.8% 0.111 230.318); /* sky-300: texto claro sobre fundo escuro */
     --cor-texto: oklch(96.8% 0.007 247.896); /* slate-100 */
     --cor-texto-secundario: oklch(70.4% 0.04 256.788); /* slate-400: 6,79:1 sobre slate-900 */
@@ -53,9 +59,11 @@
 @theme inline {
   --color-acao: var(--cor-acao);
   --color-acao-ativa: var(--cor-acao-ativa);
+  --color-acao-texto: var(--cor-acao-texto);
   --color-perigo: var(--cor-perigo);
   --color-perigo-ativa: var(--cor-perigo-ativa);
   --color-aviso: var(--cor-aviso);
+  --color-aviso-texto: var(--cor-aviso-texto);
   --color-info: var(--cor-info);
   --color-texto: var(--cor-texto);
   --color-texto-secundario: var(--cor-texto-secundario);
@@ -88,6 +96,9 @@
   html {
     font-size: var(--escala-texto);
     -webkit-text-size-adjust: 100%;
+    /* Guarda: nenhuma tela deve deslizar para os lados. `clip` (e não `hidden`)
+       para não quebrar o `position: sticky` do cabeçalho. */
+    overflow-x: clip;
   }
 
   /* Um único anel de foco em todo o app, visível só na navegação por teclado */

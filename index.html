@@ -3,6 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#047857" />
+    <link rel="icon" type="image/svg+xml" href="/icone.svg" />
+    <link rel="apple-touch-icon" href="/icone.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>Sistema de Avaliação de Projetos IFMS</title>
     <meta name="description" content="Sistema de Avaliação de Projetos do Instituto Federal de Mato Grosso do Sul (IFMS)" />
     <meta property="og:title" content="Sistema de Avaliação de Projetos IFMS" />
@@ -11,6 +16,20 @@
     <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
+    <!-- Tema e tamanho de texto antes da primeira pintura, para a tela não piscar em claro
+         quando a pessoa escolheu o escuro. O React reaplica as duas em seguida. -->
+    <script>
+      try {
+        var tema = localStorage.getItem('tema_fecin') || 'sistema';
+        var escuro = tema === 'escuro' || (tema === 'sistema' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (escuro) document.documentElement.classList.add('dark');
+        var tamanhos = { padrao: '100%', grande: '112.5%', maior: '125%' };
+        var escala = tamanhos[localStorage.getItem('tamanho_texto_fecin')] || '100%';
+        document.documentElement.style.setProperty('--escala-texto', escala);
+      } catch (e) {
+        /* navegador sem localStorage: segue no padrão */
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/app/main.tsx"></script>
   </body>

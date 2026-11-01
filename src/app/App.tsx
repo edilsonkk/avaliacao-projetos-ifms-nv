@@ -15,9 +15,13 @@ import { supabase } from '@/lib/supabase';
 import { EVENTO_SESSAO_ADMIN_EXPIRADA, MENSAGEM_SESSAO_EXPIRADA } from '@/lib/sessaoAdmin';
 import { iniciarKeepAliveSessao } from '@/lib/keepAliveSessao';
 import { iniciarExpiracaoPorInatividade } from '@/lib/expiracaoSessao';
+import { ProvedorAvisos, useAvisos } from '@/components/ui';
+import { aplicarPreferenciasVisuais, limparSessaoMantendoPreferencias } from '@/lib/preferenciasVisuais';
 import { obterPerfilSessao, lerPoliticaSeguranca, EVENTO_POLITICA_ALTERADA } from '@/features/auth';
 
-export default function App() {
+function ConteudoApp() {
+  const { avisar } = useAvisos();
+
   // Inicialização com suporte a autocadastro via QR Code e rota raiz apontando para TelaLogin
   const getInitialTela = (): TipoTelaNavegacao | 'login' | 'autocadastro' | 'redefinir-senha' => {
     const path = window.location.pathname;
@@ -56,10 +60,7 @@ export default function App() {
     } catch (e) {
       console.warn('Erro ao encerrar sessão Supabase Auth:', e);
     }
-    localStorage.removeItem('sessao_id_usuario');
-    localStorage.removeItem('sessao_papel');
-    localStorage.removeItem('sessao_email');
-    localStorage.clear();
+    limparSessaoMantendoPreferencias();
     set_usuario_logado(null);
     set_tela_atual('login');
     set_aba_login('avaliador');
@@ -88,6 +89,11 @@ export default function App() {
     };
   }, []);
 
+  // Tema e tamanho de texto escolhidos pela pessoa, aplicados antes de qualquer tela
+  useEffect(() => {
+    aplicarPreferenciasVisuais();
+  }, []);
+
   // Aparelho ocioso (aba oculta, celular bloqueado, sem rede): ao voltar, renova a sessão e avisa as telas
   useEffect(() => iniciarKeepAliveSessao({ auth: supabase.auth }), []);
 
@@ -104,7 +110,7 @@ export default function App() {
     const aoExpirarSessaoAdmin = async () => {
       await handle_sair();
       set_aba_login('admin');
-      alert(MENSAGEM_SESSAO_EXPIRADA);
+      await avisar({ tipo: 'atencao', titulo: 'Sessão encerrada', mensagem: MENSAGEM_SESSAO_EXPIRADA });
     };
     window.addEventListener(EVENTO_SESSAO_ADMIN_EXPIRADA, aoExpirarSessaoAdmin);
     return () => window.removeEventListener(EVENTO_SESSAO_ADMIN_EXPIRADA, aoExpirarSessaoAdmin);
@@ -126,7 +132,11 @@ export default function App() {
           parar = iniciarExpiracaoPorInatividade(minutos, async () => {
             await handle_sair();
             set_aba_login(papel_logado as AbaLogin);
-            alert(`Sua sessão foi encerrada após ${minutos} minutos sem uso. Entre novamente.`);
+            await avisar({
+              tipo: 'atencao',
+              titulo: 'Sessão encerrada',
+              mensagem: `Sua sessão foi encerrada após ${minutos} minutos sem uso. Entre novamente.`,
+            });
           });
         })
         .catch(() => {
@@ -206,7 +216,15 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200 flex flex-col">
+    <div className="min-h-screen bg-superficie-alta text-texto font-sans transition-colors duration-200 flex flex-col">
+      {/* Primeiro item da tabulação: pula a faixa do topo e vai direto ao conteúdo */}
+      <a
+        href="#conteudo"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-3 focus:rounded-controle focus:bg-acao focus:text-white focus:font-bold"
+      >
+        Pular para o conteúdo
+      </a>
+
       {/* Cabeçalho do Sistema com Seletor de Tema e Navegação */}
       <Cabecalho
         tela_atual={tela_atual}
@@ -216,16 +234,24 @@ export default function App() {
       />
 
       {/* Conteúdo da Tela Selecionada */}
-      <div className="flex-1 py-4 sm:py-6">
+      <div id="conteudo" tabIndex={-1} className="flex-1 py-4 sm:py-6">
         {renderizar_conteudo_tela()}
       </div>
 
       {/* Rodapé Informativo */}
       {tela_atual !== 'telao' && (
-        <footer className="border-t border-slate-200 dark:border-slate-800 py-4 px-4 text-center text-xs text-slate-500 dark:text-slate-400">
+        <footer className="border-t border-borda py-4 px-4 text-center text-legenda text-texto-secundario">
           Sistema de Avaliação de Projetos IFMS &copy; {new Date().getFullYear()} — Instituto Federal de Mato Grosso do Sul
         </footer>
       )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ProvedorAvisos>
+      <ConteudoApp />
+    </ProvedorAvisos>
   );
 }

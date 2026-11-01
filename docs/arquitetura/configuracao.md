@@ -52,9 +52,11 @@ npm run dev                         # http://localhost:3000
 
 O `supabase/seed.sql` cria só um evento de teste. Não coloque credenciais nem dados reais nele.
 
-**Como saber qual banco está em uso:** o cabeçalho do app mostra **Supabase LOCAL** (azul) ou **Supabase PRODUÇÃO**
-(vermelho), a partir da URL do `.env` (`identificarAmbienteSupabase` em `src/lib/ambiente.ts`). Em desenvolvimento,
-o esperado é sempre LOCAL. O Vite só lê o `.env` ao iniciar: depois de trocá-lo, reinicie o `npm run dev`.
+**Como saber qual banco está em uso:** o cabeçalho do app mostra **local** (azul) ou **produção** (verde), a
+partir da URL do `.env` (`identificarAmbienteSupabase` em `src/lib/ambiente.ts`). O verde é intencional: produção
+não é erro. O nome completo ("Banco de dados de produção") fica no `aria-label` e na dica do indicador, para o
+leitor de tela e para quem passa o mouse. Em desenvolvimento, o esperado é sempre **local**. O Vite só lê o `.env`
+ao iniciar: depois de trocá-lo, reinicie o `npm run dev`.
 
 O `npm run dev` usa sempre a porta **3000** (`--strictPort`). Se ela estiver ocupada, ele para com
 `Port 3000 is already in use` em vez de abrir em outra porta. Isso evita vários servidores rodando ao mesmo tempo,
@@ -133,9 +135,13 @@ O navegador guarda sessão e dados de contingência nestas chaves:
 | `evento_ativo_data` | `string` | Data do evento ativo |
 | `avaliadores_credenciados_local` | JSON `{ [id_usuario]: boolean }` | Fallback de credenciamento de avaliadores |
 | `staff_credenciados_local` | JSON `{ [id_usuario]: boolean }` | Fallback de credenciamento do staff |
-| `tema_fecin` | `string` | Tema claro/escuro |
+| `tema_fecin` | `string` | Tema escolhido: `claro`, `escuro` ou `sistema` |
+| `tamanho_texto_fecin` | `string` | Tamanho do texto escolhido: `padrao` (100%), `grande` (112,5%) ou `maior` (125%) |
 
 Os pares com `/` são nomes legados equivalentes. Ao criar código novo, use as chaves `sessao_*`.
+
+`tema_fecin` e `tamanho_texto_fecin` são **preferências visuais**, não sessão: sair do sistema não as apaga
+(`limparSessaoMantendoPreferencias` em `src/lib/preferenciasVisuais.ts`).
 
 > O `localStorage` é só atalho de tela, e não fonte de verdade para permissões: o banco identifica cada pessoa pela
 > sessão do Supabase Auth ([segurança](seguranca.md)). Ao abrir o app, o papel é conferido com `fn_meu_perfil()`.

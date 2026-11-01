@@ -32,6 +32,7 @@ src/
 ├── lib/                    # Código sem React: clientes, utilitários e regras puras
 │   ├── excel/              # Leitura/geração de planilhas (exceljs)
 │   ├── parsers/            # Parsers puros de planilhas e normalização de texto
+│   ├── preferenciasVisuais.ts # Tema e tamanho de texto escolhidos pela pessoa
 │   ├── sessaoAdmin.ts      # Validação de sessão do Admin antes de escritas
 │   └── supabase.ts         # Cliente Supabase único da aplicação
 ├── types/                  # Contratos TypeScript compartilhados (tabelas, entidades)
