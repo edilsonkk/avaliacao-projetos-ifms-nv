@@ -127,7 +127,7 @@ Configurados pelo Admin na engrenagem, seção **Segurança das contas** (`Secao
 | *Anonymous sign-ins* | **ligado** | Sessão do celular do avaliador |
 | Rate limit de logins anônimos por IP | 300/h | Todos os celulares da feira saem pelo mesmo IP |
 | *Confirm email* | **ligado** | Impede que um cadastro se passe pelo e-mail de um Staff |
-| *Minimum password length* | **12** (sem regras de composição) | ASVS 5.0 6.2.1. A tela de redefinir senha exige o mesmo |
+| *Minimum password length* | **8** (sem regras de composição) | Mínimo recomendado pelo Supabase. Abaixo dos 12 do ASVS 5.0 6.2.1, aceito porque o Admin tem MFA e as contas são poucas e internas. A tela de redefinir senha exige o mesmo |
 | *Secure password change* | **ligado** | Trocar a senha exige login recente (sessão roubada não troca a senha) |
 | *Multi-Factor → TOTP* | **habilitado** | Necessário para o segundo fator do Admin |
 | *Site URL* e *Redirect URLs* (*URL Configuration*) | `https://avaliacao-projetos-ifms-nv.web.app` (e `/**`) | Os links de "Esqueci minha senha" e de confirmação levam ao site, não ao `localhost` |

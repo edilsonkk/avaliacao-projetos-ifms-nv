@@ -6,10 +6,10 @@ import { supabase } from '@/lib/supabase';
 export const CAMINHO_REDEFINIR_SENHA = '/redefinir-senha';
 
 /**
- * Mínimo exigido pela tela (ASVS 5.0, 6.2.1: 12 ou mais, sem regras de composição), igual ao
- * minimum_password_length do Supabase Auth. Se o Auth recusar por outro motivo, a mensagem dele é exibida.
+ * Mínimo exigido pela tela, igual ao minimum_password_length do Supabase Auth (sem regras de
+ * composição). Se o Auth recusar por outro motivo, a mensagem dele é exibida.
  */
-export const TAMANHO_MINIMO_SENHA = 12;
+export const TAMANHO_MINIMO_SENHA = 8;
 
 /** URL completa do link de recuperação, no mesmo endereço em que o app está aberto. */
 export const urlRedefinirSenha = () => `${window.location.origin}${CAMINHO_REDEFINIR_SENHA}`;
