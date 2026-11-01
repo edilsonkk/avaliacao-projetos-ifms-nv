@@ -1,5 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ProvedorAvisos } from '@/components/ui';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import {
   TelaAvaliador,
@@ -157,12 +158,10 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
         return criarQueryChain({ data: [], error: null });
       });
 
-      render(
-        <TelaAvaliador
+      render(<ProvedorAvisos><TelaAvaliador
           id_usuario_logado={usuarioAvaliadorId}
           id_evento_ativo={eventoIdTeste}
-        />
-      );
+        /></ProvedorAvisos>);
 
       // Deve exibir o badge de confirmação de login
       expect(await screen.findByText('Login Conectado com Sucesso')).toBeInTheDocument();
@@ -173,7 +172,8 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
       expect(screen.getByText(/08:00/)).toBeInTheDocument();
       // Botões disponíveis
       expect(screen.getByRole('button', { name: /Atualizar \/ Verificar Horário/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Sair da Conta/i })).toBeInTheDocument();
+      // Dois caminhos de saída na tela (barra de identificação e cartão), com o mesmo rótulo
+      expect(screen.getAllByRole('button', { name: /Sair e desvincular/i })).toHaveLength(2);
     });
 
     it('deve renderizar card de avaliações encerradas quando o horário final já expirou', async () => {
@@ -198,16 +198,15 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
         return criarQueryChain({ data: [], error: null });
       });
 
-      render(
-        <TelaAvaliador
+      render(<ProvedorAvisos><TelaAvaliador
           id_usuario_logado={usuarioAvaliadorId}
           id_evento_ativo={eventoIdTeste}
-        />
-      );
+        /></ProvedorAvisos>);
 
       expect(await screen.findByText('Avaliações Encerradas')).toBeInTheDocument();
       expect(screen.getByText(/O período de avaliação deste evento terminou/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Sair da Conta/i })).toBeInTheDocument();
+      // Dois caminhos de saída na tela (barra de identificação e cartão), com o mesmo rótulo
+      expect(screen.getAllByRole('button', { name: /Sair e desvincular/i })).toHaveLength(2);
     });
 
     it('deve renderizar card de aviso quando os horários não estiverem configurados na tabela do evento', async () => {
@@ -231,12 +230,10 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
         return criarQueryChain({ data: [], error: null });
       });
 
-      render(
-        <TelaAvaliador
+      render(<ProvedorAvisos><TelaAvaliador
           id_usuario_logado={usuarioAvaliadorId}
           id_evento_ativo={eventoIdTeste}
-        />
-      );
+        /></ProvedorAvisos>);
 
       expect(await screen.findByText('Login Conectado com Sucesso')).toBeInTheDocument();
       expect(screen.getByText('Horários em Configuração')).toBeInTheDocument();
@@ -271,12 +268,10 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
 
       vi.mocked(supabase.rpc).mockResolvedValue({ data: null, error: null } as any);
 
-      render(
-        <TelaAvaliador
+      render(<ProvedorAvisos><TelaAvaliador
           id_usuario_logado={usuarioAvaliadorId}
           id_evento_ativo={eventoIdTeste}
-        />
-      );
+        /></ProvedorAvisos>);
 
       // Aguarda a mensagem de fila vazia aparecer
       expect(await screen.findByText(/Todos os projetos disponíveis já foram avaliados ou bloqueados/i)).toBeInTheDocument();
@@ -369,12 +364,10 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
         return criarQueryChain({ data: [], error: null });
       });
 
-      render(
-        <TelaAvaliador
+      render(<ProvedorAvisos><TelaAvaliador
           id_usuario_logado={usuarioAvaliadorId}
           id_evento_ativo={eventoIdTeste}
-        />
-      );
+        /></ProvedorAvisos>);
 
       // Deve exibir o projeto em andamento na tela normalmente
       expect(await screen.findByText('Projeto Iniciado Antes do Término')).toBeInTheDocument();
@@ -420,7 +413,7 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
         }
         return criarQueryChain({ data: [], error: null });
       });
-      render(<TelaAvaliador id_usuario_logado={usuarioAvaliadorId} id_evento_ativo={eventoIdTeste} />);
+      render(<ProvedorAvisos><TelaAvaliador id_usuario_logado={usuarioAvaliadorId} id_evento_ativo={eventoIdTeste} /></ProvedorAvisos>);
       expect(await screen.findByText('Projeto Sem Rede')).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: /Presente/i }));
       const btnSalvar = await screen.findByRole('button', { name: /Salvar Nota e Puxar Próximo/i });
@@ -461,7 +454,7 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
       });
 
       // Act
-      render(<TelaAvaliador id_usuario_logado={usuarioAvaliadorId} id_evento_ativo={eventoIdTeste} />);
+      render(<ProvedorAvisos><TelaAvaliador id_usuario_logado={usuarioAvaliadorId} id_evento_ativo={eventoIdTeste} /></ProvedorAvisos>);
       expect(await screen.findByText('Projeto Sem Questionário')).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: /Presente/i }));
 

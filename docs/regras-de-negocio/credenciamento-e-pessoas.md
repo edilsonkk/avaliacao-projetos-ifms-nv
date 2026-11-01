@@ -21,6 +21,10 @@ Código: `src/features/staff/` (`TelaStaff`, `GestorStaff`), `src/features/avali
 - Validade, tamanho dos códigos, tentativas e formas liberadas ficam nas Configurações do evento (engrenagem),
   seção **Acesso dos avaliadores**.
 - Celular perdido ou trocado: **Aparelho → Desvincular aparelho** e parear o novo.
+- No celular, o botão se chama **Sair e desvincular** e pergunta antes: sair apaga a sessão do aparelho, que é a
+  credencial do vínculo, então voltar a avaliar exige um código novo com o Staff. A confirmação tem
+  "Continuar avaliando" como opção padrão (é ela que recebe o foco e responde ao `Esc`), e há uma dica ao lado do
+  botão explicando o efeito — ela abre no toque, não só com o mouse.
 - `App.tsx` decide a tela pelo caminho da URL e pelo papel em `localStorage` e impede o avaliador de abrir telas
   de Admin ou Staff.
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ProvedorAvisos } from '@/components/ui';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { TelaAvaliador } from '@/features/avaliacao';
 import { AtribuicaoForcada } from '@/features/atribuicoes';
@@ -139,12 +140,10 @@ describe('Auditoria de Regressão: Impedir Reatribuição do Mesmo Projeto ao Me
       return criarQueryChain({ data: [], error: null });
     });
 
-    render(
-      <TelaAvaliador
+    render(<ProvedorAvisos><TelaAvaliador
         id_usuario_logado={usuarioAvaliadorId}
         id_evento_ativo={eventoId}
-      />
-    );
+      /></ProvedorAvisos>);
 
     await waitFor(() => {
       // O lock ativo é descartado no banco (fn_assumir_item_fila e o sorteio apagam a trava anterior do avaliador)

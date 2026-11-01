@@ -20,6 +20,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import type { Projeto } from '@/types/database';
+import { Botao, Dica, useAvisos } from '@/components/ui';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { TelaLogin } from '@/features/auth';
 
@@ -237,6 +238,8 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
   const [nome_avaliador_salvo, set_nome_avaliador_salvo] = useState<string>(() => {
     return localStorage.getItem('avaliador_nome') || '';
   });
+
+  const { confirmar } = useAvisos();
 
   // PROTEÇÃO DE CONCORRÊNCIA: Previne múltiplos cliques simultâneos
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -461,6 +464,24 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
     if (onLogout) {
       onLogout();
     }
+  };
+
+  /**
+   * Sair apaga a sessão anônima deste aparelho, que é a credencial do vínculo: o
+   * `auth_uid` muda na próxima abertura e o código de acesso antigo é de uso único.
+   * Ou seja, sair custa uma volta ao Staff — por isso pergunta antes, com o caminho
+   * seguro como padrão. As chamadas automáticas de `logout_avaliador` (quando a chave
+   * do navegador desaparece) seguem diretas, porque não são ação da pessoa.
+   */
+  const confirmar_e_sair = async () => {
+    const confirmado = await confirmar({
+      titulo: 'Sair e desvincular este celular?',
+      mensagem:
+        'Ao sair, este celular deixa de ficar vinculado a você. Para avaliar de novo, será preciso pedir um novo código ao Staff.',
+      rotuloConfirmar: 'Sair e desvincular',
+      rotuloCancelar: 'Continuar avaliando',
+    });
+    if (confirmado) await logout_avaliador();
   };
 
   // Obter id_evento ativo real (UUID)
@@ -1127,15 +1148,19 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={logout_avaliador}
-          title="Encerrar sessão e limpar dados locais"
-          className="flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-700 transition-colors ml-2 shrink-0 py-1 px-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          <span>Sair</span>
-        </button>
+        <div className="flex items-center gap-0.5 ml-2 shrink-0">
+          <Botao
+            variante="fantasma"
+            onClick={confirmar_e_sair}
+            icone={<LogOut className="w-4 h-4" />}
+            className="text-perigo hover:bg-superficie-alta"
+          >
+            Sair e desvincular
+          </Botao>
+          <Dica alinhar="fim" lado="baixo">
+            Sair desvincula este celular; para avaliar de novo, o Staff precisa vincular outra vez.
+          </Dica>
+        </div>
       </div>
 
       {/* Notificação Flutuante */}
@@ -1225,14 +1250,15 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
               <RotateCcw className="w-4 h-4" />
               Atualizar / Verificar Horário
             </button>
-            <button
-              type="button"
-              onClick={logout_avaliador}
-              className="w-full py-2.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+            <Botao
+              variante="fantasma"
+              larguraTotal
+              onClick={confirmar_e_sair}
+              icone={<LogOut className="w-4 h-4" />}
+              className="text-perigo hover:bg-superficie-alta"
             >
-              <LogOut className="w-3.5 h-3.5" />
-              Sair da Conta
-            </button>
+              Sair e desvincular
+            </Botao>
           </div>
         </div>
       )}
@@ -1259,14 +1285,14 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
           </div>
 
           <div className="pt-2">
-            <button
-              type="button"
-              onClick={logout_avaliador}
-              className="w-full py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
+            <Botao
+              variante="secundario"
+              larguraTotal
+              onClick={confirmar_e_sair}
+              icone={<LogOut className="w-4 h-4" />}
             >
-              <LogOut className="w-4 h-4" />
-              Sair da Conta
-            </button>
+              Sair e desvincular
+            </Botao>
           </div>
         </div>
       )}
@@ -1302,14 +1328,15 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
               <RotateCcw className="w-4 h-4" />
               Atualizar / Verificar Horário
             </button>
-            <button
-              type="button"
-              onClick={logout_avaliador}
-              className="w-full py-2.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+            <Botao
+              variante="fantasma"
+              larguraTotal
+              onClick={confirmar_e_sair}
+              icone={<LogOut className="w-4 h-4" />}
+              className="text-perigo hover:bg-superficie-alta"
             >
-              <LogOut className="w-3.5 h-3.5" />
-              Sair da Conta
-            </button>
+              Sair e desvincular
+            </Botao>
           </div>
         </div>
       )}
@@ -1340,14 +1367,15 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
               <RotateCcw className="w-4 h-4" />
               Atualizar / Verificar Horário
             </button>
-            <button
-              type="button"
-              onClick={logout_avaliador}
-              className="w-full py-2.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+            <Botao
+              variante="fantasma"
+              larguraTotal
+              onClick={confirmar_e_sair}
+              icone={<LogOut className="w-4 h-4" />}
+              className="text-perigo hover:bg-superficie-alta"
             >
-              <LogOut className="w-3.5 h-3.5" />
-              Sair da Conta
-            </button>
+              Sair e desvincular
+            </Botao>
           </div>
         </div>
       )}
