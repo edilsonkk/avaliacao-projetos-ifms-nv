@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ProvedorAvisos } from '@/components/ui';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import {
   TelaAvaliador,
   validarJanelaAvaliacao,
@@ -165,6 +165,9 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
 
       // Deve exibir o badge de confirmação de login
       expect(await screen.findByText('Login Conectado com Sucesso')).toBeInTheDocument();
+      // A tela tem um h1 só (o cabeçalho não tem mais), e os cartões ficam em h2
+      expect(screen.getByRole('heading', { level: 1, name: 'Avaliação de projetos' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: 'As avaliações ainda não começaram' })).toBeInTheDocument();
       // Título do estado antes do início
       expect(screen.getByText('As avaliações ainda não começaram')).toBeInTheDocument();
       // Detalhes da previsão
@@ -378,6 +381,20 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
       fireEvent.click(btnPresente);
 
       // Botão de salvar avaliação fica habilitado
+      // A escala virou grupo de rádios: o leitor anuncia o critério (legend) e "Nota X de Y"
+      const nota = (await screen.findAllByRole('radio', { name: /^Nota 4 de 5$/ }))[0];
+      fireEvent.click(nota);
+      expect(nota).toBeChecked();
+      expect(screen.getByLabelText('Parecer final (opcional)')).toBeInTheDocument();
+
+      // Devolver por conflito é decisão destrutiva: alertdialog com o caminho seguro em foco
+      fireEvent.click(screen.getByRole('button', { name: /Devolver \(Conflito de Interesse\)/i }));
+      const dialogoConflito = await screen.findByRole('alertdialog', { name: 'Confirmar conflito de interesse?' });
+      expect(dialogoConflito).toHaveTextContent(/devolvido à fila de trabalhos/i);
+      expect(within(dialogoConflito).getByRole('button', { name: 'Cancelar' })).toHaveFocus();
+      fireEvent.click(within(dialogoConflito).getByRole('button', { name: 'Cancelar' }));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+
       const btnSalvar = await screen.findByRole('button', { name: /Salvar Nota e Puxar Próximo/i });
       expect(btnSalvar).toBeInTheDocument();
 
@@ -390,6 +407,11 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
           expect.objectContaining({ p_id_projeto: idProjetoEmAndamento })
         );
       });
+
+      // O resultado aparece em diálogo da própria tela, não no alert() do navegador
+      const confirmacao = await screen.findByRole('dialog', { name: 'Avaliação enviada' });
+      expect(confirmacao).toHaveTextContent(/A nota foi gravada e a trava do projeto foi liberada\./);
+      expect(within(confirmacao).getByRole('button', { name: 'Entendi' })).toHaveFocus();
     });
 
     it('sem internet, avisa que a avaliação NÃO foi enviada, mantém o projeto e não guarda notas no navegador', async () => {
