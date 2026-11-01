@@ -130,5 +130,9 @@ a razão da WCAG e falha se algum par ficar abaixo do mínimo (4,5:1 para texto,
 
 ## Ainda por fazer
 
-`Tabela` responsiva e a migração das telas (avaliador, Staff, Admin, Relatórios, Telão) — ver o plano de execução
-por etapas.
+`Tabela` responsiva e a migração das telas que faltam (Staff, Admin, Relatórios, Telão, autocadastro) — ver o
+plano de execução por etapas.
+
+A **tela do avaliador já está migrada**: nenhum `alert()` do navegador (os 14 viraram diálogo), escala de nota em
+grupo de campos com botões de opção, parecer com rótulo ligado, modal de conflito com foco preso e `Esc`, textos
+nunca abaixo de 12px, alvos de 44px, ícones com `aria-hidden` e um `<h1>` único na tela.

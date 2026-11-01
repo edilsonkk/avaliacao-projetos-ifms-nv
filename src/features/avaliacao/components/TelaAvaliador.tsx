@@ -20,7 +20,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import type { Projeto } from '@/types/database';
-import { Botao, Dica, useAvisos } from '@/components/ui';
+import { Botao, CampoArea, Dica, Modal, useAvisos } from '@/components/ui';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { TelaLogin } from '@/features/auth';
 
@@ -239,7 +239,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
     return localStorage.getItem('avaliador_nome') || '';
   });
 
-  const { confirmar } = useAvisos();
+  const { avisar, confirmar } = useAvisos();
 
   // PROTEÇÃO DE CONCORRÊNCIA: Previne múltiplos cliques simultâneos
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -371,7 +371,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
       if (pergsErr) {
         console.error('Erro ao carregar perguntas do questionário:', pergsErr.message);
-        alert('Erro ao carregar perguntas: ' + pergsErr.message);
+        await avisar({ tipo: 'erro', titulo: 'Não foi possível carregar as perguntas', mensagem: pergsErr.message });
         set_carregando_perguntas(false);
         return;
       }
@@ -711,7 +711,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
         if (errSorteio) {
           console.error("Erro na RPC:", errSorteio);
-          alert("Erro no motor de sorteio: " + errSorteio.message);
+          await avisar({ tipo: 'erro', titulo: 'Não foi possível sortear', mensagem: errSorteio.message });
           set_mensagem_erro(`Erro RPC: ${errSorteio.message}`);
           return;
         }
@@ -750,7 +750,11 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
         .single();
 
       if (errProj || !proj) {
-        alert("Erro grave: O projeto " + idSorteado + " foi sorteado, mas os detalhes não foram encontrados.");
+        await avisar({
+          tipo: 'erro',
+          titulo: 'Projeto sorteado sem detalhes',
+          mensagem: `O projeto ${idSorteado} foi sorteado, mas os dados dele não foram encontrados. Procure o Staff.`,
+        });
         setProjetoAtual(null);
         return;
       }
@@ -759,7 +763,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       exibir_notificacao('Novo projeto sorteado e carregado para avaliação!');
     } catch (err: any) {
       console.error("Falha ao sortear próximo projeto:", err);
-      alert("Falha ao Sortear Próximo Projeto: " + (err?.message || err));
+      await avisar({ tipo: 'erro', titulo: 'Falha ao sortear o próximo projeto', mensagem: String(err?.message || err) });
       set_mensagem_erro("Falha ao sortear próximo projeto.");
     } finally {
       set_carregando_sorteio(false);
@@ -794,7 +798,11 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
           if (evtErr || !evt?.id_evento) {
             console.error('Nenhum evento ativo encontrado:', evtErr);
-            alert('Aviso: Nenhum evento ativo encontrado para vincular a avaliação.');
+            await avisar({
+              tipo: 'atencao',
+              titulo: 'Nenhum evento ativo',
+              mensagem: 'Não há evento ativo para vincular a avaliação. Procure o Staff.',
+            });
             set_verificando_lock(false);
             return;
           }
@@ -898,7 +906,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
       if (erro_impedimento) {
         console.error('Erro ao registrar conflito em historico_impedimentos:', erro_impedimento.message);
-        alert(`Aviso ao registrar conflito: ${erro_impedimento.message}`);
+        await avisar({ tipo: 'atencao', titulo: 'Conflito registrado com aviso', mensagem: erro_impedimento.message });
       }
 
       set_projeto_atual(null);
@@ -906,7 +914,11 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       await acionarSorteio();
     } catch (erro_excecao: any) {
       console.error('Falha ao registrar conflito:', erro_excecao);
-      alert(`Falha ao registrar conflito: ${erro_excecao?.message || erro_excecao}`);
+      await avisar({
+        tipo: 'erro',
+        titulo: 'Falha ao registrar o conflito',
+        mensagem: String(erro_excecao?.message || erro_excecao),
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -934,7 +946,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
       if (erro_impedimento) {
         console.error('Erro ao registrar ausência em historico_impedimentos:', erro_impedimento.message);
-        alert(`Aviso ao registrar ausência: ${erro_impedimento.message}`);
+        await avisar({ tipo: 'atencao', titulo: 'Ausência registrada com aviso', mensagem: erro_impedimento.message });
       }
 
       set_projeto_atual(null);
@@ -943,7 +955,11 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       await acionarSorteio();
     } catch (erro_excecao: any) {
       console.error('Falha ao registrar ausência no Supabase:', erro_excecao);
-      alert(`Falha ao registrar ausência: ${erro_excecao?.message || erro_excecao}`);
+      await avisar({
+        tipo: 'erro',
+        titulo: 'Falha ao registrar a ausência',
+        mensagem: String(erro_excecao?.message || erro_excecao),
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -1039,7 +1055,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
         if (!rpcAusente) {
           console.error('Erro ao gravar avaliação (RPC):', erro_rpc.message);
-          alert(`Falha no salvamento da avaliação: ${erro_rpc.message}`);
+          await avisar({ tipo: 'erro', titulo: 'Falha ao salvar a avaliação', mensagem: erro_rpc.message });
           set_mensagem_erro(`Falha no salvamento: ${erro_rpc.message}`);
           setIsProcessing(false);
           return;
@@ -1061,7 +1077,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
         if (erro_avaliacao) {
           console.error('Erro ao gravar avaliação:', erro_avaliacao.message);
-          alert(`Falha no salvamento da avaliação: ${erro_avaliacao.message}`);
+          await avisar({ tipo: 'erro', titulo: 'Falha ao salvar a avaliação', mensagem: erro_avaliacao.message });
           set_mensagem_erro(`Falha no salvamento: ${erro_avaliacao.message}`);
           setIsProcessing(false);
           return;
@@ -1078,7 +1094,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
           .insert(respostasMapeadas);
         if (erro_respostas) {
           console.warn('Erro ao inserir respostas em lote:', erro_respostas.message);
-          alert(`Aviso ao gravar respostas: ${erro_respostas.message}`);
+          await avisar({ tipo: 'atencao', titulo: 'Respostas gravadas com aviso', mensagem: erro_respostas.message });
         }
 
         if (!projetoAtual.id_questionario_fixado && idQuestionarioEscolhido) {
@@ -1093,12 +1109,19 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
       set_projeto_atual(null);
       set_horario_inicio_avaliacao(null);
-      alert('Avaliação gravada com sucesso e trava liberada!');
-      exibir_notificacao('Avaliação gravada no Supabase e trava liberada com sucesso!');
+      await avisar({
+        tipo: 'sucesso',
+        titulo: 'Avaliação enviada',
+        mensagem: 'A nota foi gravada e a trava do projeto foi liberada.',
+      });
       await acionarSorteio();
     } catch (erro_excecao: any) {
       console.error('Falha no envio da avaliação:', erro_excecao);
-      alert(`Erro inesperado ao enviar avaliação: ${erro_excecao?.message || erro_excecao}`);
+      await avisar({
+        tipo: 'erro',
+        titulo: 'Erro inesperado ao enviar a avaliação',
+        mensagem: String(erro_excecao?.message || erro_excecao),
+      });
       set_mensagem_erro('Erro ao enviar avaliação. Tente novamente.');
     } finally {
       setIsProcessing(false);
@@ -1132,7 +1155,9 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
   // TELA PRINCIPAL DE AVALIAÇÃO: Apenas exibida com id_usuario_logado confirmado
   return (
-    <main className="max-w-md mx-auto px-4 py-4 space-y-5 pb-24 font-sans select-none">
+    <main className="max-w-md mx-auto px-4 py-4 space-y-5 pb-24 font-sans">
+      {/* Título único da tela: os cartões abaixo usam h2 (o cabeçalho não tem mais h1) */}
+      <h1 className="sr-only">Avaliação de projetos</h1>
       {/* Barra Informativa do Avaliador Logado com Botão Sair */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl px-4 py-2.5 border border-slate-200 dark:border-slate-700 shadow-xs flex items-center justify-between text-xs">
         <div className="flex items-center gap-2 overflow-hidden">
@@ -1140,10 +1165,10 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
             {(nome_avaliador_salvo || email_avaliador_salvo || 'A').charAt(0).toUpperCase()}
           </div>
           <div className="truncate">
-            <p className="font-bold text-slate-800 dark:text-slate-100 truncate text-[11px]">
+            <p className="font-bold text-texto truncate text-apoio">
               {nome_avaliador_salvo || email_avaliador_salvo}
             </p>
-            <p className="text-[10px] text-slate-400 truncate">
+            <p className="text-legenda text-texto-secundario truncate">
               {email_avaliador_salvo}
             </p>
           </div>
@@ -1152,7 +1177,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
           <Botao
             variante="fantasma"
             onClick={confirmar_e_sair}
-            icone={<LogOut className="w-4 h-4" />}
+            icone={<LogOut aria-hidden="true" className="w-4 h-4" />}
             className="text-perigo hover:bg-superficie-alta"
           >
             Sair e desvincular
@@ -1166,7 +1191,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       {/* Notificação Flutuante */}
       {mensagem_notificacao && (
         <div className="fixed top-4 left-4 right-4 z-50 bg-emerald-600 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-3 text-sm font-bold text-center justify-center animate-bounce">
-          <CheckCircle2 className="w-5 h-5 shrink-0" />
+          <CheckCircle2 aria-hidden="true" className="w-5 h-5 shrink-0" />
           <span>{mensagem_notificacao}</span>
         </div>
       )}
@@ -1174,7 +1199,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       {/* Alerta Visual de Rede Offline */}
       {is_dispositivo_offline && (
         <div className="bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 p-3 rounded-xl flex items-center gap-2.5 text-amber-800 dark:text-amber-200 text-xs font-semibold">
-          <WifiOff className="w-4 h-4 text-amber-600 shrink-0" />
+          <WifiOff aria-hidden="true" className="w-4 h-4 text-amber-600 shrink-0" />
           <span>Rede Indisponível. As notas serão armazenadas no localStorage.</span>
         </div>
       )}
@@ -1182,7 +1207,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       {/* Alerta Visual de Erro */}
       {mensagem_erro && (
         <div className="bg-red-50 dark:bg-red-950/60 border border-red-300 dark:border-red-800 p-3.5 rounded-xl flex items-center gap-2.5 text-red-800 dark:text-red-200 text-xs font-semibold">
-          <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+          <AlertTriangle aria-hidden="true" className="w-4 h-4 text-red-600 shrink-0" />
           <span>{mensagem_erro}</span>
         </div>
       )}
@@ -1190,7 +1215,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       {/* Indicador de carregamento e sorteio automático */}
       {(verificando_lock || carregando_sorteio) && (
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 border border-slate-200 dark:border-slate-700 shadow-sm text-center space-y-3">
-          <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mx-auto" />
+          <Loader2 aria-hidden="true" className="w-8 h-8 animate-spin text-emerald-600 mx-auto" />
           <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
             {verificando_lock ? 'Identificando avaliações pendentes...' : 'Sorteando próximo projeto para avaliação...'}
           </p>
@@ -1201,12 +1226,12 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       {!verificando_lock && !carregando_sorteio && !projeto_atual && status_janela === 'antes_do_inicio' && (
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-700 shadow-md text-center space-y-5">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-full text-xs font-bold mx-auto">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <CheckCircle2 aria-hidden="true" className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
             <span>Login Conectado com Sucesso</span>
           </div>
 
           <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
-            <Clock className="w-8 h-8" />
+            <Clock aria-hidden="true" className="w-8 h-8" />
           </div>
 
           <div className="space-y-1.5">
@@ -1221,7 +1246,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
           <div className="bg-slate-50 dark:bg-slate-900/70 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/60 text-xs text-left space-y-2">
             <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
               <span className="font-semibold flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-                <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                <Calendar aria-hidden="true" className="w-3.5 h-3.5 text-emerald-600" />
                 Data do Evento:
               </span>
               <span className="font-bold text-slate-900 dark:text-white">
@@ -1230,7 +1255,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
             </div>
             <div className="flex items-center justify-between text-slate-700 dark:text-slate-300 pt-1.5 border-t border-slate-200/60 dark:border-slate-800">
               <span className="font-semibold flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-                <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                <Clock aria-hidden="true" className="w-3.5 h-3.5 text-emerald-600" />
                 Início Previsto:
               </span>
               <span className="font-bold text-emerald-600 dark:text-emerald-400">
@@ -1247,14 +1272,14 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
               disabled={isProcessing || carregando_sorteio}
               className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw aria-hidden="true" className="w-4 h-4" />
               Atualizar / Verificar Horário
             </button>
             <Botao
               variante="fantasma"
               larguraTotal
               onClick={confirmar_e_sair}
-              icone={<LogOut className="w-4 h-4" />}
+              icone={<LogOut aria-hidden="true" className="w-4 h-4" />}
               className="text-perigo hover:bg-superficie-alta"
             >
               Sair e desvincular
@@ -1267,7 +1292,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       {!verificando_lock && !carregando_sorteio && !projeto_atual && status_janela === 'apos_o_fim' && (
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-700 shadow-md text-center space-y-4">
           <div className="w-16 h-16 bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-300 rounded-2xl flex items-center justify-center mx-auto">
-            <Clock className="w-8 h-8" />
+            <Clock aria-hidden="true" className="w-8 h-8" />
           </div>
 
           <div className="space-y-1.5">
@@ -1278,7 +1303,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
               O período de avaliação deste evento terminou. Agradecemos imensamente pela sua colaboração e dedicação!
             </p>
             {info_evento_ativo?.horario_fim && (
-              <p className="text-[11px] font-semibold text-slate-400 pt-1">
+              <p className="text-legenda font-semibold text-texto-secundario pt-1">
                 Encerrado em {formatarDataBr(info_evento_ativo.data_evento)} às {formatarHorarioBr(info_evento_ativo.horario_fim)}
               </p>
             )}
@@ -1289,7 +1314,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
               variante="secundario"
               larguraTotal
               onClick={confirmar_e_sair}
-              icone={<LogOut className="w-4 h-4" />}
+              icone={<LogOut aria-hidden="true" className="w-4 h-4" />}
             >
               Sair e desvincular
             </Botao>
@@ -1301,12 +1326,12 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       {!verificando_lock && !carregando_sorteio && !projeto_atual && status_janela === 'horario_nao_configurado' && (
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-700 shadow-md text-center space-y-5">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-full text-xs font-bold mx-auto">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <CheckCircle2 aria-hidden="true" className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
             <span>Login Conectado com Sucesso</span>
           </div>
 
           <div className="w-16 h-16 bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
-            <AlertTriangle className="w-8 h-8" />
+            <AlertTriangle aria-hidden="true" className="w-8 h-8" />
           </div>
 
           <div className="space-y-1.5">
@@ -1325,14 +1350,14 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
               disabled={isProcessing || carregando_sorteio}
               className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw aria-hidden="true" className="w-4 h-4" />
               Atualizar / Verificar Horário
             </button>
             <Botao
               variante="fantasma"
               larguraTotal
               onClick={confirmar_e_sair}
-              icone={<LogOut className="w-4 h-4" />}
+              icone={<LogOut aria-hidden="true" className="w-4 h-4" />}
               className="text-perigo hover:bg-superficie-alta"
             >
               Sair e desvincular
@@ -1345,7 +1370,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       {!verificando_lock && !carregando_sorteio && !projeto_atual && status_janela === 'sistema_bloqueado' && (
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-700 shadow-md text-center space-y-5">
           <div className="w-16 h-16 bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
-            <Lock className="w-8 h-8" />
+            <Lock aria-hidden="true" className="w-8 h-8" />
           </div>
 
           <div className="space-y-1.5">
@@ -1364,14 +1389,14 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
               disabled={isProcessing || carregando_sorteio}
               className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw aria-hidden="true" className="w-4 h-4" />
               Atualizar / Verificar Horário
             </button>
             <Botao
               variante="fantasma"
               larguraTotal
               onClick={confirmar_e_sair}
-              icone={<LogOut className="w-4 h-4" />}
+              icone={<LogOut aria-hidden="true" className="w-4 h-4" />}
               className="text-perigo hover:bg-superficie-alta"
             >
               Sair e desvincular
@@ -1384,7 +1409,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       {!verificando_lock && !carregando_sorteio && !projeto_atual && (status_janela === 'liberado' || !status_janela) && mensagem_fila_vazia && (
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 border border-slate-200 dark:border-slate-700 shadow-sm text-center space-y-4">
           <div className="w-16 h-16 bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-200 dark:border-emerald-800">
-            <Inbox className="w-8 h-8" />
+            <Inbox aria-hidden="true" className="w-8 h-8" />
           </div>
           <h2 className="text-xl font-extrabold text-slate-900 dark:text-white">
             {mensagem_fila_vazia}
@@ -1395,7 +1420,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
             disabled={isProcessing || carregando_sorteio}
             className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {carregando_sorteio || isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+            {carregando_sorteio || isProcessing ? <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" /> : <RotateCcw aria-hidden="true" className="w-4 h-4" />}
             Consultar Novamente
           </button>
         </div>
@@ -1409,10 +1434,10 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="p-2 bg-white/20 rounded-xl">
-                  <MapPin className="w-6 h-6 text-white" />
+                  <MapPin aria-hidden="true" className="w-6 h-6 text-white" />
                 </span>
                 <div>
-                  <span className="text-[10px] uppercase font-extrabold tracking-wider text-emerald-200 block">
+                  <span className="text-legenda uppercase font-extrabold tracking-wider text-emerald-100 block">
                     Localização no Pavilhão
                   </span>
                   <h2 className="text-lg sm:text-xl font-black text-white leading-tight">
@@ -1424,9 +1449,9 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
               {/* BLINDAGEM DO BOTÃO DE SORTEIO: Oculto/Desabilitado quando projeto_atual existe */}
               <div
                 title="Projeto com trava ativa em avaliação"
-                className="px-2.5 py-1.5 bg-white/20 rounded-xl text-white text-[11px] font-bold flex items-center gap-1.5 shrink-0"
+                className="px-2.5 py-1.5 bg-white/20 rounded-controle text-white text-legenda font-bold flex items-center gap-1.5 shrink-0"
               >
-                <Lock className="w-3.5 h-3.5" />
+                <Lock aria-hidden="true" className="w-3.5 h-3.5" />
                 <span>Em Andamento</span>
               </div>
             </div>
@@ -1435,21 +1460,21 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
           {/* Cartão de Detalhes do Projeto */}
           <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-xs space-y-3">
             <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+              <span className="text-legenda font-bold uppercase tracking-wider text-acao-texto">
                 NOME DO PROJETO
               </span>
-              <h1 className="text-base font-extrabold text-slate-900 dark:text-white leading-snug mt-0.5">
+              <h2 className="text-corpo font-extrabold text-texto leading-snug mt-0.5">
                 {projeto_atual.titulo_projeto || projeto_atual.titulo}
-              </h1>
+              </h2>
             </div>
 
             <div className="text-xs text-slate-600 dark:text-slate-300 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-700">
               <p className="flex items-center gap-1.5 font-medium">
-                <Building className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <Building aria-hidden="true" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span>{projeto_atual.nome_instituicao || 'Sem Instituição'}</span>
               </p>
               <p className="flex items-center gap-1.5">
-                <GraduationCap className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <GraduationCap aria-hidden="true" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span>Expositores: <strong>{projeto_atual.expositores || (Array.isArray(projeto_atual.estudantes_nomes) ? projeto_atual.estudantes_nomes.join(', ') : projeto_atual.estudantes_nomes) || 'Equipe'}</strong></span>
               </p>
             </div>
@@ -1471,7 +1496,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                     : 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500'
                   }`}
               >
-                <CheckCircle2 className="w-4 h-4" />
+                <CheckCircle2 aria-hidden="true" className="w-4 h-4" />
                 Presente
               </button>
 
@@ -1485,9 +1510,9 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                   }`}
               >
                 {isProcessing && status_presenca === 'ausente' ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" />
                 ) : (
-                  <XCircle className="w-4 h-4" />
+                  <XCircle aria-hidden="true" className="w-4 h-4" />
                 )}
                 Ausente
               </button>
@@ -1500,7 +1525,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
               <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
                 Aguardando confirmação de presença no estande
               </p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
+              <p className="text-apoio text-texto-secundario max-w-xs mx-auto">
                 Clique em <strong>Presente</strong> para liberar as perguntas do questionário de avaliação ou em <strong>Ausente</strong> para registrar impedimento e passar para o próximo.
               </p>
             </div>
@@ -1511,7 +1536,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
             <>
               {carregando_perguntas ? (
                 <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 border border-slate-200 dark:border-slate-700 shadow-xs text-center space-y-3">
-                  <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mx-auto" />
+                  <Loader2 aria-hidden="true" className="w-8 h-8 animate-spin text-emerald-600 mx-auto" />
                   <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                     Carregando perguntas do questionário...
                   </p>
@@ -1521,7 +1546,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                 carregando_lista_questionarios ? (
                   <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-xs space-y-4">
                     <div className="py-8 text-center space-y-2">
-                      <Loader2 className="w-6 h-6 animate-spin text-emerald-600 mx-auto" />
+                      <Loader2 aria-hidden="true" className="w-6 h-6 animate-spin text-emerald-600 mx-auto" />
                       <p className="text-xs text-slate-500">Buscando questionários cadastrados...</p>
                     </div>
                   </div>
@@ -1547,10 +1572,10 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                           className="w-full text-left p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:border-emerald-500 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-all flex items-center justify-between group"
                         >
                           <div className="pr-3">
-                            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
+                            <h3 className="text-apoio font-bold text-texto group-hover:text-acao-texto">
                               {quest.titulo}
-                            </h4>
-                            <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                            </h3>
+                            <span className="text-legenda text-texto-secundario">
                               Escala Likert: {quest.escala_minima || 1} a {quest.escala_maxima || 5}
                             </span>
                           </div>
@@ -1568,10 +1593,10 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                   {/* Cabeçalho do Questionário Ativo */}
                   <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex items-center justify-between gap-3">
                     <div className="truncate">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">
+                      <span className="text-legenda font-bold uppercase tracking-wider text-acao-texto block">
                         {projeto_atual.id_questionario_fixado ? 'Questionário Oficial Vinculado' : 'Questionário Escolhido'}
                       </span>
-                      <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate">
+                      <h3 className="text-apoio font-extrabold text-texto truncate">
                         {questionarios_disponiveis.find((q) => q.id_questionario === id_questionario_selecionado)?.titulo ||
                           'Questionário de Avaliação'}
                       </h3>
@@ -1583,9 +1608,9 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                         type="button"
                         onClick={trocar_questionario}
                         disabled={isProcessing}
-                        className="px-3 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 transition-colors shrink-0 flex items-center gap-1.5"
+                        className="px-3 min-h-11 rounded-controle text-apoio font-bold bg-superficie-alta hover:bg-superficie text-texto border border-borda-controle transition-colors shrink-0 flex items-center gap-1.5"
                       >
-                        <RotateCcw className="w-3.5 h-3.5" />
+                        <RotateCcw aria-hidden="true" className="w-3.5 h-3.5" />
                         <span>Trocar Questionário</span>
                       </button>
                     )}
@@ -1595,18 +1620,16 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                     const nota_atual = notas_criterios[criterio.id_criterio] || 0;
 
                     return (
-                      <div
+                      <fieldset
                         key={criterio.id_criterio}
-                        className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-3"
+                        className="bg-superficie p-4 rounded-cartao border border-borda shadow-cartao space-y-3"
                       >
-                        <div>
-                          <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">
-                            {criterio.titulo_criterio}
-                          </h4>
-                          {criterio.descricao_lembrete && (
-                            <p className="mb-4 text-sm text-gray-500">{criterio.descricao_lembrete}</p>
-                          )}
-                        </div>
+                        <legend className="text-apoio font-extrabold text-texto">
+                          {criterio.titulo_criterio}
+                        </legend>
+                        {criterio.descricao_lembrete && (
+                          <p className="mb-4 text-apoio text-texto-secundario">{criterio.descricao_lembrete}</p>
+                        )}
 
                         {/* Escala Likert Gerada Dinamicamente */}
                         {(() => {
@@ -1632,17 +1655,26 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                                   const is_selecionado = nota_atual === valor_escala;
 
                                   return (
-                                    <button
-                                      key={valor_escala}
-                                      type="button"
-                                      onClick={() => selecionar_nota_criterio(criterio.id_criterio, valor_escala)}
-                                      className={`py-2.5 px-1 rounded-xl text-center transition-all flex items-center justify-center border ${is_selecionado
-                                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-400/50 scale-[1.02]'
-                                          : 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500'
+                                    <label key={valor_escala} className="block">
+                                      <input
+                                        type="radio"
+                                        name={`nota-${criterio.id_criterio}`}
+                                        value={valor_escala}
+                                        checked={is_selecionado}
+                                        onChange={() => selecionar_nota_criterio(criterio.id_criterio, valor_escala)}
+                                        aria-label={`Nota ${valor_escala} de ${escala_maxima}`}
+                                        className="peer sr-only"
+                                      />
+                                      <span
+                                        className={`flex items-center justify-center min-h-11 rounded-controle border text-corpo font-black cursor-pointer transition-colors peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-acao ${
+                                          is_selecionado
+                                            ? 'bg-acao text-white border-acao shadow-cartao'
+                                            : 'bg-superficie-alta text-texto border-borda-controle hover:border-acao'
                                         }`}
-                                    >
-                                      <span className="text-base font-black leading-tight">{valor_escala}</span>
-                                    </button>
+                                      >
+                                        {valor_escala}
+                                      </span>
+                                    </label>
                                   );
                                 })}
                               </div>
@@ -1654,21 +1686,18 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                             </>
                           );
                         })()}
-                      </div>
+                      </fieldset>
                     );
                   })}
 
                   {/* Parecer do Avaliador */}
-                  <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-2">
-                    <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 uppercase">
-                      Parecer Final (Opcional):
-                    </label>
-                    <textarea
-                      rows={2}
+                  <div className="bg-superficie p-4 rounded-cartao border border-borda shadow-cartao">
+                    <CampoArea
+                      rotulo="Parecer final (opcional)"
+                      rows={3}
                       value={parecer_avaliador}
                       onChange={(e) => set_parecer_avaliador(e.target.value)}
                       placeholder="Considerações ou comentários..."
-                      className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white"
                     />
                   </div>
 
@@ -1682,12 +1711,12 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                     >
                       {isProcessing ? (
                         <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
+                          <Loader2 aria-hidden="true" className="w-5 h-5 animate-spin" />
                           Gravando e sorteando...
                         </>
                       ) : (
                         <>
-                          <Save className="w-5 h-5" />
+                          <Save aria-hidden="true" className="w-5 h-5" />
                           Salvar Nota e Puxar Próximo
                         </>
                       )}
@@ -1699,7 +1728,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                       disabled={isProcessing}
                       className="w-full py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold text-xs transition-all border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <AlertTriangle className="w-4 h-4 text-amber-500" />
+                      <AlertTriangle aria-hidden="true" className="w-4 h-4 text-amber-500" />
                       Devolver (Conflito de Interesse)
                     </button>
                   </div>
@@ -1710,40 +1739,27 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
         </>
       )}
 
-      {/* Modal de Conflito de Interesse */}
-      {mostrar_modal_conflito && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 max-w-sm w-full border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 text-center">
-            <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto" />
-            <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
-              Confirmar Conflito de Interesse?
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              Este projeto será devolvido à fila de trabalhos e um novo projeto será sorteado para sua avaliação.
-            </p>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                disabled={isProcessing}
-                onClick={() => set_mostrar_modal_conflito(false)}
-                className="w-1/2 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={isProcessing}
-                onClick={registrar_conflito}
-                className="w-1/2 py-2.5 rounded-xl text-xs font-bold bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
-              >
-                {isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                <span>Sim, Devolver</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Conflito de interesse: decisão que devolve o projeto à fila, então é alertdialog */}
+      <Modal
+        aberto={mostrar_modal_conflito}
+        aoFechar={() => set_mostrar_modal_conflito(false)}
+        titulo="Confirmar conflito de interesse?"
+        descricao="Este projeto será devolvido à fila de trabalhos e um novo projeto será sorteado para sua avaliação."
+        papel="alertdialog"
+        tamanho="pequeno"
+        acoes={
+          <>
+            <Botao data-foco-inicial disabled={isProcessing} onClick={() => set_mostrar_modal_conflito(false)}>
+              Cancelar
+            </Botao>
+            <Botao variante="perigo" carregando={isProcessing} onClick={registrar_conflito}>
+              Sim, devolver à fila
+            </Botao>
+          </>
+        }
+      >
+        <AlertTriangle aria-hidden="true" className="w-8 h-8 text-aviso mx-auto" />
+      </Modal>
     </main>
   );
 };
