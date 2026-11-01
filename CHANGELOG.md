@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.9.0...v0.10.0) (2026-11-01)
+
+
+### Funcionalidades
+
+* **questionarios:** editar, criar, excluir e restaurar os questionários prontos ([#80](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/80)) ([9bd945a](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/9bd945a873b123d0885eabb80df978e7fe2234dd))
+
 ## [0.9.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.8.2...v0.9.0) (2026-10-31)
 
 
