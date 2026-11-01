@@ -10,6 +10,7 @@ Comece pela [visão geral](arquitetura/visao-geral.md). Para contribuir, leia o
 | O que o sistema faz e para quem? | [PRD](PRD.md), [visão geral](arquitetura/visao-geral.md) |
 | Onde coloco um arquivo novo? Como crio uma feature? | [Front-end](arquitetura/frontend.md) |
 | Quais padrões de código e de interface seguir? | [Padrões](arquitetura/padroes.md) |
+| Tokens de cor, escala de texto e componentes de interface | [Design e acessibilidade](arquitetura/design-e-acessibilidade.md) |
 | Quem pode ler/escrever o quê? | [Segurança](arquitetura/seguranca.md) |
 | Ameaças, revisão OWASP/MITRE e achados | [Modelo de ameaças](arquitetura/modelo-de-ameacas.md) |
 | Variáveis de ambiente e `localStorage` | [Configuração](arquitetura/configuracao.md) |

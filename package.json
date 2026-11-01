@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "contraste": "node scripts/contraste.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

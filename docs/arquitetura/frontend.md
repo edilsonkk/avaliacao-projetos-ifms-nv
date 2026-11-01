@@ -27,14 +27,15 @@ src/
 ├── components/             # Componentes compartilhados por mais de uma feature
 │   ├── importacao/         # Modal de mapeamento De-Para usado nas importações de planilhas
 │   ├── layout/             # Cabeçalho e navegação
-│   └── ui/                 # Peças de interface genéricas (`Dica`, `CabecalhoOrdenavel` para tabelas)
+│   └── ui/                 # Componentes de interface compartilhados (`Botao`, `Campo`, `Cartao`, `Selo`,
+│                           #   `Estado`, `Dica`, `CabecalhoOrdenavel`) — ver design-e-acessibilidade.md
 ├── lib/                    # Código sem React: clientes, utilitários e regras puras
 │   ├── excel/              # Leitura/geração de planilhas (exceljs)
 │   ├── parsers/            # Parsers puros de planilhas e normalização de texto
 │   ├── sessaoAdmin.ts      # Validação de sessão do Admin antes de escritas
 │   └── supabase.ts         # Cliente Supabase único da aplicação
 ├── types/                  # Contratos TypeScript compartilhados (tabelas, entidades)
-├── styles/                 # CSS global (Tailwind v4)
+├── styles/                 # CSS global e tokens de design (Tailwind v4)
 ├── test/                   # Setup global do Vitest
 └── __tests__/integracao/   # Testes que exercitam várias features juntas
 ```
