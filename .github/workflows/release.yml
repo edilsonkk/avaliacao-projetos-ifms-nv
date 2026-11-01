@@ -28,7 +28,7 @@ jobs:
     steps:
       - name: release-please
         id: release
-        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           # Token próprio (fine-grained, só este repositório): PRs abertos com o GITHUB_TOKEN não disparam os
           # checks obrigatórios. Sem o secret, funciona igual, mas o PR de release precisa ser fechado e reaberto.
