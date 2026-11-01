@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -12,10 +12,16 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
+import { supabase } from '@/lib/supabase';
 import { Cabecalho } from '@/components/layout/Cabecalho';
+import { ProvedorAvisos } from '@/components/ui';
 
 const renderizar = (props: Partial<React.ComponentProps<typeof Cabecalho>> = {}) =>
-  render(<Cabecalho tela_atual="admin" ao_mudar_tela={vi.fn()} papel="admin" {...props} />);
+  render(
+    <ProvedorAvisos>
+      <Cabecalho tela_atual="admin" ao_mudar_tela={vi.fn()} papel="admin" {...props} />
+    </ProvedorAvisos>,
+  );
 
 describe('Cabecalho - indicador de ambiente do Supabase', () => {
   beforeEach(() => {
@@ -135,5 +141,57 @@ describe('Cabecalho - preferências visuais', () => {
     expect(localStorage.getItem('usuario_perfil')).toBeNull();
     expect(localStorage.getItem('tema_fecin')).toBe('escuro');
     expect(localStorage.getItem('tamanho_texto_fecin')).toBe('maior');
+  });
+});
+
+describe('Cabecalho - sair', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    estado.ambiente = 'local';
+    vi.mocked(supabase.auth.signOut).mockResolvedValue(undefined as never);
+  });
+
+  it('deve encerrar a sessão de Admin na hora, sem perguntar', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    const aoSair = vi.fn();
+    renderizar({ papel: 'admin', ao_sair: aoSair });
+
+    // Act
+    await user.click(screen.getByRole('button', { name: 'Sair' }));
+
+    // Assert
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(aoSair).toHaveBeenCalled();
+  });
+
+  it('deve avisar o avaliador que sair desvincula o celular, e respeitar a desistência', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    const aoSair = vi.fn();
+    renderizar({ papel: 'avaliador', tela_atual: 'avaliador', ao_sair: aoSair });
+
+    // Act
+    await user.click(screen.getByRole('button', { name: 'Sair e desvincular' }));
+
+    // Assert
+    const dialogo = screen.getByRole('alertdialog', { name: 'Sair e desvincular este celular?' });
+    expect(dialogo).toHaveTextContent(/novo código ao Staff/i);
+    expect(screen.getByRole('button', { name: 'Continuar avaliando' })).toHaveFocus();
+
+    // Act
+    await user.click(screen.getByRole('button', { name: 'Continuar avaliando' }));
+
+    // Assert
+    expect(aoSair).not.toHaveBeenCalled();
+    expect(supabase.auth.signOut).not.toHaveBeenCalled();
+
+    // Act
+    await user.click(screen.getByRole('button', { name: 'Sair e desvincular' }));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Sair e desvincular' }));
+
+    // Assert
+    expect(supabase.auth.signOut).toHaveBeenCalled();
+    expect(aoSair).toHaveBeenCalled();
   });
 });

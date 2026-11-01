@@ -24,6 +24,10 @@ Código: `src/features/staff/` (`TelaStaff`, `GestorStaff`), `src/features/avali
 - A aba Avaliador precisa de um navegador **sem a conta do Admin/Staff**. No mesmo navegador em que a equipe está
   logada, a tela avisa e oferece **Sair desta conta e preparar o aparelho** (sai só ali); o pareamento e o código de
   acesso são recusados antes disso, para o código de uso único não ser gasto à toa.
+- No celular, o botão se chama **Sair e desvincular** e pergunta antes: sair apaga a sessão do aparelho, que é a
+  credencial do vínculo, então voltar a avaliar exige um código novo com o Staff. A confirmação tem
+  "Continuar avaliando" como opção padrão (é ela que recebe o foco e responde ao `Esc`), e há uma dica ao lado do
+  botão explicando o efeito — ela abre no toque, não só com o mouse.
 - `App.tsx` decide a tela pelo caminho da URL e pelo papel em `localStorage` e impede o avaliador de abrir telas
   de Admin ou Staff.
 

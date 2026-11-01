@@ -1,5 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ProvedorAvisos } from '@/components/ui';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AtribuicaoForcada } from '@/features/atribuicoes';
 import { TelaAvaliador } from '@/features/avaliacao';
@@ -175,7 +176,7 @@ describe('Regras de Negócio: Cota Estrita, Sorteio, Auto-cadastro e De-Para', (
     };
 
     const renderizar = () =>
-      render(<TelaAvaliador id_usuario_logado={AVALIADOR_UUID} id_evento_ativo={EVENTO_UUID} onLogout={vi.fn()} />);
+      render(<ProvedorAvisos><TelaAvaliador id_usuario_logado={AVALIADOR_UUID} id_evento_ativo={EVENTO_UUID} onLogout={vi.fn()} /></ProvedorAvisos>);
 
     beforeEach(() => {
       localStorage.setItem('sessao_id_usuario', AVALIADOR_UUID);
