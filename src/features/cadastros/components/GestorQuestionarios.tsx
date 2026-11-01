@@ -17,12 +17,13 @@ import {
   Pencil,
   Lock,
   History,
+  BookCopy,
 } from 'lucide-react';
 import { lerPlanilhaParaJson, validarArquivoPlanilha } from '@/lib/excel/excelUtils';
 import { supabase } from '@/lib/supabase';
 import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { normalizarChave } from '@/lib/parsers/planilhaAvaliadoresParser';
-import { ModelosQuestionario } from './ModelosQuestionario';
+import { ModelosQuestionario, type ModeloQuestionario } from './ModelosQuestionario';
 import { ReaproveitarQuestionario } from './ReaproveitarQuestionario';
 
 interface ItemPerguntaForm {
@@ -96,6 +97,11 @@ export const GestorQuestionarios: React.FC<{
   const [questionario_para_excluir, set_questionario_para_excluir] = useState<QuestionarioSalvo | null>(null);
   const [excluindo, set_excluindo] = useState<boolean>(false);
   const [mostrar_reaproveitar, set_mostrar_reaproveitar] = useState<boolean>(false);
+  // Formulário no modo modelo: null = questionário do evento; id_modelo null = modelo novo
+  const [modelo_edicao, set_modelo_edicao] = useState<{ id_modelo: string | null; titulo: string } | null>(null);
+  const [descricao_modelo, set_descricao_modelo] = useState<string>('');
+  const [versao_modelos, set_versao_modelos] = useState<number>(0);
+  const form_ref = useRef<HTMLFormElement | null>(null);
 
   const input_file_ref = useRef<HTMLInputElement | null>(null);
   const [processando_arquivo, set_processando_arquivo] = useState<boolean>(false);
@@ -114,6 +120,8 @@ export const GestorQuestionarios: React.FC<{
   };
 
   const limpar_formulario = () => {
+    set_modelo_edicao(null);
+    set_descricao_modelo('');
     setIdQuestionarioEdicao(null);
     set_usos_em_edicao(0);
     set_titulo_questionario('');
@@ -158,8 +166,107 @@ export const GestorQuestionarios: React.FC<{
     carregar_questionarios_existentes();
   }, [carregar_questionarios_existentes]);
 
+  const rolar_ate_formulario = () => form_ref.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+
+  const handleNovoModelo = () => {
+    limpar_formulario();
+    set_modelo_edicao({ id_modelo: null, titulo: '' });
+    set_escala_minima(1);
+    set_escala_maxima(5);
+    setErroQuest(null);
+    rolar_ate_formulario();
+  };
+
+  const handleEditarModelo = async (modelo: ModeloQuestionario) => {
+    setErroQuest(null);
+    const { data: pergs, error } = await supabase
+      .from('perguntas_modelo_questionario')
+      .select('ordem, texto_pergunta, descricao_lembrete, peso_calculo, peso_desempate')
+      .eq('id_modelo', modelo.id_modelo)
+      .order('ordem', { ascending: true });
+    if (error) {
+      setErroQuest(`Não foi possível abrir o modelo: ${tratarErroEscritaAdmin(error)}`);
+      return;
+    }
+    limpar_formulario();
+    set_modelo_edicao({ id_modelo: modelo.id_modelo, titulo: modelo.titulo });
+    set_descricao_modelo(modelo.descricao || '');
+    set_titulo_questionario(modelo.titulo);
+    set_escala_minima(modelo.escala_minima);
+    set_escala_maxima(modelo.escala_maxima);
+    set_perguntas_lista(
+      (pergs || []).length > 0
+        ? (pergs || []).map((p: any) =>
+            novaPergunta({
+              texto_pergunta: p.texto_pergunta || '',
+              descricao_lembrete: p.descricao_lembrete || '',
+              peso_calculo: Number(p.peso_calculo ?? 1),
+              peso_desempate: Number(p.peso_desempate ?? 1),
+            })
+          )
+        : [novaPergunta()]
+    );
+    rolar_ate_formulario();
+  };
+
+  const salvar_como_modelo = async (quest: QuestionarioSalvo) => {
+    if (!(await garantirSessaoAdmin())) return;
+    setErroQuest(null);
+    const { error } = await supabase.rpc('admin_salvar_questionario_como_modelo', { p_id_questionario: quest.id_questionario });
+    if (error) {
+      setErroQuest(`Não foi possível salvar "${quest.titulo}" como modelo: ${tratarErroEscritaAdmin(error)}`);
+      return;
+    }
+    exibir_notificacao(`"${quest.titulo}" agora também é um questionário pronto.`);
+    set_versao_modelos((v) => v + 1);
+    await carregar_questionarios_existentes();
+  };
+
+  const salvar_modelo = async () => {
+    if (!modelo_edicao || !(await garantirSessaoAdmin())) return;
+    set_salvando(true);
+    try {
+      const { data, error } = await supabase.rpc('admin_salvar_modelo_questionario', {
+        p_id_modelo: modelo_edicao.id_modelo,
+        p_titulo: titulo_questionario.trim(),
+        p_descricao: descricao_modelo.trim(),
+        p_escala_minima: Number(escala_minima),
+        p_escala_maxima: Number(escala_maxima),
+        p_perguntas: perguntas_lista.map((p) => ({
+          texto_pergunta: p.texto_pergunta.trim(),
+          descricao_lembrete: p.descricao_lembrete.trim(),
+          peso_calculo: Number(p.peso_calculo),
+          peso_desempate: Number(p.peso_desempate),
+        })),
+      });
+      if (error) {
+        setErroQuest(`Não foi possível salvar o modelo: ${tratarErroEscritaAdmin(error)}`);
+        return;
+      }
+      const resultado = (data || {}) as { copia?: string; usos?: number };
+      const titulo = titulo_questionario.trim();
+      exibir_notificacao(
+        resultado.copia === 'atualizada'
+          ? `Modelo "${titulo}" salvo. A cópia ativa neste evento também foi atualizada.`
+          : resultado.copia === 'em_uso'
+            ? `Modelo "${titulo}" salvo. A cópia deste evento já foi usada em ${resultado.usos} avaliação(ões) e não foi alterada.`
+            : modelo_edicao.id_modelo
+              ? `Modelo "${titulo}" salvo.`
+              : `Modelo "${titulo}" criado com ${perguntas_lista.length} pergunta(s).`
+      );
+      limpar_formulario();
+      set_versao_modelos((v) => v + 1);
+      await carregar_questionarios_existentes();
+      aoAtualizarMetricas?.();
+    } finally {
+      set_salvando(false);
+    }
+  };
+
   const handleEditarQuestionario = async (quest: QuestionarioSalvo) => {
     setErroQuest(null);
+    set_modelo_edicao(null);
+    set_descricao_modelo('');
     const [{ data: pergs, error }, { data: usos }] = await Promise.all([
       supabase
         .from('perguntas_questionario')
@@ -174,6 +281,7 @@ export const GestorQuestionarios: React.FC<{
     }
     setIdQuestionarioEdicao(quest.id_questionario);
     set_usos_em_edicao(Number(usos) || 0);
+    rolar_ate_formulario();
     set_titulo_questionario(quest.titulo);
     set_escala_minima(quest.escala_minima);
     set_escala_maxima(quest.escala_maxima);
@@ -247,6 +355,10 @@ export const GestorQuestionarios: React.FC<{
     }
     if (!(Number(escala_minima) < Number(escala_maxima))) {
       setErroQuest('A escala mínima precisa ser menor que a máxima.');
+      return;
+    }
+    if (modelo_edicao) {
+      await salvar_modelo();
       return;
     }
     if (!idQuestionarioEdicao && !idEvento) {
@@ -470,6 +582,12 @@ export const GestorQuestionarios: React.FC<{
         <ModelosQuestionario
           idEvento={idEvento}
           ativos={questionarios_salvos}
+          versao={versao_modelos}
+          idModeloEmEdicao={modelo_edicao?.id_modelo ?? null}
+          aoEditar={handleEditarModelo}
+          aoNovo={handleNovoModelo}
+          aoAlterarModelos={carregar_questionarios_existentes}
+          aoAviso={exibir_notificacao}
           aoAtivar={async () => {
             await carregar_questionarios_existentes();
             aoAtualizarMetricas?.();
@@ -482,7 +600,31 @@ export const GestorQuestionarios: React.FC<{
         />
       )}
 
-      <form onSubmit={salvar_questionario_completo} aria-label={idQuestionarioEdicao ? 'Editar questionário' : 'Novo questionário'} className="space-y-6">
+      <form
+        ref={form_ref}
+        onSubmit={salvar_questionario_completo}
+        aria-label={
+          modelo_edicao
+            ? modelo_edicao.id_modelo
+              ? 'Editar modelo'
+              : 'Novo modelo'
+            : idQuestionarioEdicao
+              ? 'Editar questionário'
+              : 'Novo questionário'
+        }
+        className="space-y-6 scroll-mt-4"
+      >
+        {modelo_edicao && (
+          <div className="p-4 rounded-xl bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 text-xs text-violet-900 dark:text-violet-200 flex items-start gap-2">
+            <BookCopy className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>
+              {modelo_edicao.id_modelo
+                ? `Editando o modelo "${modelo_edicao.titulo}". Se ele estiver ativo neste evento e a cópia ainda não tiver sido usada em avaliação, a cópia também será atualizada.`
+                : 'Novo questionário pronto (modelo). Depois de salvo, ative-o no evento pelo interruptor.'}
+            </span>
+          </div>
+        )}
+
         {erroQuest && (
           <div role="alert" className="p-4 text-white bg-red-600 rounded-xl font-medium shadow-sm flex items-center justify-between gap-2">
             <span className="flex items-center gap-2">
@@ -507,7 +649,7 @@ export const GestorQuestionarios: React.FC<{
 
         <fieldset className="bg-slate-50 dark:bg-slate-900/60 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
           <legend className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 px-1">
-            {idQuestionarioEdicao ? '1. Dados do questionário (editando)' : '1. Dados do questionário'}
+            {modelo_edicao ? '1. Dados do modelo' : idQuestionarioEdicao ? '1. Dados do questionário (editando)' : '1. Dados do questionário'}
           </legend>
           <div>
             <label htmlFor="quest-titulo" className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
@@ -523,6 +665,22 @@ export const GestorQuestionarios: React.FC<{
               required
             />
           </div>
+          {modelo_edicao && (
+            <div>
+              <label htmlFor="modelo-descricao" className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                Descrição do modelo (opcional)
+              </label>
+              <textarea
+                id="modelo-descricao"
+                value={descricao_modelo}
+                onChange={(e) => set_descricao_modelo(e.target.value)}
+                maxLength={2000}
+                rows={2}
+                placeholder="Para que tipo de projeto este questionário serve"
+                className={classeCampo}
+              />
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="quest-escala-min" className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
@@ -692,7 +850,7 @@ export const GestorQuestionarios: React.FC<{
         </fieldset>
 
         <div className="pt-2 flex justify-end gap-2">
-          {idQuestionarioEdicao && (
+          {(idQuestionarioEdicao || modelo_edicao) && (
             <button
               type="button"
               onClick={limpar_formulario}
@@ -703,11 +861,11 @@ export const GestorQuestionarios: React.FC<{
           )}
           <button
             type="submit"
-            disabled={salvando || (!idQuestionarioEdicao && !idEvento)}
+            disabled={salvando || (!modelo_edicao && !idQuestionarioEdicao && !idEvento)}
             className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold flex items-center gap-2 shadow-xs"
           >
             {salvando ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-            {idQuestionarioEdicao ? 'Salvar Alterações' : 'Salvar Questionário'}
+            {modelo_edicao ? 'Salvar Modelo' : idQuestionarioEdicao ? 'Salvar Alterações' : 'Salvar Questionário'}
           </button>
         </div>
       </form>
@@ -732,7 +890,7 @@ export const GestorQuestionarios: React.FC<{
                 <p className="text-slate-500 text-[11px]">
                   Notas de {quest.escala_minima} a {quest.escala_maxima} · {quest.total_perguntas} pergunta(s)
                 </p>
-                <div className="flex gap-2 pt-1">
+                <div className="flex gap-2 pt-1 flex-wrap">
                   <button
                     type="button"
                     onClick={() => handleEditarQuestionario(quest)}
@@ -740,6 +898,14 @@ export const GestorQuestionarios: React.FC<{
                     className="px-3 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg inline-flex items-center gap-1"
                   >
                     <Pencil className="w-3.5 h-3.5" /> Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => salvar_como_modelo(quest)}
+                    aria-label={`Salvar ${quest.titulo} como modelo`}
+                    className="px-3 py-1.5 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-lg inline-flex items-center gap-1"
+                  >
+                    <BookCopy className="w-3.5 h-3.5" /> Salvar como modelo
                   </button>
                   <button
                     type="button"

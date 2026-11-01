@@ -127,7 +127,8 @@ A tabela **não** tem colunas textuais `modalidade`, `area_conhecimento` ou `nom
 - `questionarios`: `id_questionario`, `id_evento`, `titulo`, `escala_minima`, `escala_maxima`, `id_origem` (modelo
   ou questionário de outro evento de onde a cópia veio; único por evento).
 - `modelos_questionario` e `perguntas_modelo_questionario`: questionários prontos, fora de qualquer evento (só o Admin
-  lê; carga pela migration `20261031050000`). Ativar um modelo copia para `questionarios`.
+  lê; carga pela migration `20261031050000`). Ativar um modelo copia para `questionarios`. `is_original` marca os 7
+  do documento (restauráveis). Escrita só pelas funções `admin_*_modelo_*`.
 - `perguntas_questionario`: `id_pergunta`, `id_questionario`, `texto_pergunta`, `descricao_lembrete` (texto de ajuda
   para o avaliador), `peso_calculo`, `peso_desempate`, `ordem`.
 - `respostas_avaliacao.id_pergunta` é `ON DELETE CASCADE`: apagar uma pergunta apaga as notas por critério já dadas.

@@ -34,7 +34,12 @@ const mockarBanco = () => {
           ]
         : tabela === 'questionarios'
           ? questionariosDoEvento
-          : [];
+          : tabela === 'perguntas_modelo_questionario'
+            ? [
+                { ordem: 1, texto_pergunta: 'Problema e Público-Alvo', descricao_lembrete: 'Relevância do problema.', peso_calculo: 1, peso_desempate: 1 },
+                { ordem: 2, texto_pergunta: 'Coerência da Solução', descricao_lembrete: null, peso_calculo: 2, peso_desempate: 0 },
+              ]
+            : [];
     chain.then = (resolve: any, reject: any) => Promise.resolve({ data: dados, error: null }).then(resolve, reject);
     return chain;
   }) as never);
@@ -144,5 +149,131 @@ describe('Questionários prontos e reaproveitamento', () => {
 
     // Assert
     expect(await screen.findByText('Nenhum questionário em eventos anteriores.')).toBeInTheDocument();
+  });
+
+  it('o lápis carrega o modelo no formulário abaixo e salvar grava o modelo, avisando que a cópia ativa foi atualizada', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    respostasRpc.admin_salvar_modelo_questionario = { data: { id_modelo: MODELO_IDEIA, copia: 'atualizada', usos: 0 }, error: null };
+    renderizar();
+
+    // Act
+    await user.click(await screen.findByRole('button', { name: 'Editar modelo Técnico · Nível 1 Ideia' }));
+    const formulario = await screen.findByRole('form', { name: 'Editar modelo' });
+    expect(within(formulario).getByText(/Editando o modelo "Técnico · Nível 1 Ideia"/)).toBeInTheDocument();
+    expect(within(formulario).getByLabelText('Descrição do modelo (opcional)')).toHaveValue('Núcleo comum e nível Ideia.');
+    expect(within(formulario).getByLabelText('Texto da pergunta 2')).toHaveValue('Coerência da Solução');
+    await user.clear(within(formulario).getByLabelText('Título'));
+    await user.type(within(formulario).getByLabelText('Título'), 'Ideia revisada');
+    await user.click(within(formulario).getByRole('button', { name: 'Salvar Modelo' }));
+
+    // Assert
+    expect(supabase.rpc).toHaveBeenCalledWith('admin_salvar_modelo_questionario', {
+      p_id_modelo: MODELO_IDEIA,
+      p_titulo: 'Ideia revisada',
+      p_descricao: 'Núcleo comum e nível Ideia.',
+      p_escala_minima: 1,
+      p_escala_maxima: 5,
+      p_perguntas: [
+        { texto_pergunta: 'Problema e Público-Alvo', descricao_lembrete: 'Relevância do problema.', peso_calculo: 1, peso_desempate: 1 },
+        { texto_pergunta: 'Coerência da Solução', descricao_lembrete: '', peso_calculo: 2, peso_desempate: 0 },
+      ],
+    });
+    expect(supabase.rpc).not.toHaveBeenCalledWith('admin_salvar_questionario', expect.anything());
+    expect(await screen.findByRole('status')).toHaveTextContent('A cópia ativa neste evento também foi atualizada.');
+    expect(screen.getByRole('form', { name: 'Novo questionário' })).toBeInTheDocument();
+  });
+
+  it('avisa quando a cópia do evento já foi usada e por isso não mudou', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    respostasRpc.admin_salvar_modelo_questionario = { data: { id_modelo: MODELO_IDEIA, copia: 'em_uso', usos: 4 }, error: null };
+    renderizar();
+
+    // Act
+    await user.click(await screen.findByRole('button', { name: 'Editar modelo Técnico · Nível 1 Ideia' }));
+    await user.click(await screen.findByRole('button', { name: 'Salvar Modelo' }));
+
+    // Assert
+    expect(await screen.findByRole('status')).toHaveTextContent('já foi usada em 4 avaliação(ões) e não foi alterada');
+  });
+
+  it('"Novo modelo" abre o formulário em branco na escala 1 a 5 e cria pela função de modelos', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    respostasRpc.admin_salvar_modelo_questionario = { data: { id_modelo: 'novo', copia: 'sem_copia', usos: 0 }, error: null };
+    renderizar();
+
+    // Act
+    await user.click(await screen.findByRole('button', { name: 'Novo modelo' }));
+    const formulario = screen.getByRole('form', { name: 'Novo modelo' });
+    await user.type(within(formulario).getByLabelText('Título'), 'Banca externa');
+    await user.type(within(formulario).getByLabelText('Texto da pergunta 1'), 'Impacto');
+    await user.click(within(formulario).getByRole('button', { name: 'Salvar Modelo' }));
+
+    // Assert
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      'admin_salvar_modelo_questionario',
+      expect.objectContaining({ p_id_modelo: null, p_titulo: 'Banca externa', p_escala_minima: 1, p_escala_maxima: 5 })
+    );
+    expect(await screen.findByRole('status')).toHaveTextContent('Modelo "Banca externa" criado com 1 pergunta(s).');
+  });
+
+  it('cancelar a edição do modelo volta ao formulário de questionário do evento', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    renderizar();
+    await user.click(await screen.findByRole('button', { name: 'Editar modelo Técnico · Nível 1 Ideia' }));
+    await screen.findByRole('form', { name: 'Editar modelo' });
+
+    // Act
+    await user.click(screen.getByRole('button', { name: 'Cancelar Edição' }));
+
+    // Assert
+    expect(screen.getByRole('form', { name: 'Novo questionário' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Título')).toHaveValue('');
+  });
+
+  it('excluir modelo pede confirmação e chama a função do banco', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    renderizar();
+
+    // Act
+    await user.click(await screen.findByRole('button', { name: 'Excluir modelo Técnico · Nível 2 Protótipo' }));
+    const dialogo = screen.getByRole('alertdialog', { name: 'Excluir o modelo "Técnico · Nível 2 Protótipo"?' });
+    expect(supabase.rpc).not.toHaveBeenCalledWith('admin_excluir_modelo_questionario', expect.anything());
+    await user.click(within(dialogo).getByRole('button', { name: 'Excluir modelo' }));
+
+    // Assert
+    expect(supabase.rpc).toHaveBeenCalledWith('admin_excluir_modelo_questionario', { p_id_modelo: MODELO_PROTOTIPO });
+    expect(await screen.findByRole('status')).toHaveTextContent('Modelo "Técnico · Nível 2 Protótipo" excluído.');
+  });
+
+  it('"Restaurar originais" pede confirmação e chama a função do banco', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    renderizar();
+
+    // Act
+    await user.click(await screen.findByRole('button', { name: 'Restaurar originais' }));
+    await user.click(within(screen.getByRole('alertdialog', { name: 'Restaurar os modelos originais?' })).getByRole('button', { name: 'Restaurar' }));
+
+    // Assert
+    expect(supabase.rpc).toHaveBeenCalledWith('admin_restaurar_modelos_originais');
+    expect(await screen.findByRole('status')).toHaveTextContent('Modelos originais restaurados.');
+  });
+
+  it('"Salvar como modelo" transforma um questionário do evento em modelo', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    renderizar();
+
+    // Act
+    await user.click(await screen.findByRole('button', { name: 'Salvar Técnico · Nível 1 Ideia como modelo' }));
+
+    // Assert
+    expect(supabase.rpc).toHaveBeenCalledWith('admin_salvar_questionario_como_modelo', { p_id_questionario: 'q-ideia' });
+    expect(await screen.findByRole('status')).toHaveTextContent('agora também é um questionário pronto');
   });
 });

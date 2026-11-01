@@ -48,6 +48,13 @@ projeto. Esse projeto não volta a ser sorteado para o mesmo avaliador.
   quando houver). O interruptor **"Ativo neste evento"** copia o modelo para o evento (`admin_copiar_questionario`);
   desligar exclui a cópia, o que o banco recusa se ela já foi usada. A cópia é editável sem alterar o modelo. O voto
   popular não tem fluxo de visitante: se ativado, aparece aos avaliadores como mais um questionário.
+- **CRUD dos modelos:** o lápis carrega o modelo no mesmo formulário abaixo (aviso "Editando o modelo…", com
+  descrição opcional); salvar grava o modelo (`admin_salvar_modelo_questionario`). Se o modelo está ativo no evento
+  ativo e a cópia **ainda não foi usada** em avaliação, a cópia é atualizada junto; se já foi usada, fica como está e a
+  tela avisa. "Novo modelo" abre o formulário em branco (escala 1–5); "Salvar como modelo", em cada questionário do
+  evento, cria um modelo a partir dele (e o interruptor do novo modelo aparece ligado). Qualquer modelo pode ser
+  excluído, com confirmação; as cópias nos eventos continuam. **"Restaurar originais"** recria os 7 originais
+  excluídos e devolve o texto original aos editados, sem mexer nos modelos criados pelo Admin.
 - **Reaproveitar de eventos anteriores:** lista os questionários dos outros eventos, agrupados por evento, e copia o
   escolhido para o evento ativo com perguntas, textos de ajuda e pesos. O original não muda. Copiar de novo não
   duplica; a cópia de algo que veio de um modelo fica ligada ao modelo (o interruptor aparece ligado).

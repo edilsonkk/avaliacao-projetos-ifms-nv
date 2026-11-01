@@ -80,6 +80,10 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `admin_salvar_questionario(p_id_questionario, p_id_evento, p_titulo, p_escala_minima, p_escala_maxima, p_perguntas jsonb)` → `uuid` | Cria (`p_id_questionario` nulo) ou edita o questionário numa transação; perguntas atualizadas no lugar. Questionário já usado só muda o título |
 | `admin_excluir_questionario(p_id_questionario)` | Exclui questionário nunca usado em avaliação |
 | `admin_copiar_questionario(p_id_origem, p_id_evento)` → `uuid` | Copia um modelo ou um questionário de outro evento para o evento (perguntas, ajuda e pesos). Não duplica: devolve a cópia existente |
+| `admin_salvar_modelo_questionario(p_id_modelo, p_titulo, p_descricao, p_escala_minima, p_escala_maxima, p_perguntas)` → `jsonb` | Cria (`p_id_modelo` nulo) ou edita um modelo. Ao editar, atualiza a cópia do evento ativo se ela não foi usada; devolve `copia` = `atualizada`, `em_uso` ou `sem_copia` |
+| `admin_excluir_modelo_questionario(p_id_modelo)` | Exclui um modelo; as cópias nos eventos continuam |
+| `admin_salvar_questionario_como_modelo(p_id_questionario)` → `uuid` | Cria um modelo a partir de um questionário do evento |
+| `admin_restaurar_modelos_originais()` → `integer` | Recria/restaura os 7 modelos originais; modelos do Admin não mudam |
 | `admin_listar_questionarios_reaproveitaveis(p_id_evento)` | Questionários dos outros eventos, com evento, data, perguntas, avaliações e se já estão no evento |
 | `fn_chave_desempate(p_id_projeto)` → `numeric[]` | Médias do projeto por pergunta, na ordem de `peso_desempate` (usada por `view_ranking_top3`) |
 | `fn_avaliacoes_do_questionario(p_id_questionario)` → `integer` | Quantas avaliações usaram o questionário (trava a edição na tela) |
