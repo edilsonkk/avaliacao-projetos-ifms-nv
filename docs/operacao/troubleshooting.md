@@ -200,3 +200,32 @@ kill <PID>
 ```
 O script usa `--strictPort` de propósito: abrir em outra porta escondia servidores antigos usando outro `.env`
 (por exemplo, ainda apontando para produção).
+
+## Celular do avaliador não entra: tela presa no código ou "E-mail ou código inválido"
+
+**Sintomas** (os dois com a mesma causa):
+
+- o Staff pareia, a tela dele confirma, e o celular continua mostrando o código de pareamento, esperando;
+- no modo "só código de acesso", o avaliador digita e-mail e código e recebe
+  `E-mail ou código inválido, expirado ou já utilizado.` — mesmo com o código recém-gerado.
+
+**Causa**: a aba Avaliador estava aberta no mesmo navegador em que o Admin (ou o Staff) estava logado. A sessão
+reaproveitada era a da equipe, então o aparelho era vinculado ao `auth_uid` dela: `fn_meu_perfil` responde
+`admin`/`staff` antes de olhar `avaliador_atual()`, e a tela espera para sempre. No modo código, a primeira tentativa
+ainda consumia o código (uso único) e as seguintes caíam na mensagem de inválido.
+
+**Correção** (migration `20261101190000_sessao_do_aparelho_do_avaliador`): o banco recusa o vínculo nessa sessão antes
+de consumir qualquer código e a tela oferece **Sair desta conta e preparar o aparelho** (sai só naquele navegador).
+Em um celular de avaliador normal (sessão anônima própria) nada muda.
+
+**Na prática**: para testar, use outro navegador, uma janela anônima ou o botão da própria tela.
+
+**Conferir no banco**:
+
+```sql
+-- O aparelho foi vinculado à conta da equipe? (não deveria haver linha)
+SELECT d.auth_uid, u.email, u.papel
+FROM public.dispositivos_avaliador d
+JOIN public.usuarios u ON (u.id_usuario = d.auth_uid OR u.id_auth = d.auth_uid)
+WHERE d.revogado_em IS NULL;
+```

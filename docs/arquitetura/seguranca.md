@@ -13,6 +13,7 @@ Migrations de referência:
 | `20261028200000_proteger_funcoes_admin_e_relatorios.sql` | Todas as `admin_*` exigem `is_admin()`; relatórios `SECURITY INVOKER` |
 | `20261028210000_identidade_avaliador_staff.sql` | Vínculo do celular ao avaliador, códigos de acesso, conta do Staff |
 | `20261028220000_rls_por_papel.sql` | RLS por papel; sorteio e notas só em nome do avaliador do aparelho |
+| `20261101190000_sessao_do_aparelho_do_avaliador.sql` | O vínculo do celular exige sessão só do aparelho (não a do Admin/Staff) |
 
 Decisões: [ADR 0006](../decisoes/0006-rls-escrita-restrita-a-admin.md),
 [ADR 0007](../decisoes/0007-gravacao-de-notas-via-rpc.md) e
@@ -49,6 +50,14 @@ credenciar de novo reativa o mesmo aparelho. Ao trocar de evento, os avaliadores
 
 Um avaliador tem **um aparelho ativo**: um vínculo novo revoga o anterior. O Staff pode desvincular um aparelho
 perdido ou trocado. Vincular pelo IP foi descartado: no Wi-Fi da feira todos compartilham o IP, e no 4G ele muda.
+
+**A sessão tem de ser só do aparelho.** O navegador guarda uma sessão por origem: abrindo a aba Avaliador no mesmo
+navegador em que o Admin ou o Staff está logado, a sessão reaproveitada seria a da equipe. O banco recusa esse vínculo
+(`conta_da_equipe()` em `fn_solicitar_pareamento`, `fn_vincular_com_codigo` e `fn_parear_dispositivo`) **antes** de
+consumir o código de acesso, e `fn_meu_perfil` devolve `sessao_equipe: true` para a tela oferecer *"Sair desta conta e
+preparar o aparelho"* (sai só neste navegador, com `signOut({ scope: 'local' })`). Sem isso, o aparelho ficava
+vinculado ao `auth_uid` da equipe: o Staff via "pareado com sucesso" e o celular esperava para sempre, porque
+`fn_meu_perfil` responde `admin`/`staff` antes de olhar `avaliador_atual()`.
 
 ## Regras por tabela
 
@@ -97,7 +106,7 @@ só tem `SELECT` (sem `INSERT`/`UPDATE`/`DELETE`: a proteção não depende só 
 | `fn_parear_dispositivo`, `fn_gerar_codigo_acesso`, `fn_desvincular_dispositivo`, `fn_check_in_projeto` | Staff ou Admin |
 | `fn_assumir_item_fila`, `fn_registrar_impedimento`, `fn_fixar_questionario` | Avaliador vinculado (`avaliador_atual()`) |
 | `fn_avaliacoes_do_questionario` | Admin |
-| `fn_solicitar_pareamento`, `fn_vincular_com_codigo` | Qualquer sessão (é o próprio celular) |
+| `fn_solicitar_pareamento`, `fn_vincular_com_codigo` | Qualquer sessão que **não** seja de Admin/Staff/Monitor (é o próprio celular) |
 | `fn_meu_perfil`, `fn_autocadastro_avaliador`, `fn_telao_resumo` | Público. O autocadastro nunca altera cadastro existente; o Telão só devolve totais |
 
 Lista completa em [funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#identidade-e-vínculo-do-celular).
@@ -146,7 +155,8 @@ ignorados pelo Auth. Fluxo em [configuração](configuracao.md#trocar-a-senha).
   (`src/lib/sessaoAdmin.ts`). Erro de RLS (`42501`) leva de volta ao login.
 - Ao abrir o app, `App.tsx` confere o papel guardado no navegador com `fn_meu_perfil()`. Se não bater (aparelho
   desvinculado, `localStorage` editado, sessão expirada), volta ao login.
-- Vínculo do celular: `src/features/auth/vinculoAparelho.ts` e `VinculoAvaliador`. No balcão:
+- Vínculo do celular: `src/features/auth/vinculoAparelho.ts` e `VinculoAvaliador` (com `reiniciarSessaoAparelho()`
+  quando o navegador está com a conta da equipe). No balcão:
   `src/features/staff/components/PainelAparelhoAvaliador.tsx`.
 - **Cabeçalhos HTTP** (Firebase, `firebase.json`): CSP restritiva (`script-src 'self'`, sem inline nem `eval`;
   `connect-src` só o Supabase; `frame-ancestors 'none'`), `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`,

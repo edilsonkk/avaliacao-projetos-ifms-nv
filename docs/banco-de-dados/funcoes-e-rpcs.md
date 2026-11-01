@@ -33,10 +33,11 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 |---|---|---|
 | `is_admin()`, `is_staff()` | RLS e funções | Papel da sessão (`id_usuario` ou `id_auth` = `auth.uid()`) |
 | `avaliador_atual()` | RLS e funções | Avaliador vinculado ao aparelho atual, ou `NULL` |
-| `fn_meu_perfil()` | Qualquer um | Papel, identificação e métodos de vínculo liberados no evento |
-| `fn_solicitar_pareamento()` | Celular (sessão anônima) | Gera o código de pareamento |
-| `fn_vincular_com_codigo(email, codigo)` | Celular | Vincula com o código de acesso |
-| `fn_parear_dispositivo(codigo, id_usuario)` | Staff/Admin | Vincula o celular que mostrou o código e credencia o avaliador |
+| `conta_da_equipe(auth_uid)`, `sessao_de_conta_da_equipe()` | Funções de vínculo | O `auth_uid` (ou a sessão atual) é de ADMIN/STAFF/MONITOR? Sem depender do MFA |
+| `fn_meu_perfil()` | Qualquer um | Papel, identificação, métodos de vínculo liberados no evento e `sessao_equipe` |
+| `fn_solicitar_pareamento()` | Celular (sessão anônima) | Gera o código de pareamento; recusa a sessão da equipe |
+| `fn_vincular_com_codigo(email, codigo)` | Celular | Vincula com o código de acesso; recusa a sessão da equipe sem gastar o código |
+| `fn_parear_dispositivo(codigo, id_usuario)` | Staff/Admin | Vincula o celular que mostrou o código e credencia o avaliador; recusa código vindo da sessão da equipe |
 | `fn_gerar_codigo_acesso(id_usuario)` | Staff/Admin | Gera o código de acesso (mostrado uma única vez) |
 | `fn_desvincular_dispositivo(id_usuario)` | Staff/Admin | Revoga o aparelho e os códigos e libera a trava |
 | `fn_situacao_vinculos(id_evento)` | Staff/Admin | Quem já tem aparelho vinculado |
