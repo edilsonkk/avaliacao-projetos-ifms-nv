@@ -1,0 +1,11 @@
+{
+  "name": "Sistema de Avaliação de Projetos IFMS",
+  "short_name": "Avaliação IFMS",
+  "description": "Credenciamento, sorteio e avaliação de projetos nas feiras científicas do IFMS",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#047857",
+  "icons": [{ "src": "/icone.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" }]
+}

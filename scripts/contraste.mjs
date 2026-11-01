@@ -19,6 +19,10 @@ const PARES = [
   ['Texto principal no tema escuro', 'oklch(96.8% 0.007 247.896)', 'oklch(27.9% 0.041 260.031)', 4.5],
   ['Texto secundário no tema escuro', 'oklch(70.4% 0.04 256.788)', 'oklch(20.8% 0.042 265.755)', 4.5],
   ['Informação no tema escuro', 'oklch(82.8% 0.111 230.318)', 'oklch(20.8% 0.042 265.755)', 4.5],
+  ['Verde como texto no tema claro (--cor-acao-texto)', 'oklch(50.8% 0.118 165.612)', '#ffffff', 4.5],
+  ['Verde como texto no tema escuro (--cor-acao-texto)', 'oklch(76.5% 0.177 163.223)', 'oklch(20.8% 0.042 265.755)', 4.5],
+  ['Âmbar como texto no tema claro (--cor-aviso-texto)', 'oklch(55.5% 0.163 48.998)', '#ffffff', 4.5],
+  ['Âmbar como texto no tema escuro (--cor-aviso-texto)', 'oklch(87.9% 0.169 91.605)', 'oklch(20.8% 0.042 265.755)', 4.5],
   // WCAG 1.4.11: contorno que identifica um controle precisa de 3:1
   ['Borda de campo no tema claro (--cor-borda-controle)', 'oklch(55.4% 0.046 257.417)', '#ffffff', 3.0],
   ['Borda de campo no tema escuro (--cor-borda-controle)', 'oklch(70.4% 0.04 256.788)', 'oklch(27.9% 0.041 260.031)', 3.0],
