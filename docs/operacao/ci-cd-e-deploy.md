@@ -16,7 +16,7 @@ manual ───────────► deploy-frontend.yml (rollback para u
 
 | Workflow | Quando roda | O que faz |
 |---|---|---|
-| `ci.yml` | PR e push em `main` | `npm ci`, `npm run lint`, `npx vitest run`, `npm run build` |
+| `ci.yml` | PR e push em `main` | `npm ci`, `npm run lint` (tipagem + guardas de interface), `npx vitest run` (inclui o axe das telas), `npm run build` |
 | `security.yml` | PR, push em `main`, toda segunda 06:00 UTC, manual | CodeQL, Trivy (bloqueia HIGH/CRITICAL), `npm audit --audit-level=high` |
 | `release.yml` | Push em `main` | release-please; ao publicar versão, chama migrations e deploy |
 | `supabase-migrations.yml` | PR com migrations (validação); chamado pelo release; manual | Validação, backup e `supabase db push` |

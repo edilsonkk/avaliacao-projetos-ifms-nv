@@ -15,6 +15,7 @@ vi.mock('@/lib/supabase', () => ({
 import { supabase } from '@/lib/supabase';
 import { Cabecalho } from '@/components/layout/Cabecalho';
 import { ProvedorAvisos } from '@/components/ui';
+import { esperarSemViolacoesDeAcessibilidade } from '@/test/axe';
 
 const renderizar = (props: Partial<React.ComponentProps<typeof Cabecalho>> = {}) =>
   render(
@@ -193,5 +194,20 @@ describe('Cabecalho - sair', () => {
     // Assert
     expect(supabase.auth.signOut).toHaveBeenCalled();
     expect(aoSair).toHaveBeenCalled();
+  });
+});
+
+describe('Cabecalho - auditoria automática', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    estado.ambiente = 'producao';
+  });
+
+  it('não deve ter violação de acessibilidade', async () => {
+    // Arrange
+    const { container } = renderizar({ papel: 'admin', ao_sair: vi.fn() });
+
+    // Act / Assert
+    await esperarSemViolacoesDeAcessibilidade(container);
   });
 });

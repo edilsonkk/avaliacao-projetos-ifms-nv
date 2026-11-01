@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { TelaAvaliador } from '@/features/avaliacao';
 import { ProvedorAvisos } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
+import { esperarSemViolacoesDeAcessibilidade } from '@/test/axe';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -138,5 +139,14 @@ describe('TelaAvaliador - aviso antes de sair e desvincular', () => {
 
     // Assert
     expect(screen.getAllByRole('tooltip')[0]).toHaveTextContent(/Sair desvincula este celular/i);
+  });
+
+  it('não deve ter violação de acessibilidade na tela', async () => {
+    // Arrange
+    const { container } = montarTela();
+    await screen.findAllByRole('button', { name: /sair e desvincular/i });
+
+    // Act / Assert
+    await esperarSemViolacoesDeAcessibilidade(container);
   });
 });

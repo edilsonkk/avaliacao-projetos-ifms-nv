@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TelaLogin } from '@/features/auth';
 import { supabase } from '@/lib/supabase';
 import * as vinculo from '@/features/auth/vinculoAparelho';
+import { esperarSemViolacoesDeAcessibilidade } from '@/test/axe';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -213,5 +214,13 @@ describe('TelaLogin', () => {
       expect(aoAutenticarSucesso).not.toHaveBeenCalled();
       expect(screen.getByRole('button', { name: /entrar no painel admin/i })).toBeInTheDocument();
     });
+  });
+
+  it('não deve ter violação de acessibilidade no formulário de senha', async () => {
+    // Arrange
+    const { container } = render(<TelaLogin abaInicial="admin" />);
+
+    // Act / Assert
+    await esperarSemViolacoesDeAcessibilidade(container);
   });
 });

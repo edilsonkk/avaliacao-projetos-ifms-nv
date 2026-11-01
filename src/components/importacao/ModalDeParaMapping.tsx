@@ -233,7 +233,7 @@ export const ModalDeParaMapping: React.FC<ModalDeParaMappingProps> = ({
         <div className="p-6 overflow-y-auto space-y-4 flex-1">
           <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-xs">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-100 dark:bg-slate-900 uppercase font-black text-[10px] text-slate-600 dark:text-slate-400 tracking-wider">
+              <thead className="bg-slate-100 dark:bg-slate-900 uppercase font-black text-legenda text-slate-600 dark:text-slate-400 tracking-wider">
                 <tr>
                   <th className="px-4 py-3">Termo da Planilha</th>
                   <th className="px-4 py-3">Tipo</th>
@@ -258,17 +258,17 @@ export const ModalDeParaMapping: React.FC<ModalDeParaMappingProps> = ({
                       {/* Tipo */}
                       <td className="px-4 py-3.5">
                         {item.tipo === 'instituicao' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-legenda font-bold bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                             <Building2 className="w-3 h-3" />
                             Instituição
                           </span>
                         ) : item.tipo === 'modalidade' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-legenda font-bold bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
                             <Layers className="w-3 h-3" />
                             Modalidade
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-legenda font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                             <Database className="w-3 h-3" />
                             Área
                           </span>
@@ -281,12 +281,12 @@ export const ModalDeParaMapping: React.FC<ModalDeParaMappingProps> = ({
                           <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-semibold text-xs">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                             <span>{item.sugestao_nome}</span>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 text-emerald-800 dark:text-emerald-300">
+                            <span className="text-legenda font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 text-emerald-800 dark:text-emerald-300">
                               {item.confianca_percentual}% match
                             </span>
                           </div>
                         ) : (
-                          <span className="text-slate-400 dark:text-slate-500 italic text-[11px] flex items-center gap-1">
+                          <span className="text-slate-400 dark:text-slate-500 italic text-legenda flex items-center gap-1">
                             Sem correspondência ≥ 85%
                           </span>
                         )}

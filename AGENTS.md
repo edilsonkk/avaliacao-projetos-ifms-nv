@@ -14,10 +14,11 @@ SPA React 19 + Vite + Tailwind 4 + TypeScript sobre Supabase/PostgreSQL, usada e
 ```bash
 npm install          # dependências (.npmrc usa legacy-peer-deps)
 npm run dev          # http://localhost:3000
-npm run lint         # tsc --noEmit
+npm run lint         # tsc --noEmit + guardas de interface (scripts/guardas.mjs)
 npm test             # vitest run (todos os testes)
 npx vitest run <caminho>   # um arquivo de teste
 npm run build        # build de produção
+npm run contraste    # confere o contraste dos tokens de cor (WCAG)
 npx supabase@2.122.0 start      # Supabase local (requer Docker)
 npx supabase@2.122.0 db reset   # recria o banco local com migrations + seed
 npx supabase@2.122.0 migration new <nome>   # nova migration
