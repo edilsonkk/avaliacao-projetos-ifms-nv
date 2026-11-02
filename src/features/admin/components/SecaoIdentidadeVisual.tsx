@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { ImageOff, Trash2, Upload } from 'lucide-react';
+import { ImageOff, Trash2 } from 'lucide-react';
 import { Botao, useAvisos } from '@/components/ui';
 import { useIdentidadeVisual } from '@/components/layout/IdentidadeVisual';
 import {
