@@ -67,6 +67,14 @@ Exceção: quem tem avaliação em andamento (trava ativa) conclui normalmente a
 
 Para encerrar a feira, o Admin define `sistema_liberado = false`.
 
+## Identidade visual
+
+Cada evento pode ter um **ícone** e uma **imagem** próprios, enviados na engrenagem
+([como](../arquitetura/configuracao.md#identidade-visual-do-evento)). O ícone substitui o "IF" do cabeçalho e
+vira o favicon; a imagem aparece no login, no autocadastro, no Telão, nos relatórios impressos e no topo da tela
+do avaliador. Trocar de evento ativo troca as duas, porque ficam em `eventos`. Sem ícone enviado, o cabeçalho
+mostra um marcador de pendência em vez de inventar um logotipo.
+
 ## Reset global
 
 `admin_reset_global(p_id_evento)` apaga **atomicamente** todos os dados do evento: respostas, avaliações, fila,

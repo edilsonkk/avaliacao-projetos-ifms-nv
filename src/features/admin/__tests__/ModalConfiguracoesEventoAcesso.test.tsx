@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ModalConfiguracoesEvento } from '@/features/admin';
 import { supabase } from '@/lib/supabase';
+import { ProvedorAvisos } from '@/components/ui';
+import { ProvedorIdentidadeVisual } from '@/components/layout/IdentidadeVisual';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: { from: vi.fn(), rpc: vi.fn() },
@@ -49,7 +51,7 @@ const mockarEventos = (erroUpdate: { code: string; message: string } | null = nu
 };
 
 const renderizar = () =>
-  render(<ModalConfiguracoesEvento id_evento_ativo={ID_EVENTO} nome_evento_atual="FETEC MS 2026" ao_fechar={vi.fn()} />);
+  render(<ProvedorAvisos><ProvedorIdentidadeVisual><ModalConfiguracoesEvento id_evento_ativo={ID_EVENTO} nome_evento_atual="FETEC MS 2026" ao_fechar={vi.fn()} /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
 describe('ModalConfiguracoesEvento - acesso dos avaliadores', () => {
   beforeEach(() => {
@@ -157,7 +159,7 @@ describe('ModalConfiguracoesEvento - acesso dos avaliadores', () => {
     // Arrange
     const user = userEvent.setup();
     const ao_fechar = vi.fn();
-    render(<ModalConfiguracoesEvento id_evento_ativo={ID_EVENTO} nome_evento_atual="FETEC MS 2026" ao_fechar={ao_fechar} />);
+    render(<ProvedorAvisos><ProvedorIdentidadeVisual><ModalConfiguracoesEvento id_evento_ativo={ID_EVENTO} nome_evento_atual="FETEC MS 2026" ao_fechar={ao_fechar} /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     // Act
     await user.click(await screen.findByRole('button', { name: /fechar configurações/i }));

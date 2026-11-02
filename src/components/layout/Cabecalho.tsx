@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Sun, Moon, Laptop, Shield, UserCheck, Award, Tv, LogOut } from 'lucide-react';
+import { Sun, Moon, Laptop, Shield, UserCheck, Award, Tv, LogOut, X } from 'lucide-react';
 import { ambiente_supabase, supabase } from '@/lib/supabase';
 import { useAvisos } from '@/components/ui';
+import { useIdentidadeVisual } from '@/components/layout/IdentidadeVisual';
 import {
   ROTULOS_ESCALA_TEXTO,
   aplicarEscalaTexto,
@@ -72,6 +73,7 @@ const classeBotaoNavegacao = (ativo: boolean) =>
  */
 export const Cabecalho: React.FC<PropriedadesCabecalho> = ({ tela_atual, ao_mudar_tela, ao_sair, papel: propPapel }) => {
   const { confirmar } = useAvisos();
+  const { identidade } = useIdentidadeVisual();
   const [tema, setTema] = useState<Tema>(lerTema);
   const [escalaTexto, setEscalaTexto] = useState<EscalaTexto>(lerEscalaTexto);
 
@@ -124,12 +126,24 @@ export const Cabecalho: React.FC<PropriedadesCabecalho> = ({ tela_atual, ao_muda
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2 min-h-16">
           {/* Identidade: encolhe e corta o texto em vez de empurrar a faixa */}
           <div className="order-1 flex items-center gap-3 min-w-0 flex-1">
-            <span
-              aria-hidden="true"
-              className="h-10 w-10 shrink-0 rounded-controle bg-acao text-white flex items-center justify-center font-bold text-corpo shadow-cartao"
-            >
-              IF
-            </span>
+            {identidade.url_icone ? (
+              <img
+                src={identidade.url_icone}
+                alt=""
+                aria-hidden="true"
+                className="h-10 w-10 shrink-0 rounded-controle object-contain bg-superficie-alta"
+              />
+            ) : (
+              /* Sem ícone enviado: marcador neutro de pendência, não um erro do sistema */
+              <span
+                role="img"
+                aria-label="Ícone do evento não enviado — envie nas Configurações do evento"
+                title="Ícone do evento não enviado — envie nas Configurações do evento"
+                className="h-10 w-10 shrink-0 rounded-controle border-2 border-dashed border-borda-controle text-texto-secundario flex items-center justify-center"
+              >
+                <X aria-hidden="true" className="w-5 h-5" />
+              </span>
+            )}
             <div className="min-w-0">
               <p className="text-apoio sm:text-corpo font-bold text-texto truncate" title="Sistema de Avaliação de Projetos IFMS">
                 <span className="hidden sm:inline">Sistema de Avaliação de Projetos IFMS</span>

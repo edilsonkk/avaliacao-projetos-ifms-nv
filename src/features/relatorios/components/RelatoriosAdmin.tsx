@@ -29,6 +29,7 @@ import { buscarTodas } from '@/lib/buscarTodas';
 import { baixarCsv } from '@/lib/csv';
 import { tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { CabecalhoOrdenavel, compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { ImagemEvento } from '@/components/layout/IdentidadeVisual';
 
 // ==============================================================================
 // INTERFACES DOS RELATÓRIOS
@@ -1421,7 +1422,7 @@ export const RelatoriosAdmin: React.FC<{
 
       {/* CABEÇALHO OFICIAL EXCLUSIVO PARA IMPRESSÃO EM PDF */}
       <div className="hidden print:block print:mb-6 border-b-2 border-slate-900 pb-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-black text-slate-900 uppercase tracking-tight">
               {indicadores?.nome_evento || 'Sistema de Avaliação de Projetos - IFMS'}
@@ -1434,6 +1435,8 @@ export const RelatoriosAdmin: React.FC<{
               {aba_ativa === 'indicadores' && `Indicadores do evento: ${indicadores?.nome_evento || 'Evento Ativo'}`}
             </h2>
           </div>
+          {/* Identidade visual do evento no cabeçalho impresso */}
+          <ImagemEvento altura="baixa" className="max-w-[180px] print:max-w-[140px]" />
           <div className="text-right text-xs font-semibold text-slate-600">
             <p>Emissão: {new Date().toLocaleString('pt-BR')}</p>
             {indicadores?.data_evento && (

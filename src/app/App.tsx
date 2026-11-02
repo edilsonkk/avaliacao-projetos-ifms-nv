@@ -17,6 +17,7 @@ import { iniciarKeepAliveSessao } from '@/lib/keepAliveSessao';
 import { iniciarExpiracaoPorInatividade } from '@/lib/expiracaoSessao';
 import { ProvedorAvisos, useAvisos } from '@/components/ui';
 import { aplicarPreferenciasVisuais, limparSessaoMantendoPreferencias } from '@/lib/preferenciasVisuais';
+import { ProvedorIdentidadeVisual } from '@/components/layout/IdentidadeVisual';
 import { obterPerfilSessao, lerPoliticaSeguranca, EVENTO_POLITICA_ALTERADA } from '@/features/auth';
 
 function ConteudoApp() {
@@ -251,7 +252,9 @@ function ConteudoApp() {
 export default function App() {
   return (
     <ProvedorAvisos>
-      <ConteudoApp />
+      <ProvedorIdentidadeVisual>
+        <ConteudoApp />
+      </ProvedorIdentidadeVisual>
     </ProvedorAvisos>
   );
 }

@@ -14,6 +14,7 @@ Migrations de referência:
 | `20261028210000_identidade_avaliador_staff.sql` | Vínculo do celular ao avaliador, códigos de acesso, conta do Staff |
 | `20261028220000_rls_por_papel.sql` | RLS por papel; sorteio e notas só em nome do avaliador do aparelho |
 | `20261101190000_sessao_do_aparelho_do_avaliador.sql` | O vínculo do celular exige sessão só do aparelho (não a do Admin/Staff) |
+| `20261101200000_identidade_visual_evento.sql` | Bucket `identidade-visual`: leitura pública, escrita só do Admin |
 
 Decisões: [ADR 0006](../decisoes/0006-rls-escrita-restrita-a-admin.md),
 [ADR 0007](../decisoes/0007-gravacao-de-notas-via-rpc.md) e
@@ -76,6 +77,7 @@ Base: `ALL` para o Admin em todas as tabelas; `TRUNCATE` revogado de todos.
 | `historico_impedimentos` | — | ler os próprios (criar via `fn_registrar_impedimento`) | — |
 | `avaliador_modalidades_bloqueadas`, `avaliador_areas` | — | ler as próprias | ler e gravar |
 | `dispositivos_avaliador`, `pareamentos_pendentes`, `codigos_acesso` | — | — (só via funções) | — (só via funções) |
+| `storage.objects` do bucket `identidade-visual` | ler | ler | ler e gravar |
 
 Regras de coluna que a RLS não alcança passam por funções:
 - **Check-in do projeto:** o Staff usa `fn_check_in_projeto`, e não `UPDATE` em `projetos`.

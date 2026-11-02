@@ -26,6 +26,8 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 import { TelaAdmin } from '@/features/admin';
+import { ProvedorAvisos } from '@/components/ui';
+import { ProvedorIdentidadeVisual } from '@/components/layout/IdentidadeVisual';
 
 describe('Rotina de Testes de Regressão: Reset Global do Evento Ativo', () => {
   const criarQueryChain = (resultado: any) => {
@@ -117,7 +119,7 @@ describe('Rotina de Testes de Regressão: Reset Global do Evento Ativo', () => {
   });
 
   it('1. VALIDAÇÃO DE SEGURANÇA DA ETAPA 1: exige nome exato do evento ativo para habilitar botão de avanço', async () => {
-    const { unmount } = render(<TelaAdmin />);
+    const { unmount } = render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     // 1. Abre configurações
     const btnConfig = await screen.findByTitle('Configurações Gerais');
@@ -154,7 +156,7 @@ describe('Rotina de Testes de Regressão: Reset Global do Evento Ativo', () => {
   });
 
   it('2. EXECUÇÃO ESTRITA DA RPC E BLINDAGEM CONTRA EXCLUSÃO DIRETA: chama admin_reset_global com p_id_evento e nunca .delete()', async () => {
-    const { unmount } = render(<TelaAdmin />);
+    const { unmount } = render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     // Abre configurações e avança até Etapa 2
     fireEvent.click(await screen.findByTitle('Configurações Gerais'));
@@ -182,7 +184,7 @@ describe('Rotina de Testes de Regressão: Reset Global do Evento Ativo', () => {
   });
 
   it('3. ATUALIZAÇÃO IMEDIATA DO PAINEL E FEEDBACK MODERNO: fecha modal, exibe toast e atualiza indicadores', async () => {
-    const { unmount } = render(<TelaAdmin />);
+    const { unmount } = render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     fireEvent.click(await screen.findByTitle('Configurações Gerais'));
     fireEvent.click(await screen.findByRole('button', { name: /reset global/i }));
@@ -212,7 +214,7 @@ describe('Rotina de Testes de Regressão: Reset Global do Evento Ativo', () => {
       )
     );
 
-    const { unmount } = render(<TelaAdmin />);
+    const { unmount } = render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     fireEvent.click(await screen.findByTitle('Configurações Gerais'));
     fireEvent.click(await screen.findByRole('button', { name: /reset global/i }));

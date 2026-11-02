@@ -75,6 +75,23 @@ O login do Admin exige uma conta no Supabase Auth **e** uma linha em `usuarios` 
    ON CONFLICT (id_usuario) DO UPDATE SET papel = 'ADMIN';
    ```
 
+## Identidade visual do evento
+
+O Admin envia duas imagens na **engrenagem → Identidade Visual do Evento**. Elas vão para o bucket público
+`identidade-visual` do Storage e o endereço fica em `eventos.url_icone` e `eventos.url_imagem_evento`:
+
+| Imagem | Tamanho | Onde aparece |
+|---|---|---|
+| **Ícone do evento** | quadrado, PNG de 256px ou mais, até 512 KB | substitui o "IF" do cabeçalho e vira o ícone da aba do navegador e do atalho no celular |
+| **Imagem do evento** | até 1600px de largura e 2 MB | login, autocadastro, topo do Telão, cabeçalho dos relatórios impressos e topo da tela do avaliador (onde rola para fora ao descer) |
+
+Formatos aceitos: PNG, JPG, WEBP e SVG. **Prefira PNG no ícone**: o Safari não aceita SVG no ícone de atalho do
+iPhone. Sem ícone enviado, o cabeçalho mostra um marcador de pendência (um "X" tracejado) e a aba usa o
+`public/icone.svg` do repositório.
+
+O envio grava na hora, sem esperar o "Salvar" do formulário, e a URL leva `?v=` para o navegador não insistir na
+imagem antiga. Quem pode gravar é a policy do banco (`is_admin()`): Staff e visitante só leem.
+
 ## Criar um membro do Staff
 
 1. Admin: cadastre a pessoa no **Gestor de Staff** (papel `STAFF`), com o e-mail que ela vai usar.

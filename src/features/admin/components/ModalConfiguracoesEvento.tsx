@@ -12,6 +12,7 @@ import { Settings, X, Save, Loader2, CheckCircle2, AlertTriangle, RotateCcw, His
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { Dica } from '@/components/ui/Dica';
 import { SecaoSegurancaContas } from './SecaoSegurancaContas';
+import { SecaoIdentidadeVisual } from './SecaoIdentidadeVisual';
 
 const MENSAGEM_SEM_EVENTO_ATIVO =
   'Nenhum evento ativo. Crie um evento ou ative um evento anterior antes de salvar as configurações.';
@@ -453,6 +454,8 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
 
               {/* Coluna 3: gestão e zona de perigo */}
               <div className="space-y-4 min-w-0 md:col-span-2 lg:col-span-1">
+                <SecaoIdentidadeVisual id_evento_ativo={id_evento_ativo} className={secao} classeTitulo={tituloSecao} />
+
                 <SecaoSegurancaContas />
 
                 <section aria-labelledby="secao-gestao" className={secao}>

@@ -5,6 +5,7 @@ import { VinculoAvaliador } from './VinculoAvaliador';
 import { urlRedefinirSenha } from './TelaRedefinirSenha';
 import { obterPerfilSessao, salvarPerfilLocal, type PerfilSessao } from '../vinculoAparelho';
 import { CadastroSegundoFator, VerificacaoSegundoFator } from './SegundoFator';
+import { ImagemEvento } from '@/components/layout/IdentidadeVisual';
 import { POLITICA_PADRAO, etapaSegundoFator, lerPoliticaSeguranca, type EtapaSegundoFator } from '../segundoFator';
 
 export type AbaLogin = 'avaliador' | 'staff' | 'admin';
@@ -211,6 +212,8 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
     <main className="max-w-md mx-auto py-8 px-4 font-sans">
       <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-700 shadow-xl space-y-6">
         
+        <ImagemEvento />
+
         {/* INTERFACE COM 3 ABAS (TABS) */}
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800">
           <button

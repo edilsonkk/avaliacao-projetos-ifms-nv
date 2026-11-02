@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ModalConfiguracoesEvento } from '@/features/admin';
 import { supabase } from '@/lib/supabase';
+import { ProvedorAvisos } from '@/components/ui';
+import { ProvedorIdentidadeVisual } from '@/components/layout/IdentidadeVisual';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -20,7 +22,13 @@ describe('ModalConfiguracoesEvento sem evento ativo', () => {
   });
 
   const renderizar = (props: Partial<React.ComponentProps<typeof ModalConfiguracoesEvento>> = {}) =>
-    render(<ModalConfiguracoesEvento id_evento_ativo="" ao_fechar={vi.fn()} {...props} />);
+    render(
+      <ProvedorAvisos>
+        <ProvedorIdentidadeVisual>
+          <ModalConfiguracoesEvento id_evento_ativo="" ao_fechar={vi.fn()} {...props} />
+        </ProvedorIdentidadeVisual>
+      </ProvedorAvisos>,
+    );
 
   it('avisa que não há evento ativo e desabilita o salvamento', async () => {
     // Arrange / Act

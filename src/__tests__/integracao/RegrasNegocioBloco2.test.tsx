@@ -32,6 +32,8 @@ import { GestorProjetos } from '@/features/projetos';
 import { GestorStaff } from '@/features/staff';
 import { GestorInstituicoes } from '@/features/cadastros';
 import { GestorQuestionarios } from '@/features/cadastros';
+import { ProvedorAvisos } from '@/components/ui';
+import { ProvedorIdentidadeVisual } from '@/components/layout/IdentidadeVisual';
 
 describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
   const criarQueryChain = (resultado: any) => {
@@ -199,7 +201,7 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
   });
 
   it('1. CARD AVALIADORES: sem contadores internos e exibe badge de credenciamento ao abrir o modal', async () => {
-    const { unmount } = render(<TelaAdmin />);
+    const { unmount } = render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     await waitFor(() => {
       expect(screen.getByText('Avaliadores')).toBeDefined();
@@ -219,7 +221,7 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
   });
 
   it('2. CARD EQUIPE STAFF: sem contadores internos e exibe badge de credenciamento ao abrir o modal', async () => {
-    const { unmount } = render(<TelaAdmin />);
+    const { unmount } = render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     await waitFor(() => {
       expect(screen.getByText('Equipe Staff')).toBeDefined();
@@ -239,7 +241,7 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
   });
 
   it('3. BOTÃO DE CONFIGURAÇÕES (ENGRENAGEM): abre configurações gerais contendo acesso para Gestão de Administradores', async () => {
-    const { unmount } = render(<TelaAdmin />);
+    const { unmount } = render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Configurações Gerais/i })).toBeDefined();
@@ -302,7 +304,7 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
   });
 
   it('5. CARD QUESTIONÁRIOS: exibe padrão limpo sem subtítulo', async () => {
-    const { unmount } = render(<TelaAdmin />);
+    const { unmount } = render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     await waitFor(() => {
       expect(screen.getByText('Questionários')).toBeDefined();
@@ -313,7 +315,7 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
   });
 
   it('6. ESTRUTURA DO BLOCO 2 (PESSOAL & FORMULÁRIOS): deve conter 5 cards (Avaliadores, Staff, Questionários, Instituições e Modalidades e Níveis)', async () => {
-    const { unmount } = render(<TelaAdmin />);
+    const { unmount } = render(<ProvedorAvisos><ProvedorIdentidadeVisual><TelaAdmin /></ProvedorIdentidadeVisual></ProvedorAvisos>);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /^Avaliadores$/i })).toBeDefined();
