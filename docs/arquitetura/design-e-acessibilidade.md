@@ -47,7 +47,10 @@ celular. **Nunca use tamanho em px fixo** (`text-[10px]`): ele ignora as duas co
 | `text-legenda` | 12px | **piso absoluto**: selos e cabeçalho de tabela |
 | `text-titulo-3/2/1` | 20 / 24 / 30px | `h3` / `h2` / `h1` |
 
-`--escala-texto` (no `:root`) é o tamanho da raiz; o controle no cabeçalho a move entre 100%, 112,5% e 125%.
+`--escala-texto` (no `:root`) é o tamanho da raiz; o controle no cabeçalho a move entre **100%, 112,5% e 125%**
+(`src/lib/preferenciasVisuais.ts`, chave `tamanho_texto_fecin`). Um script em `index.html` aplica tema e tamanho
+antes da primeira pintura, para a tela não piscar. Por isso nada de tamanho em `px`: só o que está em `rem`
+acompanha a escolha da pessoa e a configuração de fonte do aparelho.
 
 ### Forma
 
@@ -72,6 +75,15 @@ Importe sempre pelo índice: `import { Botao, Campo } from '@/components/ui'`.
 | `Abas` + `PainelAba` | navegação por abas | `role="tablist"/"tab"/"tabpanel"`, tabulação só na aba ativa, setas e Home/End |
 | `Dica` | explicação curta | `role="tooltip"`, abre no toque e fecha com `Esc` |
 | `CabecalhoOrdenavel` | coluna de tabela | `aria-sort` e ordenação pelo teclado |
+
+## Esqueleto da página
+
+`App.tsx` abre com o link **"Pular para o conteúdo"** (primeiro item da tabulação, visível só no foco) apontando
+para o `id="conteudo"` do bloco de tela. O cabeçalho não tem mais `<h1>`: **cada tela tem o seu, único**. A
+navegação é um `<nav aria-label="Telas do sistema">` com `aria-current="page"` na tela ativa.
+
+A camada base aplica `overflow-x: clip` no `<html>` como guarda contra rolagem horizontal — guarda, não desculpa:
+a 360px, `document.documentElement.scrollWidth` tem de continuar igual ao `clientWidth`.
 
 ## Avisos, confirmações e notificações
 
@@ -118,5 +130,5 @@ a razão da WCAG e falha se algum par ficar abaixo do mínimo (4,5:1 para texto,
 
 ## Ainda por fazer
 
-`Tabela` responsiva, o controle de tamanho de texto no cabeçalho, o `ProvedorAvisos` montado no shell da
-aplicação e a migração das telas — ver o plano de execução por etapas.
+`Tabela` responsiva e a migração das telas (avaliador, Staff, Admin, Relatórios, Telão) — ver o plano de execução
+por etapas.

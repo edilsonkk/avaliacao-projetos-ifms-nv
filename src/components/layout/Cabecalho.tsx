@@ -1,6 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Sun, Moon, Laptop, Shield, UserCheck, Award, Tv, LogOut } from 'lucide-react';
 import { ambiente_supabase, supabase } from '@/lib/supabase';
+import {
+  ROTULOS_ESCALA_TEXTO,
+  aplicarEscalaTexto,
+  aplicarTema,
+  lerEscalaTexto,
+  lerTema,
+  limparSessaoMantendoPreferencias,
+  observarTemaDoSistema,
+  type EscalaTexto,
+  type Tema,
+} from '@/lib/preferenciasVisuais';
 
 export type TipoTelaNavegacao = 'avaliador' | 'staff' | 'admin' | 'telao';
 
@@ -11,23 +22,75 @@ interface PropriedadesCabecalho {
   papel?: string;
 }
 
-export const Cabecalho: React.FC<PropriedadesCabecalho> = ({
-  tela_atual,
-  ao_mudar_tela,
-  ao_sair,
-  papel: propPapel,
-}) => {
-  // Estado rigoroso do tema conforme especificação do seletor
-  const [tema, setTema] = useState<string>(
-    localStorage.getItem('tema_fecin') || 'sistema'
-  );
+/** Banco em uso. O texto é curto para caber na faixa; o nome acessível é completo. */
+const AMBIENTES = {
+  local: { texto: 'local', classeTexto: 'text-info', classePonto: 'bg-info', descricao: 'Banco de dados local' },
+  producao: {
+    texto: 'produção',
+    classeTexto: 'text-acao-texto',
+    classePonto: 'bg-acao',
+    descricao: 'Banco de dados de produção',
+  },
+  indefinido: {
+    texto: 'não configurado',
+    classeTexto: 'text-aviso-texto',
+    classePonto: 'bg-aviso',
+    descricao: 'Banco de dados não configurado',
+  },
+} as const;
 
-  const papel = (
-    propPapel ||
-    localStorage.getItem('sessao_papel') ||
-    localStorage.getItem('usuario_perfil') ||
-    'avaliador'
-  ).toLowerCase();
+const TEMAS: { valor: Tema; rotulo: string; Icone: typeof Sun }[] = [
+  { valor: 'claro', rotulo: 'Tema claro', Icone: Sun },
+  { valor: 'escuro', rotulo: 'Tema escuro', Icone: Moon },
+  { valor: 'sistema', rotulo: 'Tema do sistema', Icone: Laptop },
+];
+
+const ESCALAS: { valor: EscalaTexto; glifo: string; classe: string }[] = [
+  { valor: 'padrao', glifo: 'A', classe: 'text-legenda' },
+  { valor: 'grande', glifo: 'A', classe: 'text-apoio' },
+  { valor: 'maior', glifo: 'A', classe: 'text-corpo' },
+];
+
+const classeBotaoPreferencia = (ativo: boolean) =>
+  `inline-flex items-center justify-center min-h-11 min-w-11 rounded-controle font-bold transition-colors ${
+    ativo ? 'bg-superficie text-acao-texto shadow-cartao' : 'text-texto-secundario hover:bg-superficie'
+  }`;
+
+const classeBotaoNavegacao = (ativo: boolean) =>
+  `inline-flex items-center gap-1.5 min-h-11 px-3 rounded-controle text-apoio font-bold transition-colors shrink-0 ${
+    ativo ? 'bg-superficie text-acao-texto shadow-cartao' : 'text-texto-secundario hover:bg-superficie'
+  }`;
+
+/**
+ * Faixa fixa do topo: identidade, banco em uso, navegação por papel e as preferências
+ * de tema e de tamanho de texto.
+ *
+ * No celular a faixa tem duas linhas (identidade e preferências em cima, navegação embaixo).
+ * Antes era uma linha só, com o título sem `truncate` e a navegação com largura mínima de
+ * 320px: a soma passava da largura da tela e a página inteira deslizava para os lados.
+ */
+export const Cabecalho: React.FC<PropriedadesCabecalho> = ({ tela_atual, ao_mudar_tela, ao_sair, papel: propPapel }) => {
+  const [tema, setTema] = useState<Tema>(lerTema);
+  const [escalaTexto, setEscalaTexto] = useState<EscalaTexto>(lerEscalaTexto);
+
+  const papel = (propPapel || localStorage.getItem('sessao_papel') || localStorage.getItem('usuario_perfil') || 'avaliador').toLowerCase();
+  const ambiente = AMBIENTES[ambiente_supabase ?? 'indefinido'];
+
+  const escolherTema = useCallback((novo: Tema) => {
+    setTema(novo);
+    aplicarTema(novo);
+  }, []);
+
+  const escolherEscala = useCallback((nova: EscalaTexto) => {
+    setEscalaTexto(nova);
+    aplicarEscalaTexto(nova);
+  }, []);
+
+  useEffect(() => {
+    aplicarTema(tema);
+    // No modo "sistema", acompanha a troca de tema do aparelho sem recarregar a página
+    return observarTemaDoSistema(() => aplicarTema(tema));
+  }, [tema]);
 
   const handleLogout = async () => {
     try {
@@ -35,191 +98,137 @@ export const Cabecalho: React.FC<PropriedadesCabecalho> = ({
     } catch (err) {
       console.warn('Erro ao realizar signOut no Supabase Auth:', err);
     }
-    localStorage.removeItem('sessao_id_usuario');
-    localStorage.removeItem('sessao_papel');
-    localStorage.removeItem('sessao_email');
-    localStorage.clear();
-    if (ao_sair) {
-      ao_sair();
-    }
+    limparSessaoMantendoPreferencias();
+    if (ao_sair) ao_sair();
   };
 
-  // useEffect rigoroso para aplicação do modo escuro no DOM e persistência em localStorage
-  useEffect(() => {
-    const isDark =
-      tema === 'escuro' ||
-      (tema === 'sistema' && typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-
-    localStorage.setItem('tema_fecin', tema);
-  }, [tema]);
+  const larguraMaxima = tela_atual === 'staff' ? 'max-w-[1800px]' : 'max-w-7xl';
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-white/95 dark:bg-slate-900/95 backdrop-blur border-slate-200 dark:border-slate-800 transition-colors duration-200 shadow-xs">
-      <div className={`mx-auto px-4 sm:px-6 lg:px-8 transition-all duration-200 ${tela_atual === 'staff' ? 'max-w-[1800px]' : 'max-w-7xl'}`}>
-        <div className="flex items-center justify-between h-16">
-          {/* Logo e Título do Sistema */}
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-emerald-600 dark:bg-emerald-500 text-white flex items-center justify-center font-bold text-lg shadow-sm">
+    <header className="sticky top-0 z-40 w-full border-b border-borda bg-superficie/95 backdrop-blur shadow-cartao">
+      <div className={`mx-auto px-4 sm:px-6 lg:px-8 ${larguraMaxima}`}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2 min-h-16">
+          {/* Identidade: encolhe e corta o texto em vez de empurrar a faixa */}
+          <div className="order-1 flex items-center gap-3 min-w-0 flex-1">
+            <span
+              aria-hidden="true"
+              className="h-10 w-10 shrink-0 rounded-controle bg-acao text-white flex items-center justify-center font-bold text-corpo shadow-cartao"
+            >
               IF
-            </div>
-            <div>
-              <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight">
-                Sistema de Avaliação de Projetos IFMS
-              </h1>
-              <p
-                role="status"
-                aria-label="Ambiente do banco de dados"
-                className={`text-xs flex items-center gap-1.5 ${
-                  ambiente_supabase === 'local'
-                    ? 'text-sky-700 dark:text-sky-300'
-                    : ambiente_supabase === 'producao'
-                      ? 'text-red-700 dark:text-red-400 font-semibold'
-                      : 'text-amber-700 dark:text-amber-400'
-                }`}
-              >
-                <span
-                  className={`inline-block w-2 h-2 rounded-full ${
-                    ambiente_supabase === 'local' ? 'bg-sky-500' : ambiente_supabase === 'producao' ? 'bg-red-500' : 'bg-amber-500'
-                  }`}
-                ></span>
-                {ambiente_supabase === 'local'
-                  ? 'Supabase LOCAL'
-                  : ambiente_supabase === 'producao'
-                    ? 'Supabase PRODUÇÃO'
-                    : 'Supabase não configurado'}
+            </span>
+            <div className="min-w-0">
+              <p className="text-apoio sm:text-corpo font-bold text-texto truncate" title="Sistema de Avaliação de Projetos IFMS">
+                <span className="hidden sm:inline">Sistema de Avaliação de Projetos IFMS</span>
+                <span className="sm:hidden">Avaliação de Projetos</span>
+              </p>
+              <p role="status" aria-label={ambiente.descricao} title={ambiente.descricao} className={`flex items-center gap-1.5 text-legenda font-semibold truncate ${ambiente.classeTexto}`}>
+                <span aria-hidden="true" className={`inline-block w-2 h-2 rounded-full shrink-0 ${ambiente.classePonto}`}></span>
+                {ambiente.texto}
               </p>
             </div>
           </div>
 
-          {/* Navegação e Seletor de Tema */}
-          <div className="flex items-center gap-2 sm:gap-4">
-            <nav className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl overflow-x-auto max-w-xs sm:max-w-none">
-              {papel === 'avaliador' && (
+          {/* Preferências: ficam à direita na primeira linha, no celular e no desktop */}
+          <div className="order-2 sm:order-3 flex items-center gap-2 shrink-0">
+            <div role="group" aria-label="Tamanho do texto" className="flex items-center gap-0.5 p-1 bg-superficie-alta border border-borda rounded-controle">
+              {ESCALAS.map(({ valor, glifo, classe }) => (
                 <button
+                  key={valor}
                   type="button"
-                  onClick={() => ao_mudar_tela('avaliador')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg transition-all shrink-0 ${
-                    tela_atual === 'avaliador'
-                      ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
+                  onClick={() => escolherEscala(valor)}
+                  aria-label={ROTULOS_ESCALA_TEXTO[valor]}
+                  aria-pressed={escalaTexto === valor}
+                  title={ROTULOS_ESCALA_TEXTO[valor]}
+                  className={`${classeBotaoPreferencia(escalaTexto === valor)} ${classe}`}
                 >
-                  <Award className="w-4 h-4" />
-                  <span>Avaliador</span>
+                  {glifo}
                 </button>
-              )}
+              ))}
+            </div>
 
-              {(papel === 'staff' || papel === 'admin') && (
+            <div role="group" aria-label="Tema" className="flex items-center gap-0.5 p-1 bg-superficie-alta border border-borda rounded-controle">
+              {TEMAS.map(({ valor, rotulo, Icone }) => (
                 <button
+                  key={valor}
                   type="button"
-                  onClick={() => ao_mudar_tela('staff')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg transition-all shrink-0 ${
-                    tela_atual === 'staff'
-                      ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
+                  onClick={() => escolherTema(valor)}
+                  aria-label={rotulo}
+                  aria-pressed={tema === valor}
+                  title={rotulo}
+                  className={classeBotaoPreferencia(tema === valor)}
                 >
-                  <UserCheck className="w-4 h-4" />
-                  <span className="hidden md:inline">Staff</span>
+                  <Icone aria-hidden="true" className="w-4 h-4" />
                 </button>
-              )}
-
-              {papel === 'admin' && (
-                <button
-                  type="button"
-                  onClick={() => ao_mudar_tela('admin')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg transition-all shrink-0 ${
-                    tela_atual === 'admin'
-                      ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <Shield className="w-4 h-4" />
-                  <span className="hidden md:inline">Admin</span>
-                </button>
-              )}
-
-              {/* Botão Telão: visível apenas quando não estiver no Staff e perfil não for Staff */}
-              {tela_atual !== 'staff' && papel !== 'staff' && (
-                <button
-                  type="button"
-                  onClick={() => ao_mudar_tela('telao')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg transition-all shrink-0 ${
-                    tela_atual === 'telao'
-                      ? 'bg-emerald-600 text-white dark:bg-emerald-500 font-bold shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <Tv className="w-4 h-4" />
-                  <span className="hidden md:inline">Telão</span>
-                </button>
-              )}
-
-              {/* Botão Sair Obrigatório: Limpa estado e localStorage */}
-              {ao_sair && (
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  title="Encerrar sessão e limpar dados locais"
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs sm:text-sm font-bold rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all shrink-0"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Sair</span>
-                </button>
-              )}
-            </nav>
-
-            {/* SELETOR DE TEMA FUNCIONAL: CLARO / ESCURO / SISTEMA */}
-            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-              <button
-                type="button"
-                onClick={() => setTema('claro')}
-                title="Tema Claro"
-                className={`p-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
-                  tema === 'claro'
-                    ? 'bg-white dark:bg-slate-700 text-amber-500 shadow-xs font-bold'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                }`}
-                aria-label="Ativar Tema Claro"
-              >
-                <Sun className="w-4 h-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTema('escuro')}
-                title="Tema Escuro"
-                className={`p-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
-                  tema === 'escuro'
-                    ? 'bg-white dark:bg-slate-700 text-indigo-400 shadow-xs font-bold'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                }`}
-                aria-label="Ativar Tema Escuro"
-              >
-                <Moon className="w-4 h-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTema('sistema')}
-                title="Tema do Sistema"
-                className={`p-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
-                  tema === 'sistema'
-                    ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                }`}
-                aria-label="Ativar Tema do Sistema"
-              >
-                <Laptop className="w-4 h-4" />
-              </button>
+              ))}
             </div>
           </div>
+
+          {/* Navegação: segunda linha no celular, meio da faixa no desktop */}
+          <nav
+            aria-label="Telas do sistema"
+            className="order-3 sm:order-2 w-full sm:w-auto min-w-0 flex items-center gap-1 p-1 bg-superficie-alta border border-borda rounded-controle overflow-x-auto"
+          >
+            {papel === 'avaliador' && (
+              <button
+                type="button"
+                onClick={() => ao_mudar_tela('avaliador')}
+                aria-current={tela_atual === 'avaliador' ? 'page' : undefined}
+                className={classeBotaoNavegacao(tela_atual === 'avaliador')}
+              >
+                <Award aria-hidden="true" className="w-4 h-4" />
+                Avaliador
+              </button>
+            )}
+
+            {(papel === 'staff' || papel === 'admin') && (
+              <button
+                type="button"
+                onClick={() => ao_mudar_tela('staff')}
+                aria-current={tela_atual === 'staff' ? 'page' : undefined}
+                className={classeBotaoNavegacao(tela_atual === 'staff')}
+              >
+                <UserCheck aria-hidden="true" className="w-4 h-4" />
+                Staff
+              </button>
+            )}
+
+            {papel === 'admin' && (
+              <button
+                type="button"
+                onClick={() => ao_mudar_tela('admin')}
+                aria-current={tela_atual === 'admin' ? 'page' : undefined}
+                className={classeBotaoNavegacao(tela_atual === 'admin')}
+              >
+                <Shield aria-hidden="true" className="w-4 h-4" />
+                Admin
+              </button>
+            )}
+
+            {/* Telão: escondido para o Staff e dentro da tela do Staff */}
+            {tela_atual !== 'staff' && papel !== 'staff' && (
+              <button
+                type="button"
+                onClick={() => ao_mudar_tela('telao')}
+                aria-current={tela_atual === 'telao' ? 'page' : undefined}
+                className={classeBotaoNavegacao(tela_atual === 'telao')}
+              >
+                <Tv aria-hidden="true" className="w-4 h-4" />
+                Telão
+              </button>
+            )}
+
+            {ao_sair && (
+              <button
+                type="button"
+                onClick={handleLogout}
+                title="Encerrar sessão e limpar dados locais"
+                className="inline-flex items-center gap-1.5 min-h-11 px-3 ml-auto rounded-controle text-apoio font-bold text-perigo hover:bg-superficie transition-colors shrink-0"
+              >
+                <LogOut aria-hidden="true" className="w-4 h-4" />
+                Sair
+              </button>
+            )}
+          </nav>
         </div>
       </div>
     </header>
