@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, KeyRound, Loader2, RefreshCw, Smartphone } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AlertTriangle, KeyRound, Loader2, RefreshCw, ShieldOff, Smartphone } from 'lucide-react';
 import { aoRetomarApp } from '@/lib/keepAliveSessao';
 import {
   garantirSessaoAparelho,
   obterPerfilSessao,
+  reiniciarSessaoAparelho,
   solicitarCodigoPareamento,
   vincularComCodigoAcesso,
   type CodigoPareamento,
@@ -37,6 +38,8 @@ export const VinculoAvaliador: React.FC<PropriedadesVinculoAvaliador> = ({ aoVin
   const [email, setEmail] = useState('');
   const [codigo, setCodigo] = useState('');
   const [validando, setValidando] = useState(false);
+  const [sessaoEquipe, setSessaoEquipe] = useState(false);
+  const [trocandoSessao, setTrocandoSessao] = useState(false);
 
   const gerarCodigo = useCallback(async () => {
     setErro(null);
@@ -49,31 +52,54 @@ export const VinculoAvaliador: React.FC<PropriedadesVinculoAvaliador> = ({ aoVin
   }, []);
 
   // Inicia a sessão do aparelho e descobre se ele já está vinculado
-  useEffect(() => {
-    let ativo = true;
-    (async () => {
-      try {
-        await garantirSessaoAparelho();
-        const perfil = await obterPerfilSessao();
-        if (!ativo) return;
-        if (perfil.papel === 'avaliador') {
-          aoVincular(perfil);
-          return;
-        }
-        setMetodos(perfil.metodos_vinculo);
-        const modoInicial: Modo = perfil.metodos_vinculo === 'codigo' ? 'codigo' : 'pareamento';
-        setModo(modoInicial);
-        if (modoInicial === 'pareamento') await gerarCodigo();
-      } catch (e) {
-        if (ativo) setErro((e as Error).message);
-      } finally {
-        if (ativo) setCarregando(false);
+  const prepararAparelho = useCallback(async () => {
+    setErro(null);
+    setCarregando(true);
+    try {
+      await garantirSessaoAparelho();
+      const perfil = await obterPerfilSessao();
+      if (perfil.papel === 'avaliador') {
+        aoVincular(perfil);
+        return;
       }
-    })();
-    return () => {
-      ativo = false;
-    };
+      // Navegador com a conta de Admin/Staff: o aparelho precisa de uma sessão só dele,
+      // senão o vínculo iria para a conta da equipe e esta tela esperaria para sempre.
+      if (perfil.sessao_equipe) {
+        setSessaoEquipe(true);
+        return;
+      }
+      setSessaoEquipe(false);
+      setMetodos(perfil.metodos_vinculo);
+      const modoInicial: Modo = perfil.metodos_vinculo === 'codigo' ? 'codigo' : 'pareamento';
+      setModo(modoInicial);
+      if (modoInicial === 'pareamento') await gerarCodigo();
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setCarregando(false);
+    }
   }, [aoVincular, gerarCodigo]);
+
+  // Uma vez só: `aoVincular` costuma ser recriado a cada renderização da tela de login
+  const preparado = useRef(false);
+  useEffect(() => {
+    if (preparado.current) return;
+    preparado.current = true;
+    void prepararAparelho();
+  }, [prepararAparelho]);
+
+  const usarSessaoDoAparelho = async () => {
+    setTrocandoSessao(true);
+    try {
+      await reiniciarSessaoAparelho();
+      setSessaoEquipe(false);
+      await prepararAparelho();
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setTrocandoSessao(false);
+    }
+  };
 
   // Enquanto mostra o código, consulta o banco até o Staff confirmar o pareamento
   useEffect(() => {
@@ -145,7 +171,28 @@ export const VinculoAvaliador: React.FC<PropriedadesVinculoAvaliador> = ({ aoVin
         </div>
       )}
 
-      {modo === 'pareamento' && (
+      {sessaoEquipe && (
+        <section aria-labelledby="titulo-sessao-equipe" className="space-y-3 p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-2xl">
+          <h2 id="titulo-sessao-equipe" className="flex items-center gap-2 text-sm font-bold text-amber-900 dark:text-amber-200">
+            <ShieldOff aria-hidden="true" className="w-4 h-4 shrink-0" /> Este navegador está logado como Admin ou Staff
+          </h2>
+          <p className="text-xs text-amber-900/90 dark:text-amber-100/90">
+            O celular do avaliador precisa de uma sessão própria. Saia dessa conta aqui (só neste navegador) para
+            vincular o aparelho; nos outros aparelhos a conta continua logada.
+          </p>
+          <button
+            type="button"
+            onClick={usarSessaoDoAparelho}
+            disabled={trocandoSessao}
+            className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-extrabold shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {trocandoSessao ? <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" /> : <Smartphone aria-hidden="true" className="w-4 h-4" />}
+            Sair desta conta e preparar o aparelho
+          </button>
+        </section>
+      )}
+
+      {!sessaoEquipe && modo === 'pareamento' && (
         <section aria-labelledby="titulo-pareamento" className="text-center space-y-3">
           <h2 id="titulo-pareamento" className="flex items-center justify-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
             <Smartphone aria-hidden="true" className="w-4 h-4" /> Mostre este código ao Staff no credenciamento
@@ -175,7 +222,7 @@ export const VinculoAvaliador: React.FC<PropriedadesVinculoAvaliador> = ({ aoVin
         </section>
       )}
 
-      {modo === 'codigo' && (
+      {!sessaoEquipe && modo === 'codigo' && (
         <form onSubmit={enviarCodigoAcesso} className="space-y-4" aria-label="Entrar com código de acesso">
           <div>
             <label htmlFor="email-avaliador" className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
@@ -209,7 +256,7 @@ export const VinculoAvaliador: React.FC<PropriedadesVinculoAvaliador> = ({ aoVin
         </form>
       )}
 
-      {metodos === 'ambos' && (
+      {!sessaoEquipe && metodos === 'ambos' && (
         <div className="text-center">
           <button
             type="button"

@@ -78,10 +78,10 @@ describe('TelaRedefinirSenha', () => {
     render(<TelaRedefinirSenha aoConcluir={vi.fn()} />);
 
     // Act
-    await preencher(user, 'onze-chars1', 'onze-chars1'); // 11 caracteres: um a menos que o mínimo
+    await preencher(user, 'sete-ch', 'sete-ch'); // 7 caracteres: um a menos que o mínimo
 
     // Assert
-    expect(screen.getByRole('alert')).toHaveTextContent(/pelo menos 12 caracteres/i);
+    expect(screen.getByRole('alert')).toHaveTextContent(/pelo menos 8 caracteres/i);
     expect(supabase.auth.updateUser).not.toHaveBeenCalled();
   });
 

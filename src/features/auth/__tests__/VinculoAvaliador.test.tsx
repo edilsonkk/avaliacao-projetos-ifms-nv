@@ -9,11 +9,16 @@ import { EVENTO_APP_RETOMADA } from '@/lib/keepAliveSessao';
 vi.mock('@/features/auth/vinculoAparelho', () => ({
   garantirSessaoAparelho: vi.fn(),
   obterPerfilSessao: vi.fn(),
+  reiniciarSessaoAparelho: vi.fn(),
   solicitarCodigoPareamento: vi.fn(),
   vincularComCodigoAcesso: vi.fn(),
 }));
 
-const perfil = (papel: PerfilSessao['papel'], metodos: PerfilSessao['metodos_vinculo'] = 'ambos'): PerfilSessao => ({
+const perfil = (
+  papel: PerfilSessao['papel'],
+  metodos: PerfilSessao['metodos_vinculo'] = 'ambos',
+  sessao_equipe = false
+): PerfilSessao => ({
   autenticado: true,
   papel,
   id_usuario: papel ? 'u-1' : null,
@@ -21,6 +26,7 @@ const perfil = (papel: PerfilSessao['papel'], metodos: PerfilSessao['metodos_vin
   email: papel ? 'maria@ifms.edu.br' : null,
   id_evento: 'e-1',
   metodos_vinculo: metodos,
+  sessao_equipe,
 });
 
 const daquiA = (minutos: number) => new Date(Date.now() + minutos * 60_000).toISOString();
@@ -28,6 +34,7 @@ const daquiA = (minutos: number) => new Date(Date.now() + minutos * 60_000).toIS
 describe('VinculoAvaliador', () => {
   beforeEach(() => {
     vi.mocked(vinculo.garantirSessaoAparelho).mockResolvedValue();
+    vi.mocked(vinculo.reiniciarSessaoAparelho).mockResolvedValue();
     vi.mocked(vinculo.solicitarCodigoPareamento).mockResolvedValue({ codigo: 'K7Q4MP', expira_em: daquiA(10) });
   });
 
@@ -118,6 +125,36 @@ describe('VinculoAvaliador', () => {
     expect(await screen.findByRole('textbox', { name: /código de acesso/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /parear com o staff/i })).not.toBeInTheDocument();
     expect(vinculo.solicitarCodigoPareamento).not.toHaveBeenCalled();
+  });
+
+  it('deve avisar quando o navegador está logado como Admin ou Staff, sem pedir código de pareamento', async () => {
+    // Arrange: mesma máquina em que o Admin abriu o sistema
+    vi.mocked(vinculo.obterPerfilSessao).mockResolvedValue(perfil('admin', 'ambos', true));
+
+    // Act
+    render(<VinculoAvaliador aoVincular={vi.fn()} />);
+
+    // Assert
+    expect(await screen.findByRole('heading', { name: /logado como admin ou staff/i })).toBeInTheDocument();
+    expect(vinculo.solicitarCodigoPareamento).not.toHaveBeenCalled();
+    expect(screen.queryByRole('status', { name: /código de pareamento/i })).not.toBeInTheDocument();
+  });
+
+  it('deve trocar pela sessão do aparelho e mostrar o código de pareamento', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    vi.mocked(vinculo.obterPerfilSessao)
+      .mockResolvedValueOnce(perfil('admin', 'ambos', true))
+      .mockResolvedValue(perfil(null));
+    render(<VinculoAvaliador aoVincular={vi.fn()} intervaloConsultaMs={60_000} />);
+    await screen.findByRole('heading', { name: /logado como admin ou staff/i });
+
+    // Act
+    await user.click(screen.getByRole('button', { name: /sair desta conta e preparar o aparelho/i }));
+
+    // Assert
+    expect(vinculo.reiniciarSessaoAparelho).toHaveBeenCalled();
+    expect(await screen.findByRole('status', { name: /código de pareamento/i })).toHaveTextContent('K7Q4MP');
   });
 
   it('deve entrar assim que o celular é desbloqueado, sem esperar o próximo ciclo de consulta', async () => {

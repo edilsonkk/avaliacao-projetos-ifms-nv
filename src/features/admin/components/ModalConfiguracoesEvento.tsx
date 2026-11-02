@@ -14,6 +14,9 @@ import { Dica } from '@/components/ui/Dica';
 import { SecaoSegurancaContas } from './SecaoSegurancaContas';
 import { SecaoIdentidadeVisual } from './SecaoIdentidadeVisual';
 
+const MENSAGEM_SEM_EVENTO_ATIVO =
+  'Nenhum evento ativo. Crie um evento ou ative um evento anterior antes de salvar as configurações.';
+
 interface PropriedadesModalConfiguracoes {
   id_evento_ativo: string;
   nome_evento_atual?: string;
@@ -60,13 +63,15 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
   const [mensagem_feedback, set_mensagem_feedback] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null);
 
   const conexao_configurada = verificar_conexao_configurada();
+  // Sem evento ativo o id chega vazio; gravar com ele gera o erro "invalid input syntax for type uuid"
+  const sem_evento_ativo = conexao_configurada && !id_evento_ativo;
 
   // Carrega as configurações atuais da tabela 'eventos' do evento ativo
   useEffect(() => {
     const carregar_configuracoes_evento = async () => {
       set_carregando_dados(true);
 
-      if (!conexao_configurada) {
+      if (!conexao_configurada || !id_evento_ativo) {
         set_carregando_dados(false);
         return;
       }
@@ -101,6 +106,10 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
   // Executa o UPDATE na tabela 'eventos' baseado no id_evento ativo
   const salvar_configuracoes = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (sem_evento_ativo) {
+      set_mensagem_feedback({ tipo: 'erro', texto: MENSAGEM_SEM_EVENTO_ATIVO });
+      return;
+    }
     set_salvando(true);
     set_mensagem_feedback(null);
 
@@ -257,6 +266,33 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
             <X aria-hidden="true" className="w-5 h-5" />
           </button>
         </div>
+
+        {sem_evento_ativo && (
+          <div role="alert" className="p-3 rounded-xl border bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-100 text-xs font-semibold space-y-2">
+            <p className="flex items-center gap-2">
+              <AlertTriangle aria-hidden="true" className="w-4 h-4 text-amber-600 shrink-0" />
+              {MENSAGEM_SEM_EVENTO_ATIVO}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => { ao_fechar(); if (ao_abrir_novo_evento) ao_abrir_novo_evento(); }}
+                className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <PlusCircle aria-hidden="true" className="w-4 h-4" />
+                Criar um evento agora
+              </button>
+              <button
+                type="button"
+                onClick={() => { ao_fechar(); if (ao_abrir_historico) ao_abrir_historico(); }}
+                className="px-3 py-1.5 rounded-lg bg-white hover:bg-amber-100 dark:bg-slate-900 dark:hover:bg-slate-800 border border-amber-300 dark:border-amber-800 font-bold inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <History aria-hidden="true" className="w-4 h-4" />
+                Ativar um evento anterior
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Mensagem de Feedback */}
         {mensagem_feedback && (
@@ -491,8 +527,8 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
               </button>
               <button
                 type="submit"
-                disabled={salvando}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 flex items-center gap-2 shadow-sm transition-all"
+                disabled={salvando || sem_evento_ativo}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 flex items-center gap-2 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {salvando ? <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" /> : <Save aria-hidden="true" className="w-4 h-4" />}
                 Salvar Configurações
