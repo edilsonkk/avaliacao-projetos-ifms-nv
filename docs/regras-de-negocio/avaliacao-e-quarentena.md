@@ -11,7 +11,9 @@ Código: `src/features/avaliacao/components/TelaAvaliador.tsx`, `src/features/at
 3. Consome primeiro a fila direcionada (`fn_assumir_item_fila`: o banco pula itens inelegíveis ou com cota cheia e
    grava a trava); se não houver item válido, chama o [sorteio](sorteio-e-atribuicao.md).
 4. Ao confirmar presença no estande, registra o horário de início (`tempo_presenca`).
-5. Preenche as notas por critério do questionário (escala Likert do questionário) e o parecer.
+5. Preenche as notas por critério do questionário (escala Likert do questionário) e o parecer. Cada critério é um
+   grupo de campos com o título no `legend`, e cada nota é um botão de opção que o leitor de tela anuncia como
+   "Nota 4 de 5" — dá para escolher pelo teclado, com as setas.
 6. Envia por `supabase.rpc('fn_enviar_avaliacao', ...)`. Regras do servidor em
    [funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#fn_enviar_avaliacao).
 7. Sem projetos elegíveis, mostra o status da fila e o botão `"Consultar Novamente"` (sem subtítulo explicativo).

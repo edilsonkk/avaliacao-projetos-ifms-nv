@@ -57,10 +57,10 @@ Função pura `validarJanelaAvaliacao(info, dataHoraReferencia)` (`TelaAvaliador
 | Status | Quando | Tela |
 |---|---|---|
 | `sistema_bloqueado` | `sistema_liberado === false` | Bloqueado |
-| `horario_nao_configurado` | Data ou horários nulos | "Login Conectado com Sucesso" + aviso de horários em definição, botão de verificar e sair |
-| `antes_do_inicio` | Antes de `data_evento + horario_inicio` | "Login Conectado com Sucesso" (`CheckCircle2`), avaliador, data, horário de início, `Atualizar / Verificar Horário` e `Sair da Conta` |
+| `horario_nao_configurado` | Data ou horários nulos | "Login Conectado com Sucesso" + aviso de horários em definição, botão de verificar e `Sair e desvincular` |
+| `antes_do_inicio` | Antes de `data_evento + horario_inicio` | "Login Conectado com Sucesso" (`CheckCircle2`), avaliador, data, horário de início, `Atualizar / Verificar Horário` e `Sair e desvincular` |
 | `liberado` | Dentro da janela | Fluxo normal |
-| `apos_o_fim` | Depois de `data_evento + horario_fim` | "Avaliações Encerradas", horário de término, `Sair da Conta` |
+| `apos_o_fim` | Depois de `data_evento + horario_fim` | "Avaliações Encerradas", horário de término, `Sair e desvincular` |
 
 Exceção: quem tem avaliação em andamento (trava ativa) conclui normalmente após o fim. O servidor só recusa se
 `sistema_liberado = false`.

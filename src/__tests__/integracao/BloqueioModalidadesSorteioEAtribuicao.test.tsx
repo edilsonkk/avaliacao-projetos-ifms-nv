@@ -1,5 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ProvedorAvisos } from '@/components/ui';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { GestorAvaliadores } from '@/features/avaliadores';
 import { AtribuicaoForcada } from '@/features/atribuicoes';
@@ -311,12 +312,10 @@ describe('Auditoria de Regressão: Bloqueio Estrito por Modalidade no Sorteio e 
       return criarQueryChain({ data: [], error: null });
     });
 
-    render(
-      <TelaAvaliador
+    render(<ProvedorAvisos><TelaAvaliador
         id_usuario_logado={usuarioAvaliadorId}
         id_evento_ativo={eventoIdTeste}
-      />
-    );
+      /></ProvedorAvisos>);
 
     // Deve detectar a violação e disparar o sorteio pela RPC
     await waitFor(() => {

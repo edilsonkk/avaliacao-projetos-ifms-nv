@@ -241,3 +241,30 @@ FROM public.dispositivos_avaliador d
 JOIN public.usuarios u ON (u.id_usuario = d.auth_uid OR u.id_auth = d.auth_uid)
 WHERE d.revogado_em IS NULL;
 ```
+
+## Avaliador saiu e o código de acesso não serve mais
+
+**Sintoma**: o avaliador tocou em sair no próprio celular e, ao tentar entrar de novo com o mesmo e-mail e código,
+recebe `E-mail ou código inválido, expirado ou já utilizado.`
+
+**Causa**: não é defeito do código. A sessão do celular é **anônima** e é ela que identifica o vínculo em
+`dispositivos_avaliador` (a chave é o `auth_uid`). Sair apaga essa sessão, e como ela não tem senha, a identidade
+não volta: a próxima abertura gera outro `auth_uid`, sem vínculo. O código de acesso, por sua vez, é de **uso
+único** (`codigos_acesso.usado_em`), de propósito — é credencial.
+
+**O que mudou**: o botão agora se chama **Sair e desvincular**, pergunta antes (com "Continuar avaliando" como
+padrão) e traz uma dica explicando o efeito. Fechar a aba ou guardar o celular **não** causa isso: a sessão
+sobrevive e o app volta direto à tela de avaliação.
+
+**O que fazer agora**: Staff → **Aparelho** → parear de novo ou **Gerar código de acesso**. Se o celular mudou,
+**Desvincular aparelho** antes.
+
+**Conferir no banco**:
+
+```sql
+SELECT d.auth_uid, d.vinculado_em, d.revogado_em, c.usado_em, c.tentativas
+FROM public.usuarios u
+LEFT JOIN public.dispositivos_avaliador d ON d.id_usuario = u.id_usuario
+LEFT JOIN public.codigos_acesso c ON c.id_usuario = u.id_usuario
+WHERE lower(u.email) = lower('avaliador@exemplo.br');
+```

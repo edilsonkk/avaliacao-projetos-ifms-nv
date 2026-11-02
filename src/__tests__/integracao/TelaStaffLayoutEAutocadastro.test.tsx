@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { TelaStaff } from '@/features/staff';
 import { TelaAutocadastroAvaliador } from '@/features/avaliacao';
 import { Cabecalho } from '@/components/layout/Cabecalho';
+import { ProvedorAvisos } from '@/components/ui';
 
 // Mock do módulo Supabase
 vi.mock('@/lib/supabase', async (importOriginal) => {
@@ -70,16 +71,12 @@ describe('Validação da TelaStaff e Autocadastro de Avaliador', () => {
       const aoMudarTelaMock = vi.fn();
 
       // Cenário 1: Na tela do Staff com perfil staff
-      const { unmount } = render(
-        <Cabecalho tela_atual="staff" papel="staff" ao_mudar_tela={aoMudarTelaMock} />
-      );
+      const { unmount } = render(<ProvedorAvisos><Cabecalho tela_atual="staff" papel="staff" ao_mudar_tela={aoMudarTelaMock} /></ProvedorAvisos>);
       expect(screen.queryByRole('button', { name: /Telão/i })).toBeNull();
       unmount();
 
       // Cenário 2: Admin logado acessando o painel de admin
-      render(
-        <Cabecalho tela_atual="admin" papel="admin" ao_mudar_tela={aoMudarTelaMock} />
-      );
+      render(<ProvedorAvisos><Cabecalho tela_atual="admin" papel="admin" ao_mudar_tela={aoMudarTelaMock} /></ProvedorAvisos>);
       expect(screen.getByRole('button', { name: /Telão/i })).toBeInTheDocument();
     });
   });

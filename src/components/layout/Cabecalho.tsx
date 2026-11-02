@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Sun, Moon, Laptop, Shield, UserCheck, Award, Tv, LogOut } from 'lucide-react';
 import { ambiente_supabase, supabase } from '@/lib/supabase';
+import { useAvisos } from '@/components/ui';
 import {
   ROTULOS_ESCALA_TEXTO,
   aplicarEscalaTexto,
@@ -70,6 +71,7 @@ const classeBotaoNavegacao = (ativo: boolean) =>
  * 320px: a soma passava da largura da tela e a página inteira deslizava para os lados.
  */
 export const Cabecalho: React.FC<PropriedadesCabecalho> = ({ tela_atual, ao_mudar_tela, ao_sair, papel: propPapel }) => {
+  const { confirmar } = useAvisos();
   const [tema, setTema] = useState<Tema>(lerTema);
   const [escalaTexto, setEscalaTexto] = useState<EscalaTexto>(lerEscalaTexto);
 
@@ -93,6 +95,18 @@ export const Cabecalho: React.FC<PropriedadesCabecalho> = ({ tela_atual, ao_muda
   }, [tema]);
 
   const handleLogout = async () => {
+    // Para o avaliador, sair apaga a sessão anônima do aparelho — que é a credencial
+    // do vínculo. Voltar a avaliar exige um código novo com o Staff, então confirma antes.
+    if (papel === 'avaliador') {
+      const confirmado = await confirmar({
+        titulo: 'Sair e desvincular este celular?',
+        mensagem:
+          'Ao sair, este celular deixa de ficar vinculado a você. Para avaliar de novo, será preciso pedir um novo código ao Staff.',
+        rotuloConfirmar: 'Sair e desvincular',
+        rotuloCancelar: 'Continuar avaliando',
+      });
+      if (!confirmado) return;
+    }
     try {
       await supabase.auth.signOut();
     } catch (err) {
@@ -221,11 +235,15 @@ export const Cabecalho: React.FC<PropriedadesCabecalho> = ({ tela_atual, ao_muda
               <button
                 type="button"
                 onClick={handleLogout}
-                title="Encerrar sessão e limpar dados locais"
+                title={
+                  papel === 'avaliador'
+                    ? 'Sair desvincula este celular; o Staff precisa vincular de novo'
+                    : 'Encerrar sessão e limpar dados locais'
+                }
                 className="inline-flex items-center gap-1.5 min-h-11 px-3 ml-auto rounded-controle text-apoio font-bold text-perigo hover:bg-superficie transition-colors shrink-0"
               >
                 <LogOut aria-hidden="true" className="w-4 h-4" />
-                Sair
+                {papel === 'avaliador' ? 'Sair e desvincular' : 'Sair'}
               </button>
             )}
           </nav>
