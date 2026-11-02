@@ -16,7 +16,8 @@ permissions:
   actions: read
 
 # CodeQL e Code scanning (SARIF) só são gratuitos em repositório público. Em repositório privado,
-# o CodeQL é pulado e o Trivy mostra o resultado no log (continua bloqueando HIGH/CRITICAL).
+# o CodeQL é pulado e o SARIF do Trivy não é gerado; o portão (tabela no log) continua bloqueando
+# HIGH/CRITICAL.
 jobs:
   sast-codeql:
     name: SAST - Análise Estática de Código (CodeQL)
@@ -47,13 +48,27 @@ jobs:
       - name: Checkout do Repositório
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - name: Executar Varredura SCA com Trivy (Bloqueante para CRITICAL e HIGH)
+      # Com format: sarif a action ignora `severity` (o SARIF sai com todas as severidades) e o
+      # exit-code passa a valer para qualquer achado, inclusive MEDIUM. Por isso o relatório e o
+      # portão são passos separados: relatório completo em Security → Code scanning, bloqueio só
+      # em CRITICAL/HIGH, como diz o nome do job.
+      - name: Varredura SCA com Trivy (relatório completo, não bloqueia)
+        if: ${{ !github.event.repository.private }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 (fixado por hash)
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          format: ${{ github.event.repository.private && 'table' || 'sarif' }}
-          output: ${{ !github.event.repository.private && 'trivy-results.sarif' || '' }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          exit-code: '0'
+          ignore-unfixed: false
+
+      - name: Portão SCA do Trivy (bloqueia CRITICAL e HIGH)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 (fixado por hash)
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
           ignore-unfixed: false

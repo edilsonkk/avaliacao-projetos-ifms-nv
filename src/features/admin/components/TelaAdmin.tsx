@@ -386,7 +386,8 @@ export const TelaAdmin: React.FC = () => {
   // 1. SINCRONIA DE ESTADO: Função que salva o novo nome do evento (acionada pelo ícone de Lápis)
   const salvar_edicao_nome_evento = async (novoNome: string) => {
     const nomeLimpo = novoNome.trim();
-    if (!nomeLimpo) return;
+    // Sem evento ativo não há o que renomear (o id vazio seria recusado pelo banco como uuid inválido)
+    if (!nomeLimpo || !metricas_admin.evento_ativo_id) return;
     set_salvando_nome_evento(true);
 
     try {

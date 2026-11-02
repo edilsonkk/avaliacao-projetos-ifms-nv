@@ -172,6 +172,6 @@ Configurações manuais recomendadas (só o dono do repositório e dos painéis 
 - GitHub, *Actions → General*: desmarcar *Allow GitHub Actions to create and approve pull requests* (o release usa o
   `RELEASE_PLEASE_TOKEN`).
 - GitHub, *Code security*: ligar *Dependabot alerts* e *security updates*.
-- Supabase: *Minimum password length* 12, *Secure password change* ligado, *TOTP* habilitado (etapas 2 e MFA).
+- Supabase: *Minimum password length* 8, *Secure password change* ligado, *TOTP* habilitado (etapas 2 e MFA).
 - Google Cloud: a service account do deploy só com o papel *Firebase Hosting Admin* (ver CI/CD).
 

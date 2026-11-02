@@ -1593,6 +1593,25 @@ $$;
 ALTER FUNCTION "public"."avaliador_atual"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."conta_da_equipe"("p_auth_uid" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT p_auth_uid IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.usuarios u
+    WHERE (u.id_usuario = p_auth_uid OR u.id_auth = p_auth_uid)
+      AND upper(u.papel::text) IN ('ADMIN', 'STAFF', 'MONITOR')
+  );
+$$;
+
+
+ALTER FUNCTION "public"."conta_da_equipe"("p_auth_uid" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."conta_da_equipe"("p_auth_uid" "uuid") IS 'auth_uid pertence a ADMIN/STAFF/MONITOR? Usado para não vincular o celular do avaliador à sessão da equipe.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."evento_ativo_id"() RETURNS "uuid"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -2316,7 +2335,9 @@ BEGIN
     'nome',            v_usuario.nome,
     'email',           v_usuario.email,
     'id_evento',       v_evento.id_evento,
-    'metodos_vinculo', coalesce(v_evento.metodos_vinculo, 'ambos')
+    'metodos_vinculo', coalesce(v_evento.metodos_vinculo, 'ambos'),
+    -- Sessão de Admin/Staff neste navegador: a tela do avaliador precisa de uma sessão só do aparelho
+    'sessao_equipe',   public.sessao_de_conta_da_equipe()
   );
 END;
 $$;
@@ -2408,6 +2429,12 @@ BEGIN
   FOR UPDATE;
   IF v_pend.codigo IS NULL THEN
     RAISE EXCEPTION 'Código de pareamento inválido ou expirado. Peça para o avaliador gerar outro.';
+  END IF;
+  -- Código gerado num navegador logado como Admin/Staff: vincular ali deixaria o celular preso na
+  -- tela de espera (fn_meu_perfil responderia 'admin'/'staff'), então o pareamento não acontece.
+  IF public.conta_da_equipe(v_pend.auth_uid) THEN
+    DELETE FROM public.pareamentos_pendentes WHERE codigo = v_pend.codigo;
+    RAISE EXCEPTION 'Esse código foi gerado num navegador logado como Admin ou Staff. Peça para sair dessa conta e gerar outro código.';
   END IF;
 
   PERFORM public.validar_avaliador_do_evento(p_id_usuario, v_pend.id_evento);
@@ -2845,6 +2872,10 @@ BEGIN
   IF auth.uid() IS NULL THEN
     RAISE EXCEPTION 'Sessão do aparelho não iniciada.' USING ERRCODE = '42501';
   END IF;
+  IF public.sessao_de_conta_da_equipe() THEN
+    RAISE EXCEPTION 'Este navegador está logado como Admin ou Staff. Saia dessa conta para vincular o celular do avaliador.'
+      USING ERRCODE = '42501';
+  END IF;
   v_evento := public.parametros_acesso(NULL);
   IF v_evento.id_evento IS NULL THEN
     RAISE EXCEPTION 'Nenhum evento ativo.';
@@ -3001,6 +3032,10 @@ DECLARE
 BEGIN
   IF auth.uid() IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'erro', 'Sessão do aparelho não iniciada.');
+  END IF;
+  IF public.sessao_de_conta_da_equipe() THEN
+    RETURN jsonb_build_object('ok', false, 'erro',
+      'Este navegador está logado como Admin ou Staff. Saia dessa conta para vincular o celular do avaliador.');
   END IF;
   v_evento := public.parametros_acesso(NULL);
   IF v_evento.metodos_vinculo NOT IN ('ambos', 'codigo') THEN
@@ -3291,6 +3326,17 @@ $$;
 
 
 ALTER FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."sessao_de_conta_da_equipe"() RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT public.conta_da_equipe(auth.uid());
+$$;
+
+
+ALTER FUNCTION "public"."sessao_de_conta_da_equipe"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."sortear_projeto"("p_id_usuario" "uuid", "p_id_evento" "uuid") RETURNS "uuid"
@@ -5049,6 +5095,11 @@ GRANT ALL ON FUNCTION "public"."avaliador_atual"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."conta_da_equipe"("p_auth_uid" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."conta_da_equipe"("p_auth_uid" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."evento_ativo_id"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."evento_ativo_id"() TO "anon";
 GRANT ALL ON FUNCTION "public"."evento_ativo_id"() TO "authenticated";
@@ -5301,6 +5352,11 @@ GRANT ALL ON FUNCTION "public"."parametros_acesso"("p_id_evento" "uuid") TO "ser
 REVOKE ALL ON FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."sessao_de_conta_da_equipe"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."sessao_de_conta_da_equipe"() TO "service_role";
 
 
 

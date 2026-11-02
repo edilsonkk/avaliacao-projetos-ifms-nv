@@ -17,6 +17,8 @@ export interface PerfilSessao {
   email: string | null;
   id_evento: string | null;
   metodos_vinculo: MetodoVinculo;
+  /** O navegador está com a conta de Admin/Staff: não serve como sessão do aparelho do avaliador. */
+  sessao_equipe?: boolean;
 }
 
 export interface CodigoPareamento {
@@ -38,6 +40,19 @@ export const obterPerfilSessao = async (): Promise<PerfilSessao> => {
 export const garantirSessaoAparelho = async (): Promise<void> => {
   const { data } = await supabase.auth.getSession();
   if (data?.session) return;
+  const { error } = await supabase.auth.signInAnonymously();
+  if (error) throw new Error(mensagemDe(error, 'Não foi possível iniciar a sessão do aparelho.'));
+};
+
+/**
+ * Troca a sessão da equipe (Admin/Staff) por uma sessão anônima só deste aparelho.
+ * Sem isso, o celular seria vinculado ao auth_uid da conta da equipe: o banco recusa,
+ * e antes disso a tela ficava presa esperando um pareamento que nunca valia.
+ */
+export const reiniciarSessaoAparelho = async (): Promise<void> => {
+  // scope 'local': encerra a sessão só neste navegador, sem derrubar a conta nos outros aparelhos
+  await supabase.auth.signOut({ scope: 'local' });
+  localStorage.clear();
   const { error } = await supabase.auth.signInAnonymously();
   if (error) throw new Error(mensagemDe(error, 'Não foi possível iniciar a sessão do aparelho.'));
 };

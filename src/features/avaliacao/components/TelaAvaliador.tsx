@@ -1269,7 +1269,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
             <button
               type="button"
               onClick={verificar_horario_evento}
-              disabled={isProcessing || carregando_sorteio}
+              disabled={isProcessing}
               className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
             >
               <RotateCcw aria-hidden="true" className="w-4 h-4" />
@@ -1347,7 +1347,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
             <button
               type="button"
               onClick={verificar_horario_evento}
-              disabled={isProcessing || carregando_sorteio}
+              disabled={isProcessing}
               className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
             >
               <RotateCcw aria-hidden="true" className="w-4 h-4" />
@@ -1386,7 +1386,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
             <button
               type="button"
               onClick={verificar_horario_evento}
-              disabled={isProcessing || carregando_sorteio}
+              disabled={isProcessing}
               className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
             >
               <RotateCcw aria-hidden="true" className="w-4 h-4" />
@@ -1417,10 +1417,10 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
           <button
             type="button"
             onClick={() => acionarSorteio()}
-            disabled={isProcessing || carregando_sorteio}
+            disabled={isProcessing}
             className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {carregando_sorteio || isProcessing ? <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" /> : <RotateCcw aria-hidden="true" className="w-4 h-4" />}
+            {isProcessing ? <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" /> : <RotateCcw aria-hidden="true" className="w-4 h-4" />}
             Consultar Novamente
           </button>
         </div>

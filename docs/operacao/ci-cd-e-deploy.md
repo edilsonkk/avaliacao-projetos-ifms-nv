@@ -206,7 +206,10 @@ O repositório tem *auto-merge* habilitado. PRs de código marcados com
 ## Segurança
 
 - **CodeQL** com `security-extended` e `security-and-quality`.
-- **Trivy** varre o repositório e envia SARIF para *Security → Code scanning*; falha em HIGH ou CRITICAL.
+- **Trivy** varre o repositório em dois passos: um envia o SARIF completo (todas as severidades) para
+  *Security → Code scanning* e não bloqueia; o outro é o portão e falha em HIGH ou CRITICAL. São separados porque,
+  com `format: sarif`, a action ignora `severity` e o `exit-code` passaria a valer para qualquer achado — era o que
+  derrubava o job por alertas *moderate*.
 - **npm audit** falha em vulnerabilidade `high` ou maior.
 - A execução semanal pega vulnerabilidades novas mesmo sem commits.
 - **Ações fixadas por hash de commit** (com a versão em comentário), nunca por tag ou branch: uma tag pode ser movida
@@ -215,10 +218,11 @@ O repositório tem *auto-merge* habilitado. PRs de código marcados com
 - **`npm ci --ignore-scripts`** no CI e no deploy: um pacote comprometido não executa código na instalação (nenhuma
   dependência do projeto precisa de script de instalação).
 - Workflows com `permissions` mínimas declaradas; os segredos de produção só aparecem nos passos que os usam.
-- **Risco aceito (2026-10-31)**: 8 alertas *moderate* do `npm audit`, todos da cadeia `exceljs → archiver → glob →
-  minimatch` (negação de serviço em padrões de busca de arquivos). O sistema só usa `xlsx.load` e `writeBuffer` em
-  memória, no navegador; o `glob` nunca é chamado. A "correção" do npm é rebaixar o `exceljs` para a 4.1.1 (2020).
-  Reavaliar quando o `exceljs` publicar versão nova.
+- **Resolvido (2026-11-01)**: os 8 alertas *moderate* da cadeia `exceljs → archiver → glob → minimatch`
+  (`CVE-2026-118764`, negação de serviço em padrões de busca de arquivos) saíram com `overrides.minimatch` em
+  `^11.0.1` no `package.json`, sem rebaixar o `exceljs` (a "correção" do `npm audit fix --force` era voltar para a
+  4.1.1, de 2020). O `exceljs` não chama `glob`, então o `minimatch` novo não muda comportamento: `writeBuffer` e
+  `xlsx.load` continuam gerando e lendo a planilha. `npm audit` e Trivy ficam sem achados.
 
 ## Migrations do banco
 
