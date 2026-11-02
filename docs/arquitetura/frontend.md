@@ -127,5 +127,9 @@ Débitos conhecidos que a nova estrutura facilita resolver (ver também [PRD](..
   - `services/` ou `api/` — funções que montam as queries/RPCs;
   - subcomponentes em `components/` para cada seção/modal.
 - **Ativar `strict` no `tsconfig.json`** de forma incremental e trocar `createClient<any>` pelo tipo `EsqueMABanco`.
-- **Adicionar ESLint + Prettier** com regra que proíba imports profundos entre features (`no-restricted-imports`).
+- **Adicionar ESLint + Prettier** com regra que proíba imports profundos entre features (`no-restricted-imports`)
+  e as regras de `eslint-plugin-jsx-a11y`. **Bloqueado**: o `typescript-eslint` ainda não suporta o TypeScript 7
+  usado aqui ([issue 10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940)) e o parser falha
+  ao carregar. Enquanto isso, o portão é `scripts/guardas.mjs` (roda no `npm run lint`) mais o axe nos testes de
+  tela — ver [design e acessibilidade](design-e-acessibilidade.md#como-o-ci-cobra).
 - **Code-splitting** das telas em `App.tsx` com `React.lazy` (o bundle atual passa de 500 kB).

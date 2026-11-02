@@ -27,7 +27,7 @@ jobs:
       - name: Instalar dependências
         run: npm ci --ignore-scripts
 
-      - name: Auditoria de Tipagem TypeScript (Linter Gate)
+      - name: Tipagem e Guardas de Interface (Linter Gate)
         run: npm run lint
 
       - name: Executar Auditoria do Vitest (QA Gate)

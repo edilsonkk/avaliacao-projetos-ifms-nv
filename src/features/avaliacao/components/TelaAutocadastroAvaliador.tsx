@@ -342,7 +342,7 @@ export const TelaAutocadastroAvaliador: React.FC<TelaAutocadastroAvaliadorProps>
                   <BookOpen className="w-3.5 h-3.5 text-emerald-600" />
                   <span>Áreas de Interesse para Avaliação (opcional):</span>
                 </label>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
+                <p className="text-legenda text-slate-500 dark:text-slate-400 mb-2">
                   Selecione uma ou mais áreas que correspondam à sua especialidade:
                 </p>
 

@@ -73,6 +73,7 @@ Importe sempre pelo índice: `import { Botao, Campo } from '@/components/ui'`.
 | `ConfirmacaoPerigo` | o que antes era `confirm()` | `alertdialog`; o caminho seguro é o primário, recebe o foco e responde ao `Esc` |
 | `ProvedorAvisos` + `useAvisos()` | `avisar`, `confirmar` e `notificar` | uma única região viva (`aria-live`), `assertive` só no erro |
 | `Abas` + `PainelAba` | navegação por abas | `role="tablist"/"tab"/"tabpanel"`, tabulação só na aba ativa, setas e Home/End |
+| `Tabela` | listagem | `<caption>` para leitor de tela, `scope="col"` e contêiner de rolagem focável (sem isso, quem usa teclado não rola a tabela) |
 | `Dica` | explicação curta | `role="tooltip"`, abre no toque e fecha com `Esc` |
 | `CabecalhoOrdenavel` | coluna de tabela | `aria-sort` e ordenação pelo teclado |
 
@@ -116,6 +117,39 @@ passageiro que não deve interromper — agora anunciado, ao contrário das caix
 7. Texto nunca abaixo de 12px, e sempre pela escala (sem `text-[Npx]`).
 8. Nada identificado só por cor; nada identificado só por `title`.
 9. A tela não pode rolar na horizontal: a 360px, `document.documentElement.scrollWidth` igual ao `clientWidth`.
+
+## Como o CI cobra
+
+Três verificações, todas no CI:
+
+| Verificação | Comando | O que pega |
+|---|---|---|
+| Guardas de interface | `npm run lint` (depois do `tsc`) | `alert()`/`confirm()` do navegador e tamanho de texto em px fixo, **nas pastas já migradas** |
+| axe nas telas | `npm test` | rótulo faltando, papel errado, ARIA inválida e ordem de títulos no que está renderizado |
+| Contraste dos tokens | `npm run contraste` | par de cores abaixo do mínimo da WCAG |
+
+As guardas (`scripts/guardas.mjs`) valem para `src/app`, `src/components`, `src/features/auth`,
+`src/features/avaliacao` e `src/lib`. Cada etapa da migração acrescenta uma pasta à lista `PASTAS_MIGRADAS`; o
+que falta aparece no fim da saída como pendência, sem derrubar o CI. Hoje são **295 ocorrências** nas telas de
+Staff, Admin, Relatórios e cadastros.
+
+> Por que não `eslint-plugin-jsx-a11y`: o `typescript-eslint` ainda não suporta o TypeScript 7 deste projeto
+> ([issue 10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940)) — nem o parser carrega.
+> Quando suportar, as regras estáticas entram ao lado destas três, sem substituir o axe (que vê o DOM pronto).
+
+Para auditar uma tela nova:
+
+```tsx
+import { esperarSemViolacoesDeAcessibilidade } from '@/test/axe';
+
+it('não deve ter violação de acessibilidade', async () => {
+  const { container } = render(<MinhaTela />);
+  await esperarSemViolacoesDeAcessibilidade(container);
+});
+```
+
+A regra `color-contrast` fica desligada no axe: o jsdom não pinta cor. Esse lado é coberto por
+`npm run contraste`, que mede os tokens na origem.
 
 ## Conferir o contraste
 

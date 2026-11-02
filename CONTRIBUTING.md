@@ -69,7 +69,9 @@ Siga [docs/arquitetura/frontend.md](docs/arquitetura/frontend.md). Resumo:
 
 Uma tarefa está pronta quando:
 
-- [ ] `npm run lint`, `npm test` e `npm run build` passam.
+- [ ] `npm run lint`, `npm test` e `npm run build` passam. Mexeu em interface? Siga
+      [design e acessibilidade](docs/arquitetura/design-e-acessibilidade.md): componentes de `@/components/ui`,
+      sem `alert()`/`confirm()` e sem tamanho de texto em px.
 - [ ] Há testes para todo código novo ou alterado.
 - [ ] Nenhum UUID é exibido na interface.
 - [ ] Consultas e escritas filtram pelo evento ativo.

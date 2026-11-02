@@ -128,7 +128,7 @@ export const CadastroSegundoFator: React.FC<PropriedadesSegundoFator> = ({ aoCon
       {cadastro && (
         <div className="flex flex-col items-center gap-2">
           <img src={cadastro.qrCode} alt="QR Code para o aplicativo autenticador" className="w-44 h-44 bg-white p-2 rounded-xl border border-slate-200" />
-          <p className="text-[11px] text-slate-500 text-center">
+          <p className="text-legenda text-slate-500 text-center">
             Sem câmera? Digite esta chave no aplicativo:
             <code className="block mt-1 font-mono text-xs text-slate-800 dark:text-slate-200 break-all select-all">{cadastro.segredo}</code>
           </p>

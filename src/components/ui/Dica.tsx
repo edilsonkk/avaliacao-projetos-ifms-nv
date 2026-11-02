@@ -44,7 +44,7 @@ export const Dica: React.FC<PropriedadesDica> = ({ children, id, alinhar = 'cent
       <span
         id={idTexto}
         role="tooltip"
-        className={`absolute z-20 ${lado === 'cima' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} w-64 max-w-[80vw] p-2.5 rounded-lg bg-slate-900 dark:bg-slate-700 dark:ring-1 dark:ring-slate-500 text-white text-[11px] font-medium normal-case tracking-normal leading-snug shadow-lg pointer-events-none transition-opacity ${POSICAO[alinhar]} ${
+        className={`absolute z-20 ${lado === 'cima' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} w-64 max-w-[80vw] p-2.5 rounded-lg bg-slate-900 dark:bg-slate-700 dark:ring-1 dark:ring-slate-500 text-white text-legenda font-medium normal-case tracking-normal leading-snug shadow-lg pointer-events-none transition-opacity ${POSICAO[alinhar]} ${
           aberta ? 'visible opacity-100' : 'invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100'
         }`}
       >

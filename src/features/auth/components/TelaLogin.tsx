@@ -121,14 +121,12 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
         });
 
         if (authError) {
-          alert("Falha no login: " + authError.message);
           setMensagemErro("Falha no login: " + authError.message);
           setCarregando(false);
           return;
         }
 
         if (!authData?.user?.id) {
-          alert("Falha no login: Conta autenticada sem ID do usuário.");
           setMensagemErro("Falha no login: Conta autenticada sem ID do usuário.");
           setCarregando(false);
           return;
@@ -146,7 +144,6 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
           localStorage.removeItem('sessao_id_usuario');
           localStorage.removeItem('sessao_papel');
           localStorage.removeItem('sessao_email');
-          alert("Erro de Integridade: Conta autenticada, mas o perfil não existe na tabela pública 'usuarios'.");
           setMensagemErro("Erro de Integridade: Conta autenticada, mas o perfil não existe na tabela pública 'usuarios'.");
           setCarregando(false);
           return;
@@ -159,7 +156,6 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
           localStorage.removeItem('sessao_id_usuario');
           localStorage.removeItem('sessao_papel');
           localStorage.removeItem('sessao_email');
-          alert("Acesso Negado: Papel incompatível com o portal Admin");
           setMensagemErro("Acesso Negado: Papel incompatível com o portal Admin");
           setCarregando(false);
           return;
@@ -268,8 +264,8 @@ export const TelaLogin: React.FC<PropriedadesTelaLogin> = ({
 
         {/* Alerta de Erro */}
         {mensagemErro && (
-          <div className="p-4 bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 rounded-2xl text-xs text-rose-800 dark:text-rose-200 font-bold flex items-center gap-2.5">
-            <AlertTriangle className="w-5 h-5 shrink-0 text-rose-600" />
+          <div role="alert" className="p-4 bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 rounded-cartao text-apoio text-rose-800 dark:text-rose-200 font-bold flex items-center gap-2.5">
+            <AlertTriangle aria-hidden="true" className="w-5 h-5 shrink-0 text-rose-600" />
             <span>{mensagemErro}</span>
           </div>
         )}
