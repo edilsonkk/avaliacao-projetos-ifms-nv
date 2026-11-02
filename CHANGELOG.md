@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.10.0...v0.11.0) (2026-11-02)
+
+
+### Funcionalidades
+
+* **admin:** ícone e imagem do evento enviados nas configurações ([#92](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/92)) ([8876df2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/8876df2c1a25f71488b4325ebba9cab1211afeb4))
+* **auth:** senha mínima de 8 caracteres ([#84](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/84)) ([e7a0b92](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/e7a0b92dfda1772765f58e1d515e09ec94318e96))
+* **ui:** diálogos acessíveis e região viva de avisos ([#93](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/93)) ([076a54d](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/076a54d649eba21538d232871f675b6297dd4c1e))
+* **ui:** tokens de design e componentes base acessíveis ([#87](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/87)) ([7d9a699](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/7d9a699f683817625df2fe3dc5c4ee4ec4591859))
+
+
+### Correções
+
+* **a11y:** cabeçalho sem deslizamento, tamanho de texto e esqueleto acessível ([#89](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/89)) ([b03b960](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/b03b9602887d9d910393282387c21480576b1864))
+* **admin:** configurações sem evento ativo não geram mais erro de uuid ([#82](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/82)) ([0638b6e](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/0638b6efaffbd3d689e3b3ed67026910f129f787))
+* **avaliador:** tela sem alert() do navegador, aviso ao sair e escala de nota acessível ([#90](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/90)) ([50c2282](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/50c2282808f539c523e0c3f09227b49bc651195e))
+* **avaliador:** vínculo do celular exige sessão só do aparelho ([#85](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/85)) ([0ab70d6](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/0ab70d68be8dda02e3fffa797ef6e851881a1f7c))
+
 ## [0.10.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.9.0...v0.10.0) (2026-11-01)
 
 
