@@ -33,7 +33,7 @@ Nos testes, `vitest.config.ts` define valores fictícios; nenhum teste acessa a 
 
 ## Desenvolvimento local
 
-Pré-requisitos: Node.js 20+ e um runtime de Docker (Docker Desktop, OrbStack ou Colima) em execução.
+Pré-requisitos: Node.js 22+ e um runtime de Docker (Docker Desktop, OrbStack ou Colima) em execução.
 
 ```bash
 npm install
