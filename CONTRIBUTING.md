@@ -5,7 +5,7 @@ documentação técnica está em [`docs/`](docs/README.md).
 
 ## Ambiente
 
-Pré-requisitos: Node.js 22+ e Docker em execução. O desenvolvimento usa **sempre** o Supabase local; nunca aponte o
+Pré-requisitos: Node.js 24+ e Docker em execução. O desenvolvimento usa **sempre** o Supabase local; nunca aponte o
 `.env` para produção.
 
 ```bash
