@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Retrato do produto atual + lacunas e roadmap |
+| **Status** | Retrato do produto atual |
 | **Data** | 26-10-2026 |
 | **Base** | Análise do código (`src/`, `supabase/migrations/`, `supabase/schema.sql`, testes em `src/**/__tests__/`) e da especificação técnica (hoje em `docs/`) |
-| **Documentos relacionados** | [Documentação técnica](README.md), [`README.md`](../README.md) |
+| **Documentos relacionados** | [Documentação técnica](README.md), [Lacunas, riscos e roadmap](roadmap.md), [`README.md`](../README.md) |
 
 ---
 
@@ -81,7 +81,7 @@ Os critérios de aceite referenciam as suítes de teste (`src/**/__tests__/`) qu
 ### 5.3 Acesso e autocadastro — `TelaLogin`, `TelaAutocadastroAvaliador`, `App`
 | ID | Requisito | Critério de aceite |
 |---|---|---|
-| RF-30 | Login em abas por perfil: Avaliador e Staff só com e-mail; Admin com e-mail + senha no Supabase Auth | `TelaLogin.test` |
+| RF-30 | Login em abas por perfil: o avaliador entra sem senha, com o celular vinculado pelo Staff (pareamento ou código de acesso); Staff e Admin entram com e-mail e senha no Supabase Auth | `TelaLogin.test`, `VinculoAvaliador.test` |
 | RF-31 | Usuário sem papel `admin` não acessa a aba Admin, mesmo com senha válida (sessão é encerrada) | — |
 | RF-32 | Escrita administrativa sem sessão válida dispara o aviso "Sessão de administrador expirada" e redireciona ao login | `SessaoAdmin.test` |
 | RF-33 | O Staff exibe QR Code com `?cadastro=avaliador&evento=<id>`; o formulário mobile cria um avaliador **pendente de credenciamento** | `TelaStaffLayoutEAutocadastro.test` |
@@ -209,33 +209,10 @@ usuarios ─┬─ avaliador_areas / avaliador_modalidades_bloqueadas (por event
 - Incidentes durante o evento (tela branca, erro de RLS, travas órfãs).
 
 ---
-
 ## 11. Lacunas, riscos e roadmap
 
-> **Auditoria de segurança (26-10-2026).** Uma revisão do controle de acesso encontrou três falhas de **Broken Access Control**, todas porque a autorização estava no cliente e o banco confiava em dados do navegador. As migrations `20261026010000` (RPC de envio de nota), `20261026020000` (leitura sensível) e `20261026030000` (funções admin) endereçam L12, L13 e L14. L1 (login sem senha do avaliador) continua pendente e é o que fecha em definitivo o L12.
-
-| # | Achado no código | Risco | Recomendação | Prioridade |
-|---|---|---|---|---|
-| L12 | **Gravação de nota sem validação server-side:** `TelaAvaliador.tsx` faz `insert` direto em `avaliacoes`/`respostas_avaliacao` com `id_usuario` vindo do `localStorage`, e a RLS aceita `WITH CHECK (true)` | Qualquer cliente `anon` grava nota em nome de qualquer avaliador, fora da escala, sem trava e fora da janela | **Mitigado:** `fn_enviar_avaliacao` (`SECURITY DEFINER`) valida trava, elegibilidade, conflito, cota, janela e faixa, e calcula `nota_final` no banco; INSERT anônimo direto removido. **Fechado só com L1** (sem OTP, `id_usuario` ainda vem do cliente). Requer trocar `TelaAvaliador` para `rpc('fn_enviar_avaliacao')` | **Alta** |
-| L13 | **Leitura pública de PII e notas:** a RLS dá `SELECT TO anon` em tudo, expondo `usuarios.cpf`, `celular`, `senha_hash` (coluna morta) e todas as notas/pareceres | Vazamento de dados pessoais (LGPD) e de notas antes da homologação | **Corrigido** por `20261026020000`: `senha_hash` removida; `cpf`/`celular` e `nota_final`/`parecer_final` saem do alcance da `anon` via GRANT de coluna | **Alta** |
-| L14 | **Funções admin abertas à `anon`:** `admin_reset_global`, `excluir/restaurar_avaliacao`, `admin_desbloquear_*`, `admin_remover_quarentena_*` são `SECURITY DEFINER` sem checar o chamador e com `GRANT EXECUTE TO anon` | Visitante anônimo chama `admin_reset_global` e **apaga o evento inteiro** | **Corrigido** por `20261026030000`: `REVOKE EXECUTE FROM anon` + guard `is_admin()` em excluir/restaurar | **Alta** |
-| L1 | ~~Avaliador e Staff entram **só com e-mail** (sem senha/OTP) e escrevem no banco como `anon`; o `id_usuario` vem do `localStorage`~~ **Resolvido em 2026-10-28**: celular vinculado pelo Staff (pareamento ou código de acesso), Staff com senha e RLS por papel ([ADR 0011](decisoes/0011-identidade-real-avaliador-e-staff.md)) | Qualquer pessoa que saiba o e-mail de um avaliador age em nome dele | Migration 1 (não feita): OTP/magic link do Supabase Auth, para o `id_usuario` vir de `auth.uid()` em vez do payload — é o que fecha o L12 por completo | **Alta** |
-| L2 | `20261026000000_rls_admin_definitivo.sql` e as migrations de segurança acima precisam ser **coladas à mão** no SQL Editor; o CI não as aplica, embora exista `supabase-migrations.yml` | Divergência entre o repositório e o banco; a migration 4 só protege depois de aplicada | Commitar, aplicar as 4 migrations e ativar de fato o workflow de migrations. **2026-10-27**: migrations aplicadas por `supabase db push` no workflow de release; falta recriar o banco de teste ([migrations.md](banco-de-dados/migrations.md#recriar-o-banco-remoto-do-zero)) | **Alta** |
-| L3 | Papel e sessão em `localStorage`; a guarda de rota (`App.tsx`) é só no cliente | Basta editar o `localStorage` para abrir as telas (o RLS segura a escrita admin, mas não a leitura) | Derivar o papel da sessão do Supabase; restringir leituras sensíveis (notas, pareceres) via RLS | Média |
-| L4 | Views citam `historico_sorteios`, mas nenhuma migration cria essa tabela | O relatório de ausências pode falhar ou depender do fallback | Criar a tabela ou remover a referência; usar `historico_impedimentos` de forma consistente | Média |
-| L5 | A interface fala em "Importar (.xls/.xlsx/.csv)", mas `.xls` é recusado | Confusão do usuário | Ajustar os rótulos para `.xlsx/.csv` | Baixa |
-| L6 | `@google/genai`, `express`, `dotenv` e `GEMINI_API_KEY` sem uso | Superfície de ataque e dependências desnecessárias | Remover, ou definir um caso de uso de IA (ex.: resumo de pareceres) | Baixa |
-| L7 | ~~QR Code gerado por `api.qrserver.com`~~ **Resolvido em 2026-10-31**: gerado no navegador (`qrcode.react`) | Dependência externa no dia do evento; o link (com o id do evento) é enviado a terceiros | Gerar o QR Code localmente (biblioteca JS) | Média |
-| L8 | Componentes muito grandes (`RelatoriosAdmin` com 3,2 mil linhas, `GestorAvaliadores` 2,5 mil, `GestorProjetos` 2,1 mil) | Manutenção cara e regressões | Extrair hooks e serviços de dados (o `schema.sql` duplicado foi resolvido em 2026-10-27) | Média |
-| L9 | ~~Documentação desatualizada (ANTIGRAVITY.MD)~~ **Resolvido em 2026-10-27**: conteúdo revisado e dividido em `docs/` por assunto. `supabase/schema.sql` atualizado com as `20261026*` | Decisões tomadas com base em informação errada | — | Baixa |
-| L10 | Sem multi-evento simultâneo nem histórico consultável após o reset global | Perda de dados históricos se o reset for usado no lugar do arquivamento | Arquivar o evento (flag `is_ativo`) em vez de apagar; exportação completa antes do reset | Média |
-| L11 | ~~`view_ranking_top3` sem filtrar "fora da competição" e sem posição de empate~~ **Resolvido** (migration `20261030060000`): fora da competição não entra; `posicao` por `RANK()` (empate divide) por modalidade e área; marca `em_quarentena`. Desde a migration `20261031050000`, o empate na média é desfeito pelo `peso_desempate` (prioridade das perguntas) | ~~Empates sem critério oficial~~ (questão 3 decidida) | — | Média |
-
-**Roadmap sugerido**
-- **Aplicar já (via `supabase db push`, após [recriar o banco](banco-de-dados/migrations.md#recriar-o-banco-remoto-do-zero)):** L14 e L13 (migrations `...030000` e `...020000`, não dependem de frontend), depois L12 (migration `...010000` junto da troca de `TelaAvaliador` para `rpc('fn_enviar_avaliacao')`).
-- **Curto prazo (antes do próximo evento):** L1 (OTP, fecha o L12), L2 (aplicar/automatizar as migrations), L11, L4, L5, L7.
-- **Médio prazo:** L3, L8, L10; certificados para avaliadores; notificações por e-mail.
-- **Longo prazo:** portal de submissão de projetos; multi-evento; IA para apoio à comissão (resumo de pareceres, detecção de outliers).
+As lacunas (`L1`…`L14`), os achados da auditoria de segurança e o roadmap ficam em
+[Lacunas, riscos e roadmap](roadmap.md), para este documento descrever só o produto.
 
 ## 12. Perguntas em aberto
 

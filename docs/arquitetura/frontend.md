@@ -119,7 +119,7 @@ Se um dia o app adotar Realtime, use o heartbeat do próprio `realtime-js` (opç
 
 ## Próximos passos recomendados
 
-Débitos conhecidos que a nova estrutura facilita resolver (ver também [PRD](../PRD.md), item L8):
+Débitos conhecidos que a nova estrutura facilita resolver (ver também [roadmap](../roadmap.md), item L8):
 
 - **Quebrar componentes grandes** (`RelatoriosAdmin` ~3,2 mil linhas, `GestorAvaliadores` ~2,5 mil, `GestorProjetos` ~2,1 mil,
   `TelaAdmin` ~1,9 mil). Em cada feature, extrair:

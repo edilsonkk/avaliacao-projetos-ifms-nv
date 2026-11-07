@@ -78,7 +78,8 @@ supabase/
 | [docs/README.md](docs/README.md) | Índice: arquitetura, banco de dados, regras de negócio, operação e decisões |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Fluxo de branches, commits, PRs e Definition of Done |
 | [AGENTS.md](AGENTS.md) | Guia para agentes de IA (Claude Code, Antigravity…) |
-| [docs/PRD.md](docs/PRD.md) | Requisitos do produto e roadmap |
+| [docs/PRD.md](docs/PRD.md) | Requisitos e retrato do produto |
+| [docs/roadmap.md](docs/roadmap.md) | Lacunas, riscos e o que vem depois |
 
 ---
 
