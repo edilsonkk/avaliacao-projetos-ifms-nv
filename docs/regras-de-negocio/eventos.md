@@ -83,6 +83,14 @@ travas, projetos, questionários, avaliadores temporários, instituições, moda
 
 - Exige digitar o token do evento (ex.: `RESETAR-FETEC-MS-2026`) e confirmar num segundo modal.
 - Só o Admin autenticado pode executar ([segurança](../arquitetura/seguranca.md#funções)).
+- **Recusa rodar sem evento definido.** Antes, sem `p_id_evento` e sem evento ativo, o reset caía num caminho que
+  apagava os dados de todos os eventos.
+- **As notas apagadas são só as do evento.** Antes, os `DELETE` de `respostas_avaliacao` e `avaliacoes` não tinham
+  filtro nenhum e levavam as avaliações de todas as feiras já realizadas (os demais passos sempre filtraram).
+- Avaliador ou membro do Staff que ainda tem nota em **outro** evento não é apagado: antes, o `ON DELETE CASCADE`
+  apagava as avaliações dele junto, sem deixar vestígio.
+- **A trilha de auditoria sobrevive ao reset** e recebe, antes de apagar, um registro com quantas avaliações e
+  quantos projetos serão apagados ([auditoria](auditoria-de-notas.md#trilha-de-auditoria-log_auditoria)).
 - A função verifica em `information_schema.columns` se `id_evento` existe antes de usá-la, para funcionar com
   esquemas legados (ver [troubleshooting](../operacao/troubleshooting.md#reset-global-falha-com-column-id_evento-does-not-exist)).
 

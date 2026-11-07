@@ -13,7 +13,10 @@ Código: `src/features/avaliacao/components/TelaAvaliador.tsx`, `src/features/at
 4. Ao confirmar presença no estande, registra o horário de início (`tempo_presenca`).
 5. Preenche as notas por critério do questionário (escala Likert do questionário) e o parecer. Cada critério é um
    grupo de campos com o título no `legend`, e cada nota é um botão de opção que o leitor de tela anuncia como
-   "Nota 4 de 5" — dá para escolher pelo teclado, com as setas.
+   "Nota 4 de 5" — dá para escolher pelo teclado, com as setas. **Nenhuma nota vem pré-marcada**, e o botão de
+   enviar só habilita com nota em todos os critérios (a tela diz quantos faltam). Antes o formulário vinha com a
+   nota **máxima** marcada em tudo: quem apertasse "Salvar" dava nota cheia sem avaliar, e nada distinguia isso
+   de uma decisão do avaliador ([auditoria](auditoria-de-notas.md#o-que-mudou-no-caminho-das-notas)).
 6. Envia por `supabase.rpc('fn_enviar_avaliacao', ...)`. Regras do servidor em
    [funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#fn_enviar_avaliacao).
 7. Sem projetos elegíveis, mostra o status da fila e o botão `"Consultar Novamente"` (sem subtítulo explicativo).
@@ -29,8 +32,13 @@ projeto. Esse projeto não volta a ser sorteado para o mesmo avaliador.
 
 ## Nota final
 
-- Calculada **no servidor** por `fn_enviar_avaliacao` (média das notas dos critérios **ponderada pelo `peso_calculo`** de cada pergunta, lido do banco; com pesos iguais, é a média simples). O valor enviado pelo
-  cliente é ignorado.
+- Calculada **no servidor** por `fn_enviar_avaliacao` (média das notas dos critérios **ponderada pelo `peso_calculo`** de cada pergunta, lido do banco; com pesos iguais, é a média simples). O cliente não calcula nota:
+  não há caminho alternativo de gravação (o front tinha um que fazia média **simples** em JavaScript e
+  ignorava os pesos).
+- A conta de cada nota pode ser conferida aberta — critério, peso, produto, soma e divisão — no
+  [memorial de cálculo](auditoria-de-notas.md#memorial-de-cálculo).
+- A média do projeto é exposta sempre como `media_geral + ajuste_media = media_final`
+  ([auditoria](auditoria-de-notas.md#a-média-do-projeto-sempre-aberta)).
 - Cada nota deve estar dentro de `escala_minima`–`escala_maxima` do questionário.
 - O banco exige **todas as perguntas do questionário, uma vez cada, com nota**: responder só algumas, repetir uma
   pergunta ou usar perguntas de outro questionário é recusado. O questionário precisa ser do evento do projeto.
@@ -72,7 +80,10 @@ projeto. Esse projeto não volta a ser sorteado para o mesmo avaliador.
 
 - Um projeto entra em quarentena quando a diferença entre a **maior e a menor nota ativa** passa de **2,5 pontos**
   (com pelo menos 2 avaliações), ou quando `avaliacoes.is_quarentena = true`.
-- Aplicada automaticamente por `fn_enviar_avaliacao`; listada por `view_projetos_quarentena`.
+- Aplicada automaticamente por `fn_enviar_avaliacao`, que chama `fn_recalcular_quarentena` — a **mesma** função
+  usada ao cancelar e ao restaurar, com a mesma regra da view. Antes o envio duplicava a regra num bloco próprio
+  que não exigia duas avaliações, não respeitava `quarentena_resolvida_em` e só sabia marcar, nunca desmarcar.
+  Listada por `view_projetos_quarentena`.
 - A coordenação analisa no card **Projetos em Quarentena**, que mostra só o **evento ativo**, começando pela maior
   divergência, com a menor e a maior nota e o número de avaliações. **Ver notas** abre a nota de cada avaliador.
 - Para resolver, há dois caminhos:
@@ -82,7 +93,9 @@ projeto. Esse projeto não volta a ser sorteado para o mesmo avaliador.
      / `quarentena_resolvida_por` que o Admin aceitou as notas atuais. O projeto sai da lista e do contador do painel
      e **só volta se chegar uma avaliação nova** (com `created_at` depois da resolução).
      **Resolver Todos** faz o mesmo para o evento ativo (`admin_remover_quarentena_evento(p_id_evento)`).
-- As duas ações de aceite pedem confirmação. O contador do painel conta projetos (não avaliações) do evento ativo.
+- As duas ações de aceite pedem confirmação num diálogo da própria tela, com campo **Motivo (opcional)** que vai
+  para a [trilha de auditoria](auditoria-de-notas.md#trilha-de-auditoria-log_auditoria) e para a folha de
+  conferência. O contador do painel conta projetos (não avaliações) do evento ativo.
 - Antes da migration `20261029220000`, "Tirar de Quarentena" só zerava `is_quarentena`: a divergência continuava e o
   projeto voltava para a lista ao recarregar.
 
@@ -93,6 +106,9 @@ Card **Excluir uma avaliação** (`ModalExclusaoAvaliacao`). Decisão: [ADR 0004
 - **Nunca apaga**: `excluir_avaliacao` marca `status = 'CANCELADA'` (e `status_avaliacao`), registra
   `cancelada_em` / `cancelada_por` e **recalcula a quarentena do projeto** (`fn_recalcular_quarentena`, mesma regra da
   view). Cancelar a nota fora da curva tira o projeto da quarentena; o aviso diz "O projeto saiu da quarentena".
+- **Motivo opcional**: o modal de confirmação tem um campo de justificativa. Ela fica na trilha de auditoria e
+  sai na folha de conferência do projeto — é o que explica a decisão num recurso. Cancelar e restaurar também
+  passaram a deixar rastro na trilha (antes, restaurar apagava `cancelada_em`/`cancelada_por` e não registrava nada).
 - **Desfazer** disponível por 8 segundos num toast; depois, a restauração continua possível pelo botão **Restaurar**
   (`restaurar_avaliacao` → `CONCLUIDA`, também recalcula a quarentena).
 - **Restaurar respeita a cota**: se a vaga liberada já foi ocupada (outra avaliação ativa ou trava válida), o banco
@@ -108,8 +124,9 @@ Card **Excluir uma avaliação** (`ModalExclusaoAvaliacao`). Decisão: [ADR 0004
   de novo ([ADR 0005](../decisoes/0005-sorteio-nao-repete-avaliador.md)).
 
 **Tabela do modal** (todas as colunas ordenáveis): Código (com estande) · Nome do Projeto · Área do Projeto ·
-Nome do Avaliador (e-mail abaixo) · Área do Avaliador · Critérios (nota final + detalhamento expansível por pergunta,
-peso, nota e parecer) · Excluir/Restaurar.
+Nome do Avaliador (e-mail abaixo) · Área do Avaliador · Critérios (nota final + detalhamento expansível com
+**critério, peso, nota e peso × nota**, a conta da nota final e o veredito "confere" / "não fecha" /
+"nota arbitrada pelo Admin") · Excluir/Restaurar.
 
 **Busca**: código, título, área do projeto, nome e áreas do avaliador. Placeholder:
 `"Buscar por código, título do projeto ou avaliador..."`.

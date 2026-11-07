@@ -438,6 +438,8 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
       render(<ProvedorAvisos><TelaAvaliador id_usuario_logado={usuarioAvaliadorId} id_evento_ativo={eventoIdTeste} /></ProvedorAvisos>);
       expect(await screen.findByText('Projeto Sem Rede')).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: /Presente/i }));
+      // O formulário começa sem nota marcada: dar a nota é o que habilita o envio
+      fireEvent.click((await screen.findAllByRole('radio', { name: /^Nota 4 de 5$/ }))[0]);
       const btnSalvar = await screen.findByRole('button', { name: /Salvar Nota e Puxar Próximo/i });
       const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
 

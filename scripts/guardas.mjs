@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 // fileURLToPath: o caminho do projeto tem acentos, e `pathname` viria percent-encoded
 const RAIZ = fileURLToPath(new URL('..', import.meta.url));
-const PASTAS_MIGRADAS = ['src/app', 'src/components', 'src/features/auth', 'src/features/avaliacao', 'src/lib'];
+const PASTAS_MIGRADAS = ['src/app', 'src/components', 'src/features/auditoria', 'src/features/auth', 'src/features/avaliacao', 'src/lib'];
 
 const listar = (pasta) => {
   const saida = [];

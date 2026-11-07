@@ -252,7 +252,7 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
 
     await waitFor(() => {
       expect(screen.getByText('Robô Pantaneiro Autônomo')).toBeDefined();
-      expect(screen.getByText('9.50 pts')).toBeDefined();
+      expect(screen.getByText('9,50 pts')).toBeDefined();
       expect(screen.getByText('FETEC-001')).toBeDefined();
       // Não deve exibir número de estande
       expect(screen.queryByText('EST-A01')).toBeNull();
@@ -264,8 +264,8 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
 
     await waitFor(() => {
       // Notas individuais renderizadas (tela + print condensado)
-      expect(screen.getAllByText('9.00 pts').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('10.00 pts').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('9,00 pts').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('10,00 pts').length).toBeGreaterThanOrEqual(1);
       // Nomes dos avaliadores exibidos
       expect(screen.getAllByText('Dra. Amanda Silva').length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText('Prof. Marcos Souza').length).toBeGreaterThanOrEqual(1);
@@ -298,8 +298,8 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
     fireEvent.click(btnExpandirTodos);
 
     await waitFor(() => {
-      expect(screen.getAllByText('9.00 pts').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('10.00 pts').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('9,00 pts').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('10,00 pts').length).toBeGreaterThanOrEqual(1);
       // Validação das durações calculadas (15m 30s e 18m)
       expect(screen.getByText('15m 30s')).toBeDefined();
       expect(screen.getByText('18m 00s')).toBeDefined();
@@ -427,8 +427,8 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
       expect(screen.getByText(/Progresso Global/i)).toBeDefined();
       // Tempo médio formatado de avaliação
       expect(screen.getByText(/16m/i)).toBeDefined();
-      // Média geral das notas (9.50 pts)
-      expect(screen.getAllByText('9.50 pts').length).toBeGreaterThanOrEqual(1);
+      // Média geral das notas (9,50 pts)
+      expect(screen.getAllByText('9,50 pts').length).toBeGreaterThanOrEqual(1);
     });
   });
 

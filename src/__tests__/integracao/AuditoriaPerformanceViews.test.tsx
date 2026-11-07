@@ -249,7 +249,7 @@ describe('Auditoria de Desempenho, Ausência de Loop Infinito e Integração de 
     await waitFor(() => {
       expect(mockFrom).toHaveBeenCalledWith('view_ranking_top3');
       expect(screen.getByText('Inteligência Artificial Aplicada ao Agronegócio')).toBeDefined();
-      expect(screen.getByText('9.80 pts')).toBeDefined();
+      expect(screen.getByText('9,80 pts')).toBeDefined();
     });
   });
 
@@ -287,7 +287,7 @@ describe('Auditoria de Desempenho, Ausência de Loop Infinito e Integração de 
       expect(mockRpc).toHaveBeenCalledWith('fn_relatorio_avaliadores_completo', { p_id_evento: 'evt-1' });
       // Lista de projetos e médias
       expect(screen.getByText('Biotecnologia Pantaneira')).toBeDefined();
-      expect(screen.getByText('9.65 pts')).toBeDefined();
+      expect(screen.getByText('9,65 pts')).toBeDefined();
     });
 
     // Alterna para aba Avaliadores e Notas Atribuídas
@@ -296,7 +296,7 @@ describe('Auditoria de Desempenho, Ausência de Loop Infinito e Integração de 
 
     await waitFor(() => {
       expect(screen.getByText('Prof. Carlos Santos')).toBeDefined();
-      expect(screen.getByText('9.70 pts')).toBeDefined();
+      expect(screen.getByText('9,70 pts')).toBeDefined();
       expect(screen.getByText('Excelente rigor metodológico.')).toBeDefined();
     });
   });

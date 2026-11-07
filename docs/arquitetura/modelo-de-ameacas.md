@@ -45,7 +45,7 @@ precisa estar na RLS, nos `GRANT`s ou dentro das funções.
 |---|---|---|---|
 | Falsificação de identidade | Enviar nota em nome de outro avaliador | `avaliador_atual()` dentro de sorteio e envio | 1, 2 |
 | Adulteração | Escolher o projeto, furar a cota, alterar a fila | Trava só nasce no banco; cota com linha reservada | 1, 3 |
-| Repúdio | Admin cancela avaliação sem rastro | `cancelada_por`/`cancelada_em` | 3 |
+| Repúdio | Admin altera, cancela ou apaga nota sem rastro | `log_auditoria` append-only por trigger (pega até o `UPDATE` direto na API), `cancelada_por`/`cancelada_em`, ajuste manual marcado | 3 |
 | Vazamento de informação | Ler e-mails, CPF, notas de outros | RLS, `GRANT` por coluna, views `security_invoker` | 1 |
 | Negação de serviço | Bloquear projetos com travas longas; spam no autocadastro | Validade fixada no banco; limites do Auth | 1, 3 |
 | Elevação de privilégio | Conta qualquer rodar `admin_*` | `is_admin()` em toda função de Admin | 1 |

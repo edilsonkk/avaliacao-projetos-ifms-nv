@@ -22,7 +22,7 @@ Funções PostgreSQL chamadas pelo front-end via `supabase.rpc()`. Quem pode exe
 4. Valida a faixa de cada nota conforme o questionário.
 5. Calcula `nota_final` no servidor (média ponderada pelo `peso_calculo` das perguntas; o valor enviado pelo cliente é ignorado).
 6. Grava `avaliacoes` + `respostas_avaliacao`, remove a trava e conclui o item da fila.
-7. Aplica quarentena se a divergência entre maior e menor nota ativa do projeto passar de 2,5.
+7. Recalcula a quarentena do projeto por `fn_recalcular_quarentena` (a mesma regra da view e de excluir/restaurar: duas avaliações ativas, divergência acima de 2,5 e respeitando `quarentena_resolvida_em`).
 
 ## Identidade e vínculo do celular
 
@@ -58,19 +58,19 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 
 | Função | Descrição |
 |---|---|
-| `admin_reset_global(p_id_evento uuid default null)` → `jsonb` | Apaga todos os dados do evento. Ver [eventos](../regras-de-negocio/eventos.md#reset-global) |
+| `admin_reset_global(p_id_evento uuid default null)` → `jsonb` | Apaga os dados **do evento** (notas incluídas) e registra na trilha o resumo do que apagou. Recusa rodar sem evento definido. Ver [eventos](../regras-de-negocio/eventos.md#reset-global) |
 | `admin_desbloquear_todos()` | Remove todas as travas |
 | `admin_desbloquear_projeto(p_id_projeto uuid)` | Remove **todas** as travas de um projeto (não é usada pela tela) |
 | `admin_desbloquear_trava(p_id_lock uuid)` | Remove a trava de um avaliador; devolve `false` se ela já não existia |
-| `admin_remover_quarentena_evento(p_id_evento uuid)` | Aceita a divergência de todos os projetos em quarentena do evento; devolve quantos |
+| `admin_remover_quarentena_evento(p_id_evento uuid, p_motivo text default null)` | Aceita a divergência de todos os projetos em quarentena do evento; devolve quantos. O motivo vai para a trilha |
 | `admin_atribuir_banca(p_id_projeto uuid, p_ids_usuarios uuid[])` | Atribuição forçada em banca (tudo ou nada); devolve quantas travas |
 | `admin_enfileirar_projetos(p_id_usuario uuid, p_ids_projetos uuid[])` | Atribuição forçada em fila; devolve `{ativado, enfileirados}` |
 | `fn_motivo_inelegivel(p_id_projeto uuid, p_id_usuario uuid)` | Interna: motivo de o avaliador não poder avaliar o projeto (`NULL` = pode) |
 | `fn_vagas_projeto(p_id_projeto uuid)` | Interna: cota − avaliações ativas − travas válidas |
-| `admin_remover_quarentena(p_id_projeto uuid)` | Aceita a divergência do projeto (registra `quarentena_resolvida_em/_por`) |
+| `admin_remover_quarentena(p_id_projeto uuid, p_motivo text default null)` | Aceita a divergência do projeto (registra `quarentena_resolvida_em/_por`) |
 | `admin_remover_quarentena_todos()` | Aceita a divergência de todos os projetos em quarentena, de todos os eventos (a tela usa a versão por evento) |
-| `excluir_avaliacao(p_id_avaliacao uuid)` | Soft delete: `status = 'CANCELADA'`, `cancelada_em/_por`; recalcula a quarentena; devolve `projeto_em_quarentena` |
-| `restaurar_avaliacao(p_id_avaliacao uuid)` | Volta a avaliação para `CONCLUIDA` se houver vaga na cota; recalcula a quarentena |
+| `excluir_avaliacao(p_id_avaliacao uuid, p_motivo text default null)` | Soft delete: `status = 'CANCELADA'`, `cancelada_em/_por`; recalcula a quarentena; devolve `projeto_em_quarentena` |
+| `restaurar_avaliacao(p_id_avaliacao uuid, p_motivo text default null)` | Volta a avaliação para `CONCLUIDA` se houver vaga na cota; recalcula a quarentena |
 | `admin_salvar_avaliadores(p_id_evento uuid, p_itens jsonb)` → `jsonb` | Cadastro manual e importação de avaliadores numa transação: cria ou atualiza o nome, inscreve no evento, grava bloqueios e áreas do evento. E-mails de Admin/Staff são ignorados (nunca rebaixados). Devolve `{cadastrados, atualizados, ignorados: [{email, motivo}]}` |
 | `admin_atualizar_avaliador(p_id_usuario, p_id_evento, p_nome, p_email, p_id_instituicao, p_ids_modalidades_bloqueadas, p_ids_areas)` | Edição do avaliador de uma vez (substitui instituição, bloqueios e áreas no evento); recusa e-mail de outra pessoa |
 | `admin_bloquear_modalidade_avaliador(p_id_usuario, p_id_evento, p_id_modalidade, p_bloquear boolean)` | Chip de modalidade do Gestor de Avaliadores |
@@ -97,6 +97,27 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `fn_expurgar_modalidades_bloqueadas(p_id_usuario, p_id_evento)` | Interna: remove travas e fila do avaliador em projetos das modalidades bloqueadas |
 | `fn_recalcular_quarentena(p_id_projeto uuid)` | Interna: marca/desmarca `is_quarentena` das avaliações ativas pela regra da view |
 | `is_admin()` → `boolean` | Usuário autenticado tem papel `ADMIN` |
+
+## Auditoria de notas
+
+Desenho completo em [auditoria de notas](../regras-de-negocio/auditoria-de-notas.md). Todas exigem
+`is_admin()`; as de ajuste registram o motivo na trilha.
+
+| Função | Retorno | Descrição |
+|---|---|---|
+| `fn_auditar_notas(p_id_evento uuid default null)` | `TABLE` | Conferência do evento: recalcula cada nota a partir das respostas e lista os achados (C1 a C12) com severidade |
+| `fn_memorial_avaliacao(p_id_avaliacao uuid)` | `jsonb` | A conta de uma nota: critério, peso, nota, produto, somas, divisão sem arredondar, valor gravado e marca de ajuste |
+| `fn_memorial_projeto(p_id_projeto uuid, p_incluir_achados boolean default true)` | `jsonb` | Memorial do projeto: avaliações ativas e canceladas, média aberta, desempate, quarentena, achados e trilha |
+| `fn_memorial_por_codigo(p_codigo_projeto text, p_id_evento uuid default null)` | `jsonb` | O mesmo, achando o projeto pelo código (a interface nunca pede UUID) |
+| `fn_memorial_evento(p_id_evento uuid default null)` | `jsonb` | Folha de conferência consolidada: todos os projetos do evento, com os achados de uma única rodada da conferência |
+| `fn_validar_respostas(p_id_questionario uuid, p_respostas jsonb)` | `numeric` | Valida o conjunto de respostas e devolve a média ponderada. Mesma regra de `fn_enviar_avaliacao` |
+| `admin_corrigir_respostas_avaliacao(p_id_avaliacao, p_respostas jsonb, p_motivo)` | `jsonb` | Corrige as notas por critério e recalcula a nota final pela fórmula oficial |
+| `admin_lancar_avaliacao(p_id_projeto, p_id_usuario, p_id_questionario, p_respostas, p_parecer, p_motivo, p_confirmar_acima_da_cota)` | `jsonb` | Lança a avaliação de um avaliador do evento; acima da cota só com confirmação |
+| `admin_arbitrar_nota_final(p_id_avaliacao, p_nota numeric, p_motivo)` | `jsonb` | Define a nota final sem mexer nas respostas (vira achado informativo na conferência) |
+| `admin_ajustar_media_projeto(p_id_projeto, p_delta numeric, p_motivo)` | `jsonb` | Bónus ou penalidade na média do projeto, limitado à amplitude da escala; `p_delta = 0` remove |
+| `auditoria_marcar_origem(p_origem, p_motivo)` | `void` | Interna: cada RPC confiável se identifica na trilha. **Não** é executável pela API |
+| `auditoria_registrar(p_acao, p_tabela, p_id_evento, p_dados, p_motivo)` | `void` | Interna: registro feito à mão por uma RPC (o reset global usa) |
+| `fn_auditar()` | `trigger` | Interna: a trigger que grava a trilha em cada tabela auditada |
 
 ## Relatórios
 

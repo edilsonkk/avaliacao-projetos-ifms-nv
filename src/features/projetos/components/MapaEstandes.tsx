@@ -25,6 +25,7 @@ import {
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { buscarTodas } from '@/lib/buscarTodas';
 import { tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
+import { formatarNota } from '@/lib/formatoNota';
 import { compararNatural } from '@/components/ui/CabecalhoOrdenavel';
 
 export type StatusProjetoMapa = 'nao_credenciado' | 'credenciado' | 'faltando' | 'avaliado';
@@ -64,6 +65,9 @@ interface AvaliacaoAudit {
   nota_final?: number | null;
   parecer_final?: string | null;
   created_at?: string;
+  /** Ajuste manual do Admin nesta nota (docs/regras-de-negocio/auditoria-de-notas.md). */
+  ajuste_tipo?: 'respostas_corrigidas' | 'nota_arbitrada' | 'lancada_pelo_admin' | null;
+  ajuste_motivo?: string | null;
   usuarios?: { nome?: string; email?: string } | { nome?: string; email?: string }[] | null;
 }
 
@@ -257,6 +261,8 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
           nota_final,
           parecer_final,
           created_at,
+          ajuste_tipo,
+          ajuste_motivo,
           usuarios ( nome, email )
         `)
         .eq('id_projeto', projetoItem.id_projeto)
@@ -854,7 +860,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase block">Média Geral</span>
                 <span className="text-sm font-black font-mono text-emerald-600 dark:text-emerald-400">
-                  {projeto_selecionado.media_geral !== null ? `${projeto_selecionado.media_geral.toFixed(2)} pts` : '-'}
+                  {projeto_selecionado.media_geral !== null ? `${formatarNota(projeto_selecionado.media_geral)} pts` : '—'}
                 </span>
               </div>
               <div>
@@ -907,9 +913,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
                     const userObj = Array.isArray(item.usuarios) ? item.usuarios[0] : item.usuarios;
                     const nomeAvaliador = userObj?.nome || 'Avaliador Oficial';
                     const emailAvaliador = userObj?.email || '';
-                    const notaFinal = item.nota_final !== null && item.nota_final !== undefined
-                      ? Number(item.nota_final).toFixed(2)
-                      : '-';
+                    const notaFinal = formatarNota(item.nota_final);
 
                     return (
                       <div key={item.id_avaliacao || idx} className="p-3.5 bg-white dark:bg-slate-800/80 space-y-2">
@@ -925,6 +929,18 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
                               {emailAvaliador && (
                                 <span className="text-[10px] text-slate-400 block font-mono">
                                   {emailAvaliador}
+                                </span>
+                              )}
+                              {item.ajuste_tipo && (
+                                <span
+                                  title={item.ajuste_motivo || 'Ajuste manual do Admin'}
+                                  className="mt-1 inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200 border border-amber-300 dark:border-amber-800"
+                                >
+                                  {item.ajuste_tipo === 'nota_arbitrada'
+                                    ? 'Nota arbitrada pelo Admin'
+                                    : item.ajuste_tipo === 'respostas_corrigidas'
+                                      ? 'Notas corrigidas pelo Admin'
+                                      : 'Lançada pelo Admin'}
                                 </span>
                               )}
                             </div>

@@ -20,6 +20,7 @@ Comece pela [visão geral](arquitetura/visao-geral.md). Para contribuir, leia o
 | Como criar e aplicar uma migration? | [Migrations](banco-de-dados/migrations.md) |
 | Como funciona o sorteio, conflito, cota, bancas? | [Sorteio e atribuição](regras-de-negocio/sorteio-e-atribuicao.md) |
 | Notas, quarentena, exclusão de avaliação | [Avaliação e quarentena](regras-de-negocio/avaliacao-e-quarentena.md) |
+| Conferir se as notas estão certas, memorial de cálculo, trilha de alterações, ajuste manual | [Auditoria de notas](regras-de-negocio/auditoria-de-notas.md) |
 | Evento ativo, janela de horário, reset global | [Eventos](regras-de-negocio/eventos.md) |
 | Importação de planilhas, De-Para, aliases, CNPq | [Importação de planilhas](regras-de-negocio/importacao-de-planilhas.md) |
 | Gestão de projetos e mapa de estandes | [Projetos e estandes](regras-de-negocio/projetos-e-estandes.md) |

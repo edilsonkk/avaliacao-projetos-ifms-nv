@@ -70,13 +70,14 @@ Base: `ALL` para o Admin em todas as tabelas; `TRUNCATE` revogado de todos.
 | `projetos`, `questionarios`, `perguntas_questionario` | — | ler | ler |
 | `usuarios` (sem `cpf`/`celular` para logados) | — | só o próprio | ler e alterar avaliadores |
 | `avaliadores_evento` | — | ler o próprio | ler; inserir e alterar **só avaliadores** |
-| `avaliacoes` | — | ler as próprias | apagar pendentes (sem nota) |
+| `avaliacoes` | — | ler as próprias | apagar pendentes (sem nota **e sem resposta gravada**, não canceladas) |
 | `respostas_avaliacao` | — | — | — |
 | `locks_ativos` | — | ler e apagar **só as próprias** (criar só via sorteio/fila) | ler e apagar |
 | `fila_atribuicoes_direcionadas` | — | ler só as próprias (assumir via `fn_assumir_item_fila`) | ler e apagar |
 | `historico_impedimentos` | — | ler os próprios (criar via `fn_registrar_impedimento`) | — |
 | `avaliador_modalidades_bloqueadas`, `avaliador_areas` | — | ler as próprias | ler e gravar |
 | `dispositivos_avaliador`, `pareamentos_pendentes`, `codigos_acesso` | — | — (só via funções) | — (só via funções) |
+| `log_auditoria` | — | — | — (leitura só do Admin; ninguém escreve) |
 | `storage.objects` do bucket `identidade-visual` | ler | ler | ler e gravar |
 
 Regras de coluna que a RLS não alcança passam por funções:
@@ -96,6 +97,21 @@ O visitante não tem privilégio algum em `usuarios`, `avaliacoes` e nas tabelas
 só tem `SELECT` (sem `INSERT`/`UPDATE`/`DELETE`: a proteção não depende só da RLS). Contas sem papel
 (qualquer cadastro feito pelo Auth público) só leem os catálogos públicos.
 
+**Trilha de auditoria** (`log_auditoria`): leitura só com `is_admin()`; **ninguém escreve**. Não há policy de
+escrita, os `GRANT` de escrita são revogados e um trigger recusa `UPDATE`/`DELETE`/`TRUNCATE` até para o dono da
+tabela. A gravação é feita por trigger `SECURITY DEFINER` em cada tabela auditada.
+
+O `ALL` do Admin continua valendo (ADR 0006): pela API REST, o Admin **pode** escrever direto em `avaliacoes` e
+`respostas_avaliacao`. A decisão é **registrar e alertar, não impedir**
+([ADR 0014](../decisoes/0014-trilha-de-auditoria-append-only.md)): a escrita que não passa por RPC fica com
+`origem = 'direto'` na trilha e vira achado grave na
+[conferência de notas](../regras-de-negocio/auditoria-de-notas.md#conferência-o-que-é-verificado). Para o ajuste
+que a coordenação precisa fazer, existem RPCs validadas
+([ADR 0015](../decisoes/0015-ajuste-manual-de-notas.md)), o que torna o `UPDATE` direto desnecessário.
+
+**Nota de feira não se apaga por cadastro:** as FKs de `avaliacoes` para `projetos` e `usuarios` são
+`ON DELETE RESTRICT`, então apagar projeto ou usuário com nota é recusado (`23503`).
+
 **Views** usam `security_invoker` (respeitam a RLS de quem consulta) e são somente leitura.
 
 ## Funções
@@ -108,6 +124,8 @@ só tem `SELECT` (sem `INSERT`/`UPDATE`/`DELETE`: a proteção não depende só 
 | `fn_parear_dispositivo`, `fn_gerar_codigo_acesso`, `fn_desvincular_dispositivo`, `fn_check_in_projeto` | Staff ou Admin |
 | `fn_assumir_item_fila`, `fn_registrar_impedimento`, `fn_fixar_questionario` | Avaliador vinculado (`avaliador_atual()`) |
 | `fn_avaliacoes_do_questionario` | Admin |
+| `fn_auditar_notas`, `fn_memorial_*`, `admin_corrigir_respostas_avaliacao`, `admin_lancar_avaliacao`, `admin_arbitrar_nota_final`, `admin_ajustar_media_projeto` | Admin (`is_admin()` dentro da função) |
+| `auditoria_marcar_origem`, `auditoria_registrar`, `auditoria_ator`, `fn_auditar` | **Ninguém pela API**: `EXECUTE` revogado de `anon` e `authenticated`; só as funções `SECURITY DEFINER` as chamam. Se fossem executáveis, a origem na trilha seria forjável |
 | `fn_solicitar_pareamento`, `fn_vincular_com_codigo` | Qualquer sessão que **não** seja de Admin/Staff/Monitor (é o próprio celular) |
 | `fn_meu_perfil`, `fn_autocadastro_avaliador`, `fn_telao_resumo` | Público. O autocadastro nunca altera cadastro existente; o Telão só devolve totais |
 

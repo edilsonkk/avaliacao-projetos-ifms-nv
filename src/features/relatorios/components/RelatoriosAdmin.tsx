@@ -27,6 +27,8 @@ import {
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { buscarTodas } from '@/lib/buscarTodas';
 import { baixarCsv } from '@/lib/csv';
+import { formatarAjuste, formatarNota } from '@/lib/formatoNota';
+import { MemorialAvaliacao, buscarMemorialProjeto, type MemorialProjeto } from '@/features/auditoria';
 import { tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { CabecalhoOrdenavel, compararNatural } from '@/components/ui/CabecalhoOrdenavel';
 import { ImagemEvento } from '@/components/layout/IdentidadeVisual';
@@ -42,6 +44,9 @@ export interface DetalheAvaliacaoProjeto {
   nota_final: number;
   parecer?: string | null;
   data?: string | null;
+  /** Ajuste manual do Admin nesta avaliação (ver docs/regras-de-negocio/auditoria-de-notas.md). */
+  ajuste_tipo?: 'respostas_corrigidas' | 'nota_arbitrada' | 'lancada_pelo_admin' | null;
+  ajuste_motivo?: string | null;
 }
 
 export interface RelatorioProjetoItem {
@@ -56,7 +61,14 @@ export interface RelatorioProjetoItem {
   nome_instituicao?: string | null;
   id_instituicao?: string | null;
   total_avaliacoes: number;
+  /** Média das notas ativas, sem ajuste. */
   media_geral: number;
+  /** Bónus ou penalidade de comissão no projeto. */
+  ajuste_media?: number;
+  /** media_geral + ajuste_media: o número que premia, igual ao da Classificação. */
+  media_final?: number;
+  /** Há ajuste manual do Admin no projeto ou em alguma avaliação dele. */
+  tem_ajuste_manual?: boolean;
   notas: number[];
   is_check_in_realizado?: boolean;
   is_fora_da_competicao?: boolean;
@@ -275,6 +287,32 @@ export const RelatoriosAdmin: React.FC<{
   // Accordion de Notas Individuais na Tabela de Projetos (id_projeto expandido)
   const [projetosExpandidos, setProjetosExpandidos] = useState<Set<string>>(new Set());
 
+  /**
+   * Memorial de cálculo por projeto, buscado só quando o Admin pede: é a conta de cada nota
+   * (critério, peso, produto). Carregar junto do relatório pesaria para nada — na feira,
+   * quase sempre se confere um projeto, não os 300.
+   */
+  const [memoriais, setMemoriais] = useState<Record<string, MemorialProjeto | 'carregando' | 'erro'>>({});
+
+  const alternarMemorial = async (idProjeto: string) => {
+    if (memoriais[idProjeto]) {
+      setMemoriais((atual) => {
+        const copia = { ...atual };
+        delete copia[idProjeto];
+        return copia;
+      });
+      return;
+    }
+    setMemoriais((atual) => ({ ...atual, [idProjeto]: 'carregando' }));
+    try {
+      const memorial = await buscarMemorialProjeto(idProjeto);
+      setMemoriais((atual) => ({ ...atual, [idProjeto]: memorial }));
+    } catch (erro) {
+      console.error('Falha ao abrir o memorial de cálculo:', erro);
+      setMemoriais((atual) => ({ ...atual, [idProjeto]: 'erro' }));
+    }
+  };
+
   // Accordion de Avaliadores e Notas (id_usuario expandido)
   const [avaliadoresNotasExpandidos, setAvaliadoresNotasExpandidos] = useState<Set<string>>(new Set());
 
@@ -469,6 +507,9 @@ export const RelatoriosAdmin: React.FC<{
         id_instituicao: p.id_instituicao || null,
         total_avaliacoes: Number(p.total_avaliacoes ?? 0),
         media_geral: Number(p.media_geral ?? 0),
+        ajuste_media: Number(p.ajuste_media ?? 0),
+        media_final: Number(p.media_final ?? p.media_geral ?? 0),
+        tem_ajuste_manual: p.tem_ajuste_manual === true,
         notas: Array.isArray(p.notas) ? p.notas.map(Number) : [],
         is_check_in_realizado: p.is_check_in_realizado === true,
         is_fora_da_competicao: p.is_fora_da_competicao === true,
@@ -1257,7 +1298,7 @@ export const RelatoriosAdmin: React.FC<{
     let nomeArquivo = '';
 
     if (aba_ativa === 'projetos') {
-      linhas = [['Código do Projeto', 'Título do Projeto', 'Instituição', 'Modalidade', 'Área Temática', 'Avaliações', 'Média Geral', 'Notas Individuais']];
+      linhas = [['Código do Projeto', 'Título do Projeto', 'Instituição', 'Modalidade', 'Área Temática', 'Avaliações', 'Média das Notas', 'Ajuste de Comissão', 'Média Final', 'Notas Individuais']];
       projetos_ordenados.forEach((p) => {
         linhas.push([
           p.codigo_projeto || '',
@@ -1267,6 +1308,8 @@ export const RelatoriosAdmin: React.FC<{
           p.area_conhecimento,
           p.total_avaliacoes,
           p.media_geral.toFixed(2),
+          Number(p.ajuste_media ?? 0).toFixed(2),
+          Number(p.media_final ?? p.media_geral).toFixed(2),
           p.notas.map((n) => n.toFixed(2)).join('; '),
         ]);
       });
@@ -1309,7 +1352,7 @@ export const RelatoriosAdmin: React.FC<{
         inst.projetos.forEach((p) => {
           let statusProj = 'Aguardando Avaliação';
           if (!p.is_check_in_realizado) statusProj = 'Não Credenciado';
-          else if (p.total_avaliacoes > 0) statusProj = `${p.media_geral.toFixed(2)} pts (${p.total_avaliacoes} aval.)`;
+          else if (p.total_avaliacoes > 0) statusProj = `${formatarNota(p.media_geral)} pts (${p.total_avaliacoes} aval.)`;
           linhas.push([inst.nome_instituicao, p.codigo_projeto || '', p.titulo, p.modalidade, p.area_conhecimento, statusProj]);
         });
       });
@@ -1727,8 +1770,21 @@ export const RelatoriosAdmin: React.FC<{
                           </td>
                           <td className="px-4 py-3 text-right">
                             <span className="font-mono text-base font-black text-emerald-700 dark:text-emerald-400">
-                              {item.media_geral.toFixed(2)} pts
+                              {formatarNota(item.media_final ?? item.media_geral)} pts
                             </span>
+                            {Number(item.ajuste_media ?? 0) !== 0 && (
+                              <span className="block text-legenda font-mono text-slate-500 dark:text-slate-400">
+                                {formatarNota(item.media_geral)} {formatarAjuste(item.ajuste_media)}
+                              </span>
+                            )}
+                            {item.tem_ajuste_manual && (
+                              <span
+                                title="Há ajuste manual do Admin neste projeto. Veja o detalhamento na Auditoria de Notas."
+                                className="mt-1 inline-block px-2 py-0.5 rounded-full text-legenda font-bold bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200 border border-amber-300 dark:border-amber-800"
+                              >
+                                Ajustada
+                              </span>
+                            )}
                           </td>
                         </tr>
 
@@ -1743,9 +1799,38 @@ export const RelatoriosAdmin: React.FC<{
                                     Notas e Avaliações Recebidas ({detalhes.length || notas.length})
                                   </h4>
                                   <span className="text-[11px] font-mono font-bold text-slate-500">
-                                    Média: {item.media_geral.toFixed(2)} pts
+                                    Média: {formatarNota(item.media_final ?? item.media_geral)} pts
                                   </span>
                                 </div>
+
+                                {detalhes.length > 0 && (
+                                  <div className="print:hidden">
+                                    <button
+                                      type="button"
+                                      onClick={() => alternarMemorial(item.id_projeto)}
+                                      aria-expanded={Boolean(memoriais[item.id_projeto])}
+                                      className="text-xs font-bold text-emerald-700 dark:text-emerald-400 underline decoration-dotted cursor-pointer"
+                                    >
+                                      {memoriais[item.id_projeto] ? 'Esconder a conta das notas' : 'Ver a conta das notas (critério, peso e produto)'}
+                                    </button>
+                                  </div>
+                                )}
+
+                                {memoriais[item.id_projeto] === 'carregando' && (
+                                  <p className="text-xs text-slate-500">Abrindo a conta das notas…</p>
+                                )}
+                                {memoriais[item.id_projeto] === 'erro' && (
+                                  <p role="alert" className="text-xs font-semibold text-red-700 dark:text-red-400">
+                                    Não foi possível abrir o memorial de cálculo deste projeto.
+                                  </p>
+                                )}
+                                {typeof memoriais[item.id_projeto] === 'object' && (
+                                  <div className="space-y-3">
+                                    {(memoriais[item.id_projeto] as MemorialProjeto).avaliacoes_ativas.map((av) => (
+                                      <MemorialAvaliacao key={av.id_avaliacao} memorial={av} />
+                                    ))}
+                                  </div>
+                                )}
 
                                 {detalhes.length === 0 && notas.length === 0 ? (
                                   <p className="text-xs text-slate-500 italic">
@@ -1764,9 +1849,21 @@ export const RelatoriosAdmin: React.FC<{
                                                 {d.avaliador_nome}
                                               </span>
                                               <span className="font-mono text-xs font-black px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                                {Number(d.nota_final).toFixed(2)} pts
+                                                {formatarNota(d.nota_final)} pts
                                               </span>
                                             </div>
+                                            {d.ajuste_tipo && (
+                                              <span
+                                                title={d.ajuste_motivo || 'Ajuste manual do Admin'}
+                                                className="inline-block px-2 py-0.5 rounded-full text-legenda font-bold bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200 border border-amber-300 dark:border-amber-800"
+                                              >
+                                                {d.ajuste_tipo === 'nota_arbitrada'
+                                                  ? 'Nota arbitrada pelo Admin'
+                                                  : d.ajuste_tipo === 'respostas_corrigidas'
+                                                    ? 'Notas corrigidas pelo Admin'
+                                                    : 'Lançada pelo Admin'}
+                                              </span>
+                                            )}
                                             {d.data && (
                                               <span className="text-[10px] text-slate-400 block">
                                                 {formatarDataHora(d.data)}
@@ -1792,7 +1889,7 @@ export const RelatoriosAdmin: React.FC<{
                                               Avaliação #{idx + 1}
                                             </span>
                                             <span className="font-mono text-xs font-black px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                                              {Number(nota).toFixed(2)} pts
+                                              {formatarNota(nota)} pts
                                             </span>
                                           </div>
                                         ))}
@@ -1826,7 +1923,9 @@ export const RelatoriosAdmin: React.FC<{
                     <div className="text-[11px] text-slate-700 font-medium">
                       Modalidade: {item.modalidade} | Área: {item.area_conhecimento}
                       {item.nome_instituicao && ` | Instituição: ${item.nome_instituicao}`}
-                      {` | Avaliações: ${item.total_avaliacoes} | Média Geral: ${item.media_geral.toFixed(2)} pts`}
+                      {` | Avaliações: ${item.total_avaliacoes} | Média Geral: ${formatarNota(item.media_final ?? item.media_geral)} pts`}
+                      {Number(item.ajuste_media ?? 0) !== 0 &&
+                        ` (média das notas ${formatarNota(item.media_geral)} ${formatarAjuste(item.ajuste_media)})`}
                     </div>
                     {/* Avaliações recebidas recuadas à direita */}
                     <div className="ml-6 border-l-2 border-slate-400 pl-3 mt-1.5 space-y-1 text-[10px] text-slate-800">
@@ -1841,7 +1940,7 @@ export const RelatoriosAdmin: React.FC<{
                         detalhes.map((d, dIdx) => (
                           <div key={d.id_avaliacao || dIdx} className="flex flex-wrap items-baseline gap-x-2">
                             <span className="font-bold text-slate-900">• {d.avaliador_nome}:</span>
-                            <span className="font-mono font-bold text-slate-900">{Number(d.nota_final).toFixed(2)} pts</span>
+                            <span className="font-mono font-bold text-slate-900">{formatarNota(d.nota_final)} pts</span>
                             {d.data && (
                               <span className="text-slate-600 font-mono text-[9px]">
                                 ({formatarDataHora(d.data)})
@@ -1936,7 +2035,7 @@ export const RelatoriosAdmin: React.FC<{
                         </span>
                         {avalGrupo.media_notas > 0 && (
                           <span className="font-mono text-sm font-black text-emerald-700 dark:text-emerald-400">
-                            Média: {avalGrupo.media_notas.toFixed(2)} pts
+                            Média: {formatarNota(avalGrupo.media_notas)} pts
                           </span>
                         )}
                         <span className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[11px] font-mono">
@@ -1955,7 +2054,7 @@ export const RelatoriosAdmin: React.FC<{
                       <div className="hidden print:block text-right text-xs font-semibold text-slate-800">
                         <span>{avalGrupo.total_avaliacoes} {avalGrupo.total_avaliacoes === 1 ? 'avaliação' : 'avaliações'}</span>
                         {avalGrupo.media_notas > 0 && (
-                          <span> • Média: {avalGrupo.media_notas.toFixed(2)} pts</span>
+                          <span> • Média: {formatarNota(avalGrupo.media_notas)} pts</span>
                         )}
                         <span> • Tempo Médio: {avalGrupo.tempo_medio_formatado}</span>
                       </div>
@@ -1996,7 +2095,7 @@ export const RelatoriosAdmin: React.FC<{
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <span className="font-mono text-sm font-black text-emerald-700 dark:text-emerald-400">
-                                  {item.nota_final.toFixed(2)} pts
+                                  {formatarNota(item.nota_final)} pts
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-center font-mono text-[11px] text-slate-600 dark:text-slate-300">
@@ -2037,7 +2136,7 @@ export const RelatoriosAdmin: React.FC<{
                                 </span>
                               )}
                               <span className="font-mono font-bold text-slate-900">
-                                — Nota: {item.nota_final.toFixed(2)} pts
+                                — Nota: {formatarNota(item.nota_final)} pts
                               </span>
                               <span className="text-[10px] text-slate-600 font-mono">
                                 [Início: {formatarHorario(item.tempo_presenca)} | Fim: {formatarHorario(item.tempo_submissao || item.data_avaliacao)} | Duração: {item.duracao_formatada}]
@@ -2071,7 +2170,7 @@ export const RelatoriosAdmin: React.FC<{
                 </div>
                 <div className="text-[11px] text-slate-700 font-medium">
                   Total de Avaliações: {avalGrupo.total_avaliacoes}
-                  {avalGrupo.media_notas > 0 && ` | Média das Notas: ${avalGrupo.media_notas.toFixed(2)} pts`}
+                  {avalGrupo.media_notas > 0 && ` | Média das Notas: ${formatarNota(avalGrupo.media_notas)} pts`}
                   {` | Tempo Médio: ${avalGrupo.tempo_medio_formatado}`}
                 </div>
                 {/* Projetos avaliados recuados à direita */}
@@ -2094,7 +2193,7 @@ export const RelatoriosAdmin: React.FC<{
                             </span>
                           )}
                           <span className="font-mono font-bold text-slate-900">
-                            — Nota: {item.nota_final.toFixed(2)} pts
+                            — Nota: {formatarNota(item.nota_final)} pts
                           </span>
                           <span className="text-[10px] text-slate-600 font-mono">
                             [Início: {formatarHorario(item.tempo_presenca)} | Fim: {formatarHorario(item.tempo_submissao || item.data_avaliacao)} | Duração: {item.duracao_formatada}]
@@ -2449,7 +2548,7 @@ export const RelatoriosAdmin: React.FC<{
                           </span>
                           {inst.media_geral_escola > 0 && (
                             <span className="font-mono text-sm font-black text-indigo-700 dark:text-indigo-400">
-                              Média: {inst.media_geral_escola.toFixed(2)} pts
+                              Média: {formatarNota(inst.media_geral_escola)} pts
                             </span>
                           )}
                         </div>
@@ -2466,7 +2565,7 @@ export const RelatoriosAdmin: React.FC<{
                       <div className="hidden print:block text-right text-xs font-semibold text-slate-800">
                         <span>{inst.total_credenciados} credenciados • {inst.total_avaliados} avaliados</span>
                         {inst.media_geral_escola > 0 && (
-                          <span> • Média: {inst.media_geral_escola.toFixed(2)} pts</span>
+                          <span> • Média: {formatarNota(inst.media_geral_escola)} pts</span>
                         )}
                       </div>
                     </div>
@@ -2499,7 +2598,7 @@ export const RelatoriosAdmin: React.FC<{
                             } else if (proj.total_avaliacoes > 0) {
                               badgeStatus = (
                                 <span className="font-mono text-xs font-black text-emerald-700 dark:text-emerald-400">
-                                  {proj.media_geral.toFixed(2)} pts ({proj.total_avaliacoes} {proj.total_avaliacoes === 1 ? 'aval.' : 'aval.'})
+                                  {formatarNota(proj.media_geral)} pts ({proj.total_avaliacoes} {proj.total_avaliacoes === 1 ? 'aval.' : 'aval.'})
                                 </span>
                               );
                             } else if (foiMarcadoAusente) {
@@ -2556,7 +2655,7 @@ export const RelatoriosAdmin: React.FC<{
                           if (!proj.is_check_in_realizado) {
                             statusTexto = 'Não Credenciado';
                           } else if (proj.total_avaliacoes > 0) {
-                            statusTexto = `Avaliado (Média: ${proj.media_geral.toFixed(2)} pts - ${proj.total_avaliacoes} ${proj.total_avaliacoes === 1 ? 'aval.' : 'aval.'})`;
+                            statusTexto = `Avaliado (Média: ${formatarNota(proj.media_geral)} pts - ${proj.total_avaliacoes} ${proj.total_avaliacoes === 1 ? 'aval.' : 'aval.'})`;
                           } else if (foiMarcadoAusente) {
                             statusTexto = 'Marcado como Ausente';
                           }
@@ -2600,7 +2699,7 @@ export const RelatoriosAdmin: React.FC<{
                 </div>
                 <div className="text-[11px] text-slate-700 font-medium">
                   Total de Trabalhos Submetidos: {inst.total_projetos} | Credenciados: {inst.total_credenciados} | Avaliados: {inst.total_avaliados}
-                  {inst.media_geral_escola > 0 && ` | Média Geral da Escola: ${inst.media_geral_escola.toFixed(2)} pts`}
+                  {inst.media_geral_escola > 0 && ` | Média Geral da Escola: ${formatarNota(inst.media_geral_escola)} pts`}
                 </div>
                 {/* Trabalhos da escola recuados à direita */}
                 <div className="ml-6 border-l-2 border-slate-400 pl-3 mt-1.5 space-y-1 text-[10px] text-slate-800">
@@ -2618,7 +2717,7 @@ export const RelatoriosAdmin: React.FC<{
                       if (!proj.is_check_in_realizado) {
                         statusTexto = 'Não Credenciado';
                       } else if (proj.total_avaliacoes > 0) {
-                        statusTexto = `Avaliado (Média: ${proj.media_geral.toFixed(2)} pts - ${proj.total_avaliacoes} ${proj.total_avaliacoes === 1 ? 'aval.' : 'aval.'})`;
+                        statusTexto = `Avaliado (Média: ${formatarNota(proj.media_geral)} pts - ${proj.total_avaliacoes} ${proj.total_avaliacoes === 1 ? 'aval.' : 'aval.'})`;
                       } else if (foiMarcadoAusente) {
                         statusTexto = 'Marcado como Ausente';
                       }
@@ -2753,7 +2852,7 @@ export const RelatoriosAdmin: React.FC<{
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-700">
-                <span>Média das notas: <strong className="text-emerald-700 dark:text-emerald-300 font-mono">{indicadores.media_geral_notas.toFixed(2)} pts</strong></span>
+                <span>Média das notas: <strong className="text-emerald-700 dark:text-emerald-300 font-mono">{formatarNota(indicadores.media_geral_notas)} pts</strong></span>
                 <span>Enviadas: <strong>{indicadores.total_avaliacoes_realizadas}</strong></span>
               </div>
             </div>
@@ -2875,7 +2974,7 @@ export const RelatoriosAdmin: React.FC<{
                         </span>
                         {mod.media > 0 && (
                           <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 text-xs">
-                            {mod.media.toFixed(2)} pts
+                            {formatarNota(mod.media)} pts
                           </span>
                         )}
                       </div>

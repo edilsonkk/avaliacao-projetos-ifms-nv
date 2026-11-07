@@ -258,7 +258,7 @@ describe('Validação de Regras de Negócio Remodeladas do Bloco 1', () => {
     await waitFor(() => {
       expect(mockFrom).toHaveBeenCalledWith('view_projetos_quarentena');
       expect(screen.getByText('FETEC-999')).toBeDefined();
-      expect(screen.getByText(/3.5 pts/i)).toBeDefined();
+      expect(screen.getByText(/3,50 pts/i)).toBeDefined();
     });
   });
 
