@@ -51,6 +51,133 @@ CREATE TYPE "public"."tipo_impedimento" AS ENUM (
 ALTER TYPE "public"."tipo_impedimento" OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_ajustar_media_projeto"("p_id_projeto" "uuid", "p_delta" numeric, "p_motivo" "text" DEFAULT NULL::"text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id_evento   uuid;
+  v_amplitude   numeric;
+  v_delta       numeric := coalesce(round(p_delta, 2), 0);
+  v_ator        uuid;
+  v_codigo      text;
+BEGIN
+  PERFORM public.auditoria_marcar_origem('admin_ajustar_media_projeto', p_motivo);
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT p.id_evento, coalesce(p.codigo_projeto, p.titulo) INTO v_id_evento, v_codigo
+  FROM public.projetos p WHERE p.id_projeto = p_id_projeto FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Projeto não encontrado.' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  -- Teto do ajuste: a amplitude da escala em uso (um dedo errado não cria nota impossível)
+  SELECT coalesce(
+    (SELECT q.escala_maxima - q.escala_minima FROM public.questionarios q
+      JOIN public.projetos p ON p.id_questionario_fixado = q.id_questionario
+     WHERE p.id_projeto = p_id_projeto),
+    (SELECT max(q.escala_maxima - q.escala_minima) FROM public.questionarios q WHERE q.id_evento = v_id_evento),
+    10
+  ) INTO v_amplitude;
+
+  IF abs(v_delta) > v_amplitude THEN
+    RAISE EXCEPTION 'O ajuste não pode passar de % pontos, a amplitude da escala em uso.', v_amplitude
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT u.id_usuario INTO v_ator FROM public.usuarios u
+  WHERE u.id_usuario = auth.uid() OR u.id_auth = auth.uid() LIMIT 1;
+
+  UPDATE public.projetos
+  SET ajuste_media        = v_delta,
+      ajuste_media_em     = CASE WHEN v_delta = 0 THEN NULL ELSE now() END,
+      ajuste_media_por    = CASE WHEN v_delta = 0 THEN NULL ELSE v_ator END,
+      ajuste_media_motivo = CASE WHEN v_delta = 0 THEN NULL ELSE nullif(btrim(p_motivo), '') END
+  WHERE id_projeto = p_id_projeto;
+
+  RETURN jsonb_build_object('sucesso', true, 'codigo_projeto', v_codigo, 'ajuste_media', v_delta);
+END $$;
+
+
+ALTER FUNCTION "public"."admin_ajustar_media_projeto"("p_id_projeto" "uuid", "p_delta" numeric, "p_motivo" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."admin_ajustar_media_projeto"("p_id_projeto" "uuid", "p_delta" numeric, "p_motivo" "text") IS 'Bónus ou penalidade na média do projeto, limitado à amplitude da escala. p_delta = 0 remove o ajuste. Só Admin.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_arbitrar_nota_final"("p_id_avaliacao" "uuid", "p_nota" numeric, "p_motivo" "text" DEFAULT NULL::"text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id_projeto  uuid;
+  v_status      text;
+  v_nota_antiga numeric(5,2);
+  v_min         numeric;
+  v_max         numeric;
+  v_ator        uuid;
+  v_quarentena  boolean;
+BEGIN
+  PERFORM public.auditoria_marcar_origem('admin_arbitrar_nota_final', p_motivo);
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT a.id_projeto, a.status, a.nota_final, q.escala_minima, q.escala_maxima
+    INTO v_id_projeto, v_status, v_nota_antiga, v_min, v_max
+  FROM public.avaliacoes a
+  JOIN public.projetos p ON p.id_projeto = a.id_projeto
+  LEFT JOIN public.questionarios q
+    ON q.id_questionario = coalesce(a.id_questionario, p.id_questionario_fixado)
+  WHERE a.id_avaliacao = p_id_avaliacao
+  FOR UPDATE OF a;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Avaliação não encontrada.' USING ERRCODE = 'no_data_found';
+  END IF;
+  IF upper(coalesce(v_status, '')) = 'CANCELADA' THEN
+    RAISE EXCEPTION 'Esta avaliação está cancelada: restaure antes de arbitrar a nota.' USING ERRCODE = '22023';
+  END IF;
+  IF p_nota IS NULL THEN
+    RAISE EXCEPTION 'Informe a nota.' USING ERRCODE = '22023';
+  END IF;
+  IF v_min IS NOT NULL AND (p_nota < v_min OR p_nota > v_max) THEN
+    RAISE EXCEPTION 'A nota precisa estar entre % e %, a escala do questionário.', v_min, v_max
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT u.id_usuario INTO v_ator FROM public.usuarios u
+  WHERE u.id_usuario = auth.uid() OR u.id_auth = auth.uid() LIMIT 1;
+
+  UPDATE public.avaliacoes
+  SET nota_final    = round(p_nota, 2),
+      ajuste_tipo   = 'nota_arbitrada',
+      ajustada_em   = now(),
+      ajustada_por  = v_ator,
+      ajuste_motivo = nullif(btrim(p_motivo), '')
+  WHERE id_avaliacao = p_id_avaliacao;
+
+  v_quarentena := public.fn_recalcular_quarentena(v_id_projeto);
+
+  RETURN jsonb_build_object(
+    'sucesso', true,
+    'nota_anterior', v_nota_antiga,
+    'nota_nova', round(p_nota, 2),
+    'projeto_em_quarentena', v_quarentena
+  );
+END $$;
+
+
+ALTER FUNCTION "public"."admin_arbitrar_nota_final"("p_id_avaliacao" "uuid", "p_nota" numeric, "p_motivo" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."admin_arbitrar_nota_final"("p_id_avaliacao" "uuid", "p_nota" numeric, "p_motivo" "text") IS 'Define a nota final sem mexer nas respostas: a conferência passa a mostrar "nota arbitrada". Só Admin.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_atribuir_banca"("p_id_projeto" "uuid", "p_ids_usuarios" "uuid"[]) RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -254,6 +381,7 @@ DECLARE
   v_id            uuid;
   v_n             integer := 1;
 BEGIN
+  PERFORM public.auditoria_marcar_origem('admin_copiar_questionario');
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
@@ -316,6 +444,89 @@ $$;
 
 
 ALTER FUNCTION "public"."admin_copiar_questionario"("p_id_origem" "uuid", "p_id_evento" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_corrigir_respostas_avaliacao"("p_id_avaliacao" "uuid", "p_respostas" "jsonb", "p_motivo" "text" DEFAULT NULL::"text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id_projeto   uuid;
+  v_id_quest     uuid;
+  v_status       text;
+  v_nota_antiga  numeric(5,2);
+  v_nota_nova    numeric(5,2);
+  v_ator         uuid;
+  v_quarentena   boolean;
+BEGIN
+  PERFORM public.auditoria_marcar_origem('admin_corrigir_respostas_avaliacao', p_motivo);
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT a.id_projeto, coalesce(a.id_questionario, p.id_questionario_fixado), a.status, a.nota_final
+    INTO v_id_projeto, v_id_quest, v_status, v_nota_antiga
+  FROM public.avaliacoes a
+  JOIN public.projetos p ON p.id_projeto = a.id_projeto
+  WHERE a.id_avaliacao = p_id_avaliacao
+  FOR UPDATE OF a;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Avaliação não encontrada.' USING ERRCODE = 'no_data_found';
+  END IF;
+  IF upper(coalesce(v_status, '')) = 'CANCELADA' THEN
+    RAISE EXCEPTION 'Esta avaliação está cancelada: restaure antes de corrigir as notas.' USING ERRCODE = '22023';
+  END IF;
+  IF v_id_quest IS NULL THEN
+    RAISE EXCEPTION 'Esta avaliação não tem questionário definido: não há critérios para corrigir.' USING ERRCODE = '22023';
+  END IF;
+
+  v_nota_nova := public.fn_validar_respostas(v_id_quest, p_respostas);
+
+  SELECT u.id_usuario INTO v_ator FROM public.usuarios u
+  WHERE u.id_usuario = auth.uid() OR u.id_auth = auth.uid() LIMIT 1;
+
+  -- Atualiza no lugar (mantém id_resposta, e a trilha mostra o antes/depois de cada critério)
+  UPDATE public.respostas_avaliacao r
+  SET nota_atribuida = (nova ->> 'nota')::numeric
+  FROM jsonb_array_elements(p_respostas) AS nova
+  WHERE r.id_avaliacao = p_id_avaliacao
+    AND r.id_pergunta = (nova ->> 'id_pergunta')::uuid
+    AND r.nota_atribuida IS DISTINCT FROM (nova ->> 'nota')::numeric;
+
+  -- Critério que ainda não tinha resposta gravada
+  INSERT INTO public.respostas_avaliacao (id_avaliacao, id_pergunta, nota_atribuida)
+  SELECT p_id_avaliacao, (nova ->> 'id_pergunta')::uuid, (nova ->> 'nota')::numeric
+  FROM jsonb_array_elements(p_respostas) AS nova
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.respostas_avaliacao r
+    WHERE r.id_avaliacao = p_id_avaliacao AND r.id_pergunta = (nova ->> 'id_pergunta')::uuid
+  );
+
+  UPDATE public.avaliacoes
+  SET nota_final     = v_nota_nova,
+      ajuste_tipo    = 'respostas_corrigidas',
+      ajustada_em    = now(),
+      ajustada_por   = v_ator,
+      ajuste_motivo  = nullif(btrim(p_motivo), '')
+  WHERE id_avaliacao = p_id_avaliacao;
+
+  v_quarentena := public.fn_recalcular_quarentena(v_id_projeto);
+
+  RETURN jsonb_build_object(
+    'sucesso', true,
+    'nota_anterior', v_nota_antiga,
+    'nota_nova', v_nota_nova,
+    'projeto_em_quarentena', v_quarentena
+  );
+END $$;
+
+
+ALTER FUNCTION "public"."admin_corrigir_respostas_avaliacao"("p_id_avaliacao" "uuid", "p_respostas" "jsonb", "p_motivo" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."admin_corrigir_respostas_avaliacao"("p_id_avaliacao" "uuid", "p_respostas" "jsonb", "p_motivo" "text") IS 'Corrige as notas por critério e recalcula a nota final pela fórmula oficial. Marca ajuste_tipo = respostas_corrigidas. Só Admin.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_desbloquear_projeto"("p_id_projeto" "uuid") RETURNS "void"
@@ -535,6 +746,7 @@ CREATE OR REPLACE FUNCTION "public"."admin_excluir_questionario"("p_id_questiona
 DECLARE
   v_usos integer;
 BEGIN
+  PERFORM public.auditoria_marcar_origem('admin_excluir_questionario');
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
@@ -561,6 +773,7 @@ CREATE OR REPLACE FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid")
 DECLARE
   v_papel text;
 BEGIN
+  PERFORM public.auditoria_marcar_origem('admin_excluir_staff');
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
@@ -572,12 +785,133 @@ BEGIN
     RAISE EXCEPTION 'Este usuário não é da equipe Staff.';
   END IF;
 
+  -- Com a FK em RESTRICT, apagar alguém com nota viraria erro cru de FK.
+  -- Aqui a recusa é explícita: nota de feira não se apaga por tabela de cadastro.
+  IF EXISTS (SELECT 1 FROM public.avaliacoes a WHERE a.id_usuario = p_id_usuario) THEN
+    RAISE EXCEPTION 'Este usuário tem avaliações registradas e não pode ser excluído: as notas seriam apagadas. Use Descredenciar.'
+      USING ERRCODE = '23503';
+  END IF;
+
   DELETE FROM public.usuarios WHERE id_usuario = p_id_usuario;
 END;
 $$;
 
 
 ALTER FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_id_usuario" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text" DEFAULT NULL::"text", "p_motivo" "text" DEFAULT NULL::"text", "p_confirmar_acima_da_cota" boolean DEFAULT false) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id_evento     uuid;
+  v_cota          integer;
+  v_quest_fixado  uuid;
+  v_codigo        text;
+  v_ativas        integer;
+  v_status_exist  text;
+  v_nota          numeric(5,2);
+  v_id_avaliacao  uuid;
+  v_ator          uuid;
+  v_quarentena    boolean;
+BEGIN
+  PERFORM public.auditoria_marcar_origem('admin_lancar_avaliacao', p_motivo);
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT p.id_evento, coalesce(p.cota_avaliacoes_customizada, e.cota_avaliacoes_padrao, 3),
+         p.id_questionario_fixado, coalesce(p.codigo_projeto, p.titulo)
+    INTO v_id_evento, v_cota, v_quest_fixado, v_codigo
+  FROM public.projetos p
+  LEFT JOIN public.eventos e ON e.id_evento = p.id_evento
+  WHERE p.id_projeto = p_id_projeto
+  FOR UPDATE OF p;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Projeto não encontrado.' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  -- O avaliador precisa existir, ser avaliador e estar no evento do projeto
+  IF NOT EXISTS (
+    SELECT 1 FROM public.usuarios u
+    JOIN public.avaliadores_evento ae ON ae.id_usuario = u.id_usuario AND ae.id_evento = v_id_evento
+    WHERE u.id_usuario = p_id_usuario AND upper(u.papel::text) = 'AVALIADOR'
+  ) THEN
+    RAISE EXCEPTION 'Este avaliador não está vinculado ao evento do projeto.' USING ERRCODE = '22023';
+  END IF;
+
+  -- Questionário do evento e compatível com o que o projeto já fixou
+  IF NOT EXISTS (SELECT 1 FROM public.questionarios q
+                  WHERE q.id_questionario = p_id_questionario AND q.id_evento = v_id_evento) THEN
+    RAISE EXCEPTION 'Questionário de outro evento.' USING ERRCODE = '22023';
+  END IF;
+  IF v_quest_fixado IS NOT NULL AND v_quest_fixado IS DISTINCT FROM p_id_questionario THEN
+    RAISE EXCEPTION 'O projeto % já está fixado em outro questionário: use o mesmo das demais avaliações.', v_codigo
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- Um avaliador, uma avaliação por projeto (vale também para a cancelada)
+  SELECT a.status INTO v_status_exist FROM public.avaliacoes a
+  WHERE a.id_projeto = p_id_projeto AND a.id_usuario = p_id_usuario;
+  IF FOUND THEN
+    IF upper(coalesce(v_status_exist, '')) = 'CANCELADA' THEN
+      RAISE EXCEPTION 'Este avaliador já tem uma avaliação cancelada do projeto %: restaure em vez de lançar outra.', v_codigo
+        USING ERRCODE = '22023';
+    END IF;
+    RAISE EXCEPTION 'Este avaliador já avaliou o projeto %.', v_codigo USING ERRCODE = '22023';
+  END IF;
+
+  SELECT count(*) INTO v_ativas FROM public.avaliacoes a
+  WHERE a.id_projeto = p_id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA');
+
+  IF v_ativas >= v_cota AND NOT p_confirmar_acima_da_cota THEN
+    RAISE EXCEPTION 'O projeto % já tem % de % avaliações da cota. Confirme para lançar acima da cota.',
+      v_codigo, v_ativas, v_cota USING ERRCODE = '22023';
+  END IF;
+
+  v_nota := public.fn_validar_respostas(p_id_questionario, p_respostas);
+
+  SELECT u.id_usuario INTO v_ator FROM public.usuarios u
+  WHERE u.id_usuario = auth.uid() OR u.id_auth = auth.uid() LIMIT 1;
+
+  INSERT INTO public.avaliacoes (
+    id_projeto, id_usuario, id_questionario, nota_final, parecer_final,
+    tempo_submissao, status, status_avaliacao,
+    ajuste_tipo, ajustada_em, ajustada_por, ajuste_motivo
+  ) VALUES (
+    p_id_projeto, p_id_usuario, p_id_questionario, v_nota, p_parecer,
+    now(), 'CONCLUIDA', 'concluida',
+    'lancada_pelo_admin', now(), v_ator, nullif(btrim(p_motivo), '')
+  )
+  RETURNING id_avaliacao INTO v_id_avaliacao;
+
+  INSERT INTO public.respostas_avaliacao (id_avaliacao, id_pergunta, nota_atribuida)
+  SELECT v_id_avaliacao, (r ->> 'id_pergunta')::uuid, (r ->> 'nota')::numeric
+  FROM jsonb_array_elements(p_respostas) AS r;
+
+  UPDATE public.projetos
+  SET id_questionario_fixado = p_id_questionario
+  WHERE id_projeto = p_id_projeto AND id_questionario_fixado IS NULL;
+
+  v_quarentena := public.fn_recalcular_quarentena(p_id_projeto);
+
+  RETURN jsonb_build_object(
+    'sucesso', true,
+    'id_avaliacao', v_id_avaliacao,
+    'nota_final', v_nota,
+    'acima_da_cota', v_ativas >= v_cota,
+    'projeto_em_quarentena', v_quarentena
+  );
+END $$;
+
+
+ALTER FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_id_usuario" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_motivo" "text", "p_confirmar_acima_da_cota" boolean) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_id_usuario" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_motivo" "text", "p_confirmar_acima_da_cota" boolean) IS 'Lança a avaliação de um avaliador do evento (ficha em papel). Acima da cota só com p_confirmar_acima_da_cota. Só Admin.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_id_evento" "uuid") RETURNS TABLE("id_questionario" "uuid", "titulo" "text", "nome_evento" "text", "data_evento" "date", "total_perguntas" integer, "total_avaliacoes" integer, "ja_no_evento" boolean)
@@ -663,11 +997,12 @@ $$;
 ALTER FUNCTION "public"."admin_remover_avaliador_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid") RETURNS "void"
+CREATE OR REPLACE FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid", "p_motivo" "text" DEFAULT NULL::"text") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 BEGIN
+  PERFORM public.auditoria_marcar_origem('admin_remover_quarentena', p_motivo);
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
@@ -681,16 +1016,17 @@ END;
 $$;
 
 
-ALTER FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid") OWNER TO "postgres";
+ALTER FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid", "p_motivo" "text") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid") RETURNS integer
+CREATE OR REPLACE FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid", "p_motivo" "text" DEFAULT NULL::"text") RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 DECLARE
   v_projetos uuid[];
 BEGIN
+  PERFORM public.auditoria_marcar_origem('admin_remover_quarentena_evento', p_motivo);
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
@@ -708,7 +1044,7 @@ END;
 $$;
 
 
-ALTER FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid") OWNER TO "postgres";
+ALTER FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid", "p_motivo" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_remover_quarentena_todos"() RETURNS "void"
@@ -742,7 +1078,10 @@ CREATE OR REPLACE FUNCTION "public"."admin_reset_global"("p_id_evento" "uuid" DE
     AS $_$
 DECLARE
   v_id_evento UUID;
+  v_qtd_avaliacoes integer;
+  v_qtd_projetos integer;
 BEGIN
+  PERFORM public.auditoria_marcar_origem('admin_reset_global');
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
@@ -753,13 +1092,35 @@ BEGIN
     SELECT id_evento INTO v_id_evento FROM public.eventos WHERE is_ativo = true LIMIT 1;
   END IF;
 
-  -- 2. Limpeza de respostas de avaliação
-  DELETE FROM public.respostas_avaliacao 
-  WHERE id_avaliacao IS NOT NULL;
+  IF v_id_evento IS NULL THEN
+    RAISE EXCEPTION 'Nenhum evento ativo: escolha o evento antes de resetar.' USING ERRCODE = '22023';
+  END IF;
 
-  -- 3. Limpeza de avaliações
-  DELETE FROM public.avaliacoes 
-  WHERE id_avaliacao IS NOT NULL;
+  -- 2 e 3. Notas: SÓ as do evento. Antes estes dois DELETE não tinham filtro
+  --         nenhum e apagavam as avaliações de todos os eventos já realizados
+  --         (os passos 7 a 12 sempre filtraram; só estes dois não).
+  SELECT count(*) INTO v_qtd_projetos
+  FROM public.projetos p WHERE p.id_evento = v_id_evento OR p.id_evento IS NULL;
+
+  SELECT count(*) INTO v_qtd_avaliacoes
+  FROM public.avaliacoes a
+  WHERE a.id_projeto IN (SELECT p.id_projeto FROM public.projetos p
+                          WHERE p.id_evento = v_id_evento OR p.id_evento IS NULL);
+
+  -- O que vai ser apagado fica registrado ANTES de apagar (a trilha sobrevive ao reset)
+  PERFORM public.auditoria_registrar('reset_global', 'avaliacoes', v_id_evento,
+    jsonb_build_object('avaliacoes_apagadas', v_qtd_avaliacoes,
+                       'projetos_apagados', v_qtd_projetos));
+
+  DELETE FROM public.respostas_avaliacao r
+  WHERE r.id_avaliacao IN (
+    SELECT a.id_avaliacao FROM public.avaliacoes a
+    WHERE a.id_projeto IN (SELECT p.id_projeto FROM public.projetos p
+                            WHERE p.id_evento = v_id_evento OR p.id_evento IS NULL));
+
+  DELETE FROM public.avaliacoes a
+  WHERE a.id_projeto IN (SELECT p.id_projeto FROM public.projetos p
+                          WHERE p.id_evento = v_id_evento OR p.id_evento IS NULL);
 
   -- 4. Limpeza da fila de bancas / atribuições direcionadas (se existir)
   IF EXISTS (
@@ -773,9 +1134,10 @@ BEGIN
   DELETE FROM public.locks_ativos 
   WHERE id_lock IS NOT NULL;
 
-  -- 6. Limpeza do histórico de impedimentos e ausências
-  DELETE FROM public.historico_impedimentos 
-  WHERE id_usuario IS NOT NULL;
+  -- 6. Impedimentos: só os do evento (a ausência de outra feira é histórico auditável)
+  DELETE FROM public.historico_impedimentos h
+  WHERE h.id_projeto IN (SELECT p.id_projeto FROM public.projetos p
+                          WHERE p.id_evento = v_id_evento OR p.id_evento IS NULL);
 
   -- 7. Limpeza de projetos vinculados ao evento
   IF EXISTS (
@@ -799,7 +1161,9 @@ BEGIN
     SELECT 1 FROM information_schema.tables 
     WHERE table_schema = 'public' AND table_name = 'perguntas_questionario'
   ) THEN
-    EXECUTE 'DELETE FROM public.perguntas_questionario WHERE id_pergunta IS NOT NULL';
+    DELETE FROM public.perguntas_questionario pq
+    WHERE pq.id_questionario IN (SELECT q.id_questionario FROM public.questionarios q
+                                  WHERE q.id_evento = v_id_evento OR q.id_evento IS NULL);
   END IF;
 
   IF EXISTS (
@@ -858,10 +1222,13 @@ BEGIN
   END IF;
 
   -- 13. Exclusão de usuários temporários (AVALIADOR e STAFF)
-  DELETE FROM public.usuarios
-  WHERE papel IN ('AVALIADOR', 'STAFF')
-    AND papel NOT IN ('ADMIN', 'SUPERADMIN')
-    AND id_usuario IS NOT NULL;
+  DELETE FROM public.usuarios u
+  WHERE u.papel IN ('AVALIADOR', 'STAFF')
+    AND u.papel NOT IN ('ADMIN', 'SUPERADMIN')
+    AND u.id_usuario IS NOT NULL
+    -- Quem ainda tem nota em outro evento fica: antes, o ON DELETE CASCADE
+    -- apagava as avaliações dele junto, sem deixar vestígio.
+    AND NOT EXISTS (SELECT 1 FROM public.avaliacoes a WHERE a.id_usuario = u.id_usuario);
 
   RETURN jsonb_build_object(
     'sucesso', true,
@@ -1270,6 +1637,7 @@ DECLARE
   v_usos    integer := 0;
   v_situacao text := 'sem_copia';
 BEGIN
+  PERFORM public.auditoria_marcar_origem('admin_salvar_modelo_questionario');
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
@@ -1346,6 +1714,7 @@ DECLARE
   v_id_perg  uuid;
   v_mudou    boolean;
 BEGIN
+  PERFORM public.auditoria_marcar_origem('admin_salvar_questionario');
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
@@ -1570,6 +1939,85 @@ $_$;
 ALTER FUNCTION "public"."admin_salvar_staff"("p_id_evento" "uuid", "p_itens" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."auditoria_ator"() RETURNS TABLE("id_usuario" "uuid", "papel" "text")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT u.id_usuario, upper(u.papel::text)
+  FROM public.usuarios u
+  WHERE u.id_usuario = coalesce(
+    (SELECT x.id_usuario
+       FROM public.usuarios x
+      WHERE auth.uid() IS NOT NULL
+        AND (x.id_usuario = auth.uid() OR x.id_auth = auth.uid())
+      LIMIT 1),
+    public.avaliador_atual()
+  )
+  LIMIT 1;
+$$;
+
+
+ALTER FUNCTION "public"."auditoria_ator"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."auditoria_marcar_origem"("p_origem" "text", "p_motivo" "text" DEFAULT NULL::"text") RETURNS "void"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  PERFORM set_config('app.auditoria_origem', coalesce(p_origem, 'direto'), true);
+  PERFORM set_config('app.auditoria_motivo', coalesce(nullif(btrim(p_motivo), ''), ''), true);
+END $$;
+
+
+ALTER FUNCTION "public"."auditoria_marcar_origem"("p_origem" "text", "p_motivo" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."auditoria_motivo"() RETURNS "text"
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT nullif(current_setting('app.auditoria_motivo', true), '');
+$$;
+
+
+ALTER FUNCTION "public"."auditoria_motivo"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."auditoria_origem"() RETURNS "text"
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT coalesce(nullif(current_setting('app.auditoria_origem', true), ''), 'direto');
+$$;
+
+
+ALTER FUNCTION "public"."auditoria_origem"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."auditoria_registrar"("p_acao" "text", "p_tabela" "text", "p_id_evento" "uuid" DEFAULT NULL::"uuid", "p_dados" "jsonb" DEFAULT NULL::"jsonb", "p_motivo" "text" DEFAULT NULL::"text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_ator record;
+BEGIN
+  SELECT * INTO v_ator FROM public.auditoria_ator();
+
+  INSERT INTO public.log_auditoria (
+    id_evento, tabela, operacao, acao, ator_auth, ator_usuario, ator_papel,
+    origem, motivo, dados_depois
+  ) VALUES (
+    coalesce(p_id_evento, public.evento_ativo_id()), p_tabela, 'EVENTO', p_acao,
+    auth.uid(), v_ator.id_usuario, v_ator.papel,
+    public.auditoria_origem(), coalesce(nullif(btrim(p_motivo), ''), public.auditoria_motivo()), p_dados
+  );
+END $$;
+
+
+ALTER FUNCTION "public"."auditoria_registrar"("p_acao" "text", "p_tabela" "text", "p_id_evento" "uuid", "p_dados" "jsonb", "p_motivo" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."avaliador_atual"() RETURNS "uuid"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1623,7 +2071,7 @@ $$;
 ALTER FUNCTION "public"."evento_ativo_id"() OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid") RETURNS "jsonb"
+CREATE OR REPLACE FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid", "p_motivo" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -1633,6 +2081,7 @@ DECLARE
   v_status_antigo varchar;
   v_quarentena boolean;
 BEGIN
+  PERFORM public.auditoria_marcar_origem('excluir_avaliacao', p_motivo);
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
@@ -1669,7 +2118,11 @@ END;
 $$;
 
 
-ALTER FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid") OWNER TO "postgres";
+ALTER FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid", "p_motivo" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid", "p_motivo" "text") IS 'Soft delete da avaliação (status CANCELADA), com motivo opcional registrado na trilha. Só Admin.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."exigir_staff_ou_admin"() RETURNS "void"
@@ -1761,6 +2214,441 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_assumir_item_fila"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_auditar"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_entidade     text := TG_ARGV[0];
+  v_antes        jsonb;
+  v_depois       jsonb;
+  v_linha        jsonb;
+  v_campos       text[];
+  v_acao         text;
+  v_id_evento    uuid;
+  v_id_projeto   uuid;
+  v_id_avaliacao uuid;
+  v_id_registro  text;
+  v_ator         record;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN v_antes  := to_jsonb(OLD); END IF;
+  IF TG_OP <> 'DELETE' THEN v_depois := to_jsonb(NEW); END IF;
+  v_linha := coalesce(v_depois, v_antes);
+
+  -- Dado pessoal não entra na trilha (LGPD): o log diz que o cadastro mudou,
+  -- não guarda uma segunda cópia do CPF e do celular.
+  IF TG_TABLE_NAME = 'usuarios' THEN
+    v_antes  := v_antes  - 'cpf' - 'celular' - 'id_auth';
+    v_depois := v_depois - 'cpf' - 'celular' - 'id_auth';
+  END IF;
+
+  IF TG_OP = 'UPDATE' THEN
+    SELECT array_agg(k ORDER BY k) INTO v_campos
+    FROM jsonb_object_keys(v_depois) AS k
+    WHERE (v_antes -> k) IS DISTINCT FROM (v_depois -> k);
+
+    -- UPDATE que não mudou nada não vira linha de log (evita ruído)
+    IF v_campos IS NULL OR cardinality(v_campos) = 0 THEN
+      RETURN NULL;
+    END IF;
+  END IF;
+
+  -- Escopo: evento, projeto e avaliação de cada tabela
+  CASE TG_TABLE_NAME
+    WHEN 'avaliacoes' THEN
+      v_id_avaliacao := (v_linha ->> 'id_avaliacao')::uuid;
+      v_id_projeto   := (v_linha ->> 'id_projeto')::uuid;
+      v_id_registro  := v_linha ->> 'id_avaliacao';
+      SELECT p.id_evento INTO v_id_evento FROM public.projetos p WHERE p.id_projeto = v_id_projeto;
+    WHEN 'respostas_avaliacao' THEN
+      v_id_avaliacao := (v_linha ->> 'id_avaliacao')::uuid;
+      v_id_registro  := v_linha ->> 'id_resposta';
+      SELECT a.id_projeto, p.id_evento INTO v_id_projeto, v_id_evento
+        FROM public.avaliacoes a
+        JOIN public.projetos p ON p.id_projeto = a.id_projeto
+       WHERE a.id_avaliacao = v_id_avaliacao;
+    WHEN 'projetos' THEN
+      v_id_projeto  := (v_linha ->> 'id_projeto')::uuid;
+      v_id_evento   := (v_linha ->> 'id_evento')::uuid;
+      v_id_registro := v_linha ->> 'codigo_projeto';
+    WHEN 'perguntas_questionario' THEN
+      v_id_registro := v_linha ->> 'id_pergunta';
+      SELECT q.id_evento INTO v_id_evento
+        FROM public.questionarios q
+       WHERE q.id_questionario = (v_linha ->> 'id_questionario')::uuid;
+    WHEN 'questionarios' THEN
+      v_id_evento   := (v_linha ->> 'id_evento')::uuid;
+      v_id_registro := v_linha ->> 'id_questionario';
+    WHEN 'avaliadores_evento' THEN
+      v_id_evento   := (v_linha ->> 'id_evento')::uuid;
+      v_id_registro := v_linha ->> 'id_usuario';
+    WHEN 'dispositivos_avaliador' THEN
+      v_id_evento   := (v_linha ->> 'id_evento')::uuid;
+      v_id_registro := v_linha ->> 'id_usuario';
+    WHEN 'eventos' THEN
+      v_id_evento   := (v_linha ->> 'id_evento')::uuid;
+      v_id_registro := v_linha ->> 'id_evento';
+    WHEN 'usuarios' THEN
+      v_id_evento   := public.evento_ativo_id();
+      v_id_registro := v_linha ->> 'id_usuario';
+    ELSE
+      v_id_evento   := public.evento_ativo_id();
+  END CASE;
+
+  -- Rótulo: a entidade, refinada quando a mudança tem nome próprio
+  v_acao := v_entidade;
+
+  IF TG_TABLE_NAME = 'avaliacoes' THEN
+    IF TG_OP = 'INSERT' THEN
+      v_acao := 'avaliacao_criada';
+    ELSIF TG_OP = 'DELETE' THEN
+      v_acao := 'avaliacao_apagada';
+    ELSIF 'nota_final' = ANY (v_campos) THEN
+      v_acao := 'nota_alterada';
+    ELSIF 'status' = ANY (v_campos) THEN
+      v_acao := CASE WHEN upper(coalesce(v_depois ->> 'status', '')) = 'CANCELADA'
+                     THEN 'avaliacao_cancelada' ELSE 'avaliacao_restaurada' END;
+    ELSIF 'is_quarentena' = ANY (v_campos) THEN
+      v_acao := CASE WHEN (v_depois ->> 'is_quarentena')::boolean
+                     THEN 'quarentena_marcada' ELSE 'quarentena_desmarcada' END;
+    END IF;
+  ELSIF TG_TABLE_NAME = 'avaliadores_evento' THEN
+    v_acao := CASE WHEN coalesce((v_depois ->> 'is_credenciado')::boolean, false)
+                   THEN 'credenciamento_concedido' ELSE 'credenciamento_suspenso' END;
+  ELSIF TG_TABLE_NAME = 'dispositivos_avaliador' THEN
+    v_acao := CASE
+                WHEN TG_OP = 'DELETE' OR (v_depois ->> 'revogado_em') IS NOT NULL THEN 'dispositivo_revogado'
+                ELSE 'dispositivo_vinculado'
+              END;
+  ELSIF TG_TABLE_NAME = 'projetos' AND TG_OP = 'UPDATE' THEN
+    IF 'is_check_in_realizado' = ANY (v_campos) THEN
+      v_acao := CASE WHEN coalesce((v_depois ->> 'is_check_in_realizado')::boolean, false)
+                     THEN 'check_in_realizado' ELSE 'check_in_desfeito' END;
+    ELSIF 'quarentena_resolvida_em' = ANY (v_campos) THEN
+      v_acao := 'quarentena_resolvida';
+    ELSIF 'cota_avaliacoes_customizada' = ANY (v_campos) THEN
+      v_acao := 'cota_alterada';
+    ELSIF 'is_fora_da_competicao' = ANY (v_campos) THEN
+      v_acao := 'competicao_alterada';
+    ELSIF 'id_questionario_fixado' = ANY (v_campos) THEN
+      v_acao := 'questionario_fixado';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'perguntas_questionario' AND TG_OP = 'UPDATE' THEN
+    IF 'peso_calculo' = ANY (v_campos) THEN
+      v_acao := 'peso_calculo_alterado';
+    ELSIF 'peso_desempate' = ANY (v_campos) THEN
+      v_acao := 'peso_desempate_alterado';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'questionarios' AND TG_OP = 'UPDATE' THEN
+    IF 'escala_minima' = ANY (v_campos) OR 'escala_maxima' = ANY (v_campos) THEN
+      v_acao := 'escala_alterada';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'usuarios' AND TG_OP = 'UPDATE' AND 'papel' = ANY (v_campos) THEN
+    v_acao := 'papel_alterado';
+  END IF;
+
+  SELECT * INTO v_ator FROM public.auditoria_ator();
+
+  INSERT INTO public.log_auditoria (
+    id_evento, tabela, operacao, acao, id_registro, id_projeto, id_avaliacao,
+    ator_auth, ator_usuario, ator_papel, origem, motivo,
+    dados_antes, dados_depois, campos_alterados
+  ) VALUES (
+    v_id_evento, TG_TABLE_NAME, TG_OP, v_acao, v_id_registro, v_id_projeto, v_id_avaliacao,
+    auth.uid(), v_ator.id_usuario, v_ator.papel,
+    public.auditoria_origem(), public.auditoria_motivo(),
+    v_antes, v_depois, v_campos
+  );
+
+  RETURN NULL; -- AFTER trigger: o retorno é ignorado
+END $$;
+
+
+ALTER FUNCTION "public"."fn_auditar"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("severidade" "text", "codigo" "text", "titulo" "text", "id_projeto" "uuid", "codigo_projeto" "text", "id_avaliacao" "uuid", "esperado" "text", "encontrado" "text", "detalhe" "text")
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id_evento uuid := coalesce(p_id_evento, public.evento_ativo_id());
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: a conferência de notas é restrita a administradores.'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN QUERY
+  WITH proj AS (
+    SELECT p.id_projeto, p.codigo_projeto::text AS codigo_projeto, p.titulo, p.id_questionario_fixado,
+           p.is_check_in_realizado, p.is_fora_da_competicao,
+           coalesce(p.ajuste_media, 0) AS ajuste_media,
+           coalesce(p.cota_avaliacoes_customizada,
+                    (SELECT coalesce(e.cota_avaliacoes_padrao, 3) FROM public.eventos e WHERE e.id_evento = v_id_evento)
+           ) AS cota
+    FROM public.projetos p
+    WHERE p.id_evento = v_id_evento
+  ),
+  av AS (
+    SELECT a.id_avaliacao, a.id_projeto, a.nota_final, a.id_usuario, a.created_at,
+           a.ajuste_tipo, a.ajustada_em, a.ajustada_por, a.ajuste_motivo,
+           pr.codigo_projeto, pr.id_questionario_fixado,
+           coalesce(a.id_questionario, pr.id_questionario_fixado) AS id_quest
+    FROM public.avaliacoes a
+    JOIN proj pr ON pr.id_projeto = a.id_projeto
+    WHERE a.status IS NULL OR a.status <> 'CANCELADA'
+  ),
+  escala AS (
+    SELECT q.id_questionario, q.escala_minima, q.escala_maxima,
+           (SELECT count(*) FROM public.perguntas_questionario pq WHERE pq.id_questionario = q.id_questionario) AS qtd_perguntas
+    FROM public.questionarios q
+  ),
+  recalculo AS (
+    SELECT r.id_avaliacao,
+           round(sum(r.nota_atribuida * pq.peso_calculo) / nullif(sum(pq.peso_calculo), 0), 2) AS nota_calculada,
+           sum(r.nota_atribuida * pq.peso_calculo) AS soma_produtos,
+           sum(pq.peso_calculo) AS soma_pesos
+    FROM public.respostas_avaliacao r
+    JOIN public.perguntas_questionario pq ON pq.id_pergunta = r.id_pergunta
+    WHERE pq.peso_calculo > 0
+    GROUP BY r.id_avaliacao
+  )
+
+  -- C1: a conta não fecha
+  SELECT CASE WHEN av.ajuste_tipo = 'nota_arbitrada' THEN 'informativo' ELSE 'grave' END,
+         'C1',
+         CASE WHEN av.ajuste_tipo = 'nota_arbitrada'
+              THEN 'Nota arbitrada pelo Admin (não vem das respostas)'
+              ELSE 'Nota final não confere com as notas por critério' END,
+         av.id_projeto, av.codigo_projeto, av.id_avaliacao,
+         to_char(rc.nota_calculada, 'FM999990.00'), to_char(av.nota_final, 'FM999990.00'),
+         CASE WHEN av.ajuste_tipo = 'nota_arbitrada'
+              THEN format('Nota arbitrada em %s. Motivo: %s. As respostas dariam %s.',
+                          to_char(av.ajustada_em, 'DD-MM-YYYY HH24:MI'),
+                          coalesce(av.ajuste_motivo, 'não informado'), rc.nota_calculada)
+              ELSE format('Σ(nota × peso) = %s · Σ(pesos) = %s · %s ÷ %s = %s, mas está gravado %s',
+                          rc.soma_produtos, rc.soma_pesos, rc.soma_produtos, rc.soma_pesos,
+                          rc.nota_calculada, av.nota_final) END
+  FROM av JOIN recalculo rc ON rc.id_avaliacao = av.id_avaliacao
+  WHERE av.nota_final IS DISTINCT FROM rc.nota_calculada
+
+  UNION ALL
+  -- C2: avaliação ativa sem resposta nenhuma
+  SELECT 'grave', 'C2', 'Avaliação ativa sem notas por critério',
+         av.id_projeto, av.codigo_projeto, av.id_avaliacao,
+         'uma resposta por pergunta do questionário', 'nenhuma resposta gravada',
+         'Sem as respostas não há como refazer a conta desta nota.'
+  FROM av
+  WHERE NOT EXISTS (SELECT 1 FROM public.respostas_avaliacao r WHERE r.id_avaliacao = av.id_avaliacao)
+
+  UNION ALL
+  -- C3a: número de respostas diferente do número de perguntas
+  SELECT 'grave', 'C3', 'Quantidade de respostas diferente do questionário',
+         av.id_projeto, av.codigo_projeto, av.id_avaliacao,
+         e.qtd_perguntas::text || ' respostas', cnt.qtd::text || ' respostas',
+         'O questionário tem outra quantidade de perguntas do que o que foi respondido.'
+  FROM av
+  JOIN escala e ON e.id_questionario = av.id_quest
+  JOIN LATERAL (SELECT count(*) AS qtd FROM public.respostas_avaliacao r WHERE r.id_avaliacao = av.id_avaliacao) cnt ON true
+  WHERE cnt.qtd > 0 AND cnt.qtd <> e.qtd_perguntas
+
+  UNION ALL
+  -- C3b: pergunta respondida mais de uma vez
+  SELECT 'grave', 'C3', 'Pergunta respondida mais de uma vez',
+         av.id_projeto, av.codigo_projeto, av.id_avaliacao,
+         'uma resposta por pergunta', d.qtd::text || ' respostas para a mesma pergunta',
+         'Repetir uma pergunta muda o peso dela na média.'
+  FROM av
+  JOIN LATERAL (
+    SELECT r.id_pergunta, count(*) AS qtd
+    FROM public.respostas_avaliacao r
+    WHERE r.id_avaliacao = av.id_avaliacao
+    GROUP BY r.id_pergunta HAVING count(*) > 1
+    LIMIT 1
+  ) d ON true
+
+  UNION ALL
+  -- C3c: resposta de pergunta que não é do questionário da avaliação
+  SELECT 'grave', 'C3', 'Resposta de pergunta de outro questionário',
+         av.id_projeto, av.codigo_projeto, av.id_avaliacao,
+         'perguntas do questionário da avaliação', 'pergunta de outro questionário',
+         'A nota foi composta com critério que não pertence ao questionário usado.'
+  FROM av
+  WHERE EXISTS (
+    SELECT 1 FROM public.respostas_avaliacao r
+    JOIN public.perguntas_questionario pq ON pq.id_pergunta = r.id_pergunta
+    WHERE r.id_avaliacao = av.id_avaliacao
+      AND pq.id_questionario IS DISTINCT FROM av.id_quest
+  )
+
+  UNION ALL
+  -- C4: nota por critério fora da escala
+  SELECT 'grave', 'C4', 'Nota por critério fora da escala',
+         av.id_projeto, av.codigo_projeto, av.id_avaliacao,
+         format('entre %s e %s', e.escala_minima, e.escala_maxima),
+         to_char(r.nota_atribuida, 'FM999990.00'),
+         'Uma nota fora da escala do questionário distorce a média.'
+  FROM av
+  JOIN escala e ON e.id_questionario = av.id_quest
+  JOIN public.respostas_avaliacao r ON r.id_avaliacao = av.id_avaliacao
+  WHERE r.nota_atribuida < e.escala_minima OR r.nota_atribuida > e.escala_maxima
+
+  UNION ALL
+  -- C5: nota final fora da escala
+  SELECT 'grave', 'C5', 'Nota final fora da escala',
+         av.id_projeto, av.codigo_projeto, av.id_avaliacao,
+         format('entre %s e %s', e.escala_minima, e.escala_maxima),
+         to_char(av.nota_final, 'FM999990.00'),
+         'A média ponderada nunca pode cair fora da escala do questionário.'
+  FROM av JOIN escala e ON e.id_questionario = av.id_quest
+  WHERE av.nota_final IS NOT NULL
+    AND (av.nota_final < e.escala_minima OR av.nota_final > e.escala_maxima)
+
+  UNION ALL
+  -- C6: mais avaliações ativas do que a cota
+  SELECT 'atencao', 'C6', 'Projeto com mais avaliações que a cota',
+         pr.id_projeto, pr.codigo_projeto, NULL::uuid,
+         pr.cota::text || ' avaliações', c.qtd::text || ' avaliações',
+         'Avaliação além da cota entra na média e desequilibra a comparação com os outros projetos.'
+  FROM proj pr
+  JOIN LATERAL (SELECT count(*) AS qtd FROM av WHERE av.id_projeto = pr.id_projeto) c ON true
+  WHERE c.qtd > pr.cota
+
+  UNION ALL
+  -- C7a: avaliação ativa de projeto fora da competição
+  SELECT 'atencao', 'C7', 'Projeto fora da competição com avaliação ativa',
+         pr.id_projeto, pr.codigo_projeto, NULL::uuid,
+         'nenhuma avaliação', c.qtd::text || ' avaliações',
+         'O projeto não entra no ranking, mas as notas continuam gravadas.'
+  FROM proj pr
+  JOIN LATERAL (SELECT count(*) AS qtd FROM av WHERE av.id_projeto = pr.id_projeto) c ON true
+  WHERE pr.is_fora_da_competicao AND c.qtd > 0
+
+  UNION ALL
+  -- C7b: avaliação ativa de projeto sem check-in
+  SELECT 'atencao', 'C7', 'Projeto sem check-in com avaliação ativa',
+         pr.id_projeto, pr.codigo_projeto, NULL::uuid,
+         'check-in feito antes da avaliação', 'sem check-in',
+         'fn_enviar_avaliacao exige check-in: uma avaliação assim entrou por outro caminho.'
+  FROM proj pr
+  JOIN LATERAL (SELECT count(*) AS qtd FROM av WHERE av.id_projeto = pr.id_projeto) c ON true
+  WHERE NOT coalesce(pr.is_check_in_realizado, false) AND c.qtd > 0
+
+  UNION ALL
+  -- C8: questionário diferente do fixado no projeto
+  SELECT 'grave', 'C8', 'Avaliação com questionário diferente do fixado',
+         av.id_projeto, av.codigo_projeto, av.id_avaliacao,
+         coalesce(qf.titulo, 'questionário fixado no projeto'),
+         coalesce(qa.titulo, 'outro questionário'),
+         'Projetos da mesma modalidade precisam ser comparados pelo mesmo questionário.'
+  FROM av
+  LEFT JOIN public.questionarios qf ON qf.id_questionario = av.id_questionario_fixado
+  LEFT JOIN public.questionarios qa ON qa.id_questionario = av.id_quest
+  WHERE av.id_questionario_fixado IS NOT NULL
+    AND av.id_quest IS DISTINCT FROM av.id_questionario_fixado
+
+  UNION ALL
+  -- C9: a mesma média com números diferentes em telas diferentes
+  SELECT 'grave', 'C9', 'Média diferente entre a Classificação e os Relatórios',
+         pr.id_projeto, pr.codigo_projeto, NULL::uuid,
+         to_char(direto.media, 'FM999990.00'),
+         format('ranking %s · relatório %s',
+                coalesce(to_char(rk.media_final, 'FM999990.00'), '—'),
+                coalesce(to_char(rel.media_final, 'FM999990.00'), '—')),
+         'As telas calculam a média em lugares diferentes: divergência aqui é erro de uma das fontes.'
+  FROM proj pr
+  JOIN LATERAL (SELECT round(avg(av.nota_final), 2) + pr.ajuste_media AS media, count(*) AS qtd
+                FROM av WHERE av.id_projeto = pr.id_projeto) direto ON true
+  LEFT JOIN public.view_ranking_top3 rk ON rk.id_projeto = pr.id_projeto
+  LEFT JOIN public.fn_relatorio_projetos_completo(v_id_evento) rel ON rel.id_projeto = pr.id_projeto
+  WHERE direto.qtd > 0
+    AND NOT pr.is_fora_da_competicao
+    AND (rk.media_final IS DISTINCT FROM direto.media OR rel.media_final IS DISTINCT FROM direto.media)
+
+  UNION ALL
+  -- C10: escrita de nota que não passou por RPC nenhuma
+  SELECT 'grave', 'C10', 'Nota alterada fora do fluxo do sistema',
+         l.id_projeto, coalesce(pr.codigo_projeto, l.id_registro), l.id_avaliacao,
+         'alteração por RPC (fn_enviar_avaliacao, excluir_avaliacao...)',
+         format('%s direto em %s', l.operacao, l.tabela),
+         format('Em %s, por %s. Antes: %s · Depois: %s',
+                to_char(l.criado_em, 'DD-MM-YYYY HH24:MI'),
+                coalesce(l.ator_papel, 'origem não identificada'),
+                coalesce(l.dados_antes ->> 'nota_final', l.dados_antes ->> 'nota_atribuida', '—'),
+                coalesce(l.dados_depois ->> 'nota_final', l.dados_depois ->> 'nota_atribuida', '—'))
+  FROM public.log_auditoria l
+  LEFT JOIN proj pr ON pr.id_projeto = l.id_projeto
+  WHERE l.origem = 'direto'
+    AND l.tabela IN ('avaliacoes', 'respostas_avaliacao', 'perguntas_questionario')
+    AND l.operacao IN ('UPDATE', 'DELETE')
+    AND (l.id_evento = v_id_evento OR l.id_evento IS NULL)
+
+  UNION ALL
+  -- C11: peso alterado depois de o questionário já ter sido usado
+  SELECT 'atencao', 'C11', 'Peso de pergunta alterado depois da primeira avaliação',
+         NULL::uuid, NULL::text, NULL::uuid,
+         coalesce(l.dados_antes ->> 'peso_calculo', '—'),
+         coalesce(l.dados_depois ->> 'peso_calculo', '—'),
+         format('Pergunta "%s" em %s: as notas gravadas antes disso usaram o peso antigo.',
+                coalesce(l.dados_depois ->> 'texto_pergunta', '?'),
+                to_char(l.criado_em, 'DD-MM-YYYY HH24:MI'))
+  FROM public.log_auditoria l
+  WHERE l.acao = 'peso_calculo_alterado'
+    AND l.id_evento = v_id_evento
+    AND EXISTS (
+      SELECT 1 FROM av
+      JOIN public.respostas_avaliacao r ON r.id_avaliacao = av.id_avaliacao
+      WHERE r.id_pergunta = (l.dados_depois ->> 'id_pergunta')::uuid
+        AND av.created_at < l.criado_em
+    )
+
+  UNION ALL
+  -- C12a: avaliação ajustada à mão pelo Admin (nunca é erro: é a lista que a
+  --       comissão confere antes de homologar)
+  SELECT 'informativo', 'C12',
+         CASE av.ajuste_tipo
+           WHEN 'respostas_corrigidas' THEN 'Notas por critério corrigidas pelo Admin'
+           WHEN 'nota_arbitrada'       THEN 'Nota final arbitrada pelo Admin'
+           WHEN 'lancada_pelo_admin'   THEN 'Avaliação lançada pelo Admin'
+           ELSE 'Avaliação ajustada pelo Admin'
+         END,
+         av.id_projeto, av.codigo_projeto, av.id_avaliacao,
+         '—', to_char(av.nota_final, 'FM999990.00'),
+         format('Em %s, por %s. Motivo: %s',
+                to_char(av.ajustada_em, 'DD-MM-YYYY HH24:MI'),
+                coalesce((SELECT u.nome FROM public.usuarios u WHERE u.id_usuario = av.ajustada_por), 'Admin'),
+                coalesce(av.ajuste_motivo, 'não informado'))
+  FROM av
+  WHERE av.ajuste_tipo IS NOT NULL
+
+  UNION ALL
+  -- C12b: média do projeto ajustada por decisão de comissão
+  SELECT 'informativo', 'C12', 'Média do projeto ajustada por decisão de comissão',
+         p.id_projeto, p.codigo_projeto::text, NULL::uuid,
+         to_char(media.valor, 'FM999990.00'),
+         to_char(media.valor + p.ajuste_media, 'FM999990.00'),
+         format('Ajuste de %s ponto(s) em %s, por %s. Motivo: %s',
+                to_char(p.ajuste_media, 'FM999990.00'),
+                to_char(p.ajuste_media_em, 'DD-MM-YYYY HH24:MI'),
+                coalesce((SELECT u.nome FROM public.usuarios u WHERE u.id_usuario = p.ajuste_media_por), 'Admin'),
+                coalesce(p.ajuste_media_motivo, 'não informado'))
+  FROM public.projetos p
+  JOIN LATERAL (SELECT coalesce(round(avg(a.nota_final), 2), 0) AS valor
+                FROM public.avaliacoes a
+                WHERE a.id_projeto = p.id_projeto
+                  AND (a.status IS NULL OR a.status <> 'CANCELADA')) media ON true
+  WHERE p.id_evento = v_id_evento AND p.ajuste_media <> 0;
+END $$;
+
+
+ALTER FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") IS 'Conferência de notas do evento: recalcula a nota final a partir das respostas e lista o que não fecha. Só Admin.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_autocadastro_avaliador"("p_id_evento" "uuid", "p_nome" "text", "p_email" "text", "p_id_instituicao" "uuid", "p_nome_instituicao_nova" "text", "p_ids_areas" "uuid"[]) RETURNS "jsonb"
@@ -1909,6 +2797,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_check_in_projeto"("p_id_projeto" "uuid",
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 BEGIN
+  PERFORM public.auditoria_marcar_origem('fn_check_in_projeto');
   PERFORM public.exigir_staff_ou_admin();
   UPDATE public.projetos SET is_check_in_realizado = p_check_in WHERE id_projeto = p_id_projeto;
   IF NOT FOUND THEN
@@ -1928,6 +2817,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_desvincular_dispositivo"("p_id_usuario" 
 DECLARE
   v_qtd integer;
 BEGIN
+  PERFORM public.auditoria_marcar_origem('fn_desvincular_dispositivo');
   PERFORM public.exigir_staff_ou_admin();
   UPDATE public.dispositivos_avaliador SET revogado_em = now()
   WHERE id_usuario = p_id_usuario AND revogado_em IS NULL;
@@ -1975,6 +2865,7 @@ DECLARE
   v_is_quarentena         boolean := false;
   v_id_avaliacao          uuid;
 BEGIN
+  PERFORM public.auditoria_marcar_origem('fn_enviar_avaliacao');
   -- Identidade real: o avaliador só age em nome de si mesmo (aparelho vinculado).
   IF NOT public.is_admin() AND public.avaliador_atual() IS DISTINCT FROM p_id_usuario THEN
     RAISE EXCEPTION 'Acesso negado: este aparelho não está vinculado a este avaliador.' USING ERRCODE = '42501';
@@ -2149,15 +3040,10 @@ BEGIN
   WHERE id_projeto = p_id_projeto AND id_questionario_fixado IS NULL
     AND p_id_questionario IS NOT NULL;
 
-  -- Quarentena por divergência > 2.5 entre a maior e a menor nota ativa.
-  SELECT MIN(nota_final), MAX(nota_final) INTO v_nota_min, v_nota_max
-  FROM public.avaliacoes
-  WHERE id_projeto = p_id_projeto AND (status IS NULL OR status <> 'CANCELADA');
-  IF v_nota_max IS NOT NULL AND (v_nota_max - v_nota_min) > 2.5 THEN
-    v_is_quarentena := true;
-    UPDATE public.avaliacoes SET is_quarentena = true
-    WHERE id_projeto = p_id_projeto AND (status IS NULL OR status <> 'CANCELADA');
-  END IF;
+  -- Quarentena: a MESMA função usada por excluir/restaurar e pela view.
+  -- Antes este bloco duplicava a regra sem exigir 2 avaliações nem respeitar
+  -- quarentena_resolvida_em, e só sabia marcar, nunca desmarcar.
+  v_is_quarentena := public.fn_recalcular_quarentena(p_id_projeto);
 
   -- Libera a trava e conclui a fila direcionada, se houver.
   DELETE FROM public.locks_ativos
@@ -2289,6 +3175,33 @@ $$;
 ALTER FUNCTION "public"."fn_gerar_codigo_acesso"("p_id_usuario" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_identidade_visual"() RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT coalesce(
+    (
+      SELECT jsonb_build_object(
+        'id_evento', e.id_evento,
+        'nome_evento', e.nome_evento,
+        'url_icone', e.url_icone,
+        'url_imagem_evento', e.url_imagem_evento
+      )
+      FROM public.eventos e
+      WHERE e.id_evento = public.evento_ativo_id()
+    ),
+    jsonb_build_object('id_evento', NULL, 'nome_evento', NULL, 'url_icone', NULL, 'url_imagem_evento', NULL)
+  );
+$$;
+
+
+ALTER FUNCTION "public"."fn_identidade_visual"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_identidade_visual"() IS 'Ícone e imagem do evento ativo. Pública: o cabeçalho e o login precisam dela sem sessão.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_janela_avaliacao_aberta"("p_id_evento" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -2304,6 +3217,292 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_janela_avaliacao_aberta"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_log_auditoria_imutavel"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  RAISE EXCEPTION 'A trilha de auditoria é append-only: % em log_auditoria não é permitido.', TG_OP
+    USING ERRCODE = '42501';
+END $$;
+
+
+ALTER FUNCTION "public"."fn_log_auditoria_imutavel"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_memorial_avaliacao"("p_id_avaliacao" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_resultado jsonb;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: o memorial de cálculo é restrito a administradores.'
+      USING ERRCODE = '42501';
+  END IF;
+
+  SELECT jsonb_build_object(
+    'id_avaliacao',    a.id_avaliacao,
+    'codigo_projeto',  p.codigo_projeto,
+    'titulo_projeto',  p.titulo,
+    'avaliador',       jsonb_build_object('id_usuario', u.id_usuario, 'nome', u.nome, 'email', u.email),
+    'status',          coalesce(a.status, 'CONCLUIDA'),
+    'enviada_em',      a.tempo_submissao,
+    'presenca_em',     a.tempo_presenca,
+    'criada_em',       a.created_at,
+    'parecer',         a.parecer_final,
+    'is_quarentena',   coalesce(a.is_quarentena, false),
+    'cancelada_em',    a.cancelada_em,
+    'cancelada_por',   (SELECT jsonb_build_object('id_usuario', c.id_usuario, 'nome', c.nome)
+                          FROM public.usuarios c WHERE c.id_usuario = a.cancelada_por),
+    'questionario',    jsonb_build_object(
+                         'id_questionario', q.id_questionario,
+                         'titulo',          q.titulo,
+                         'escala_minima',   q.escala_minima,
+                         'escala_maxima',   q.escala_maxima
+                       ),
+    'criterios',       coalesce(crit.lista, '[]'::jsonb),
+    'soma_produtos',   crit.soma_produtos,
+    'soma_pesos',      crit.soma_pesos,
+    'nota_bruta',      crit.nota_bruta,
+    'nota_arredondada',crit.nota_arredondada,
+    'nota_gravada',    a.nota_final,
+    'confere',         a.nota_final IS NOT DISTINCT FROM crit.nota_arredondada,
+    'motivo_do_log',   (SELECT l.motivo FROM public.log_auditoria l
+                         WHERE l.id_avaliacao = a.id_avaliacao AND l.motivo IS NOT NULL
+                         ORDER BY l.id_log DESC LIMIT 1),
+    -- Ajuste manual: é o que distingue nota arbitrada (legítima, com motivo) de
+    -- nota que não fecha sem explicação nenhuma.
+    'ajuste',          CASE WHEN a.ajuste_tipo IS NULL THEN NULL ELSE jsonb_build_object(
+                         'tipo',   a.ajuste_tipo,
+                         'em',     a.ajustada_em,
+                         'motivo', a.ajuste_motivo,
+                         'por',    (SELECT jsonb_build_object('id_usuario', aj.id_usuario, 'nome', aj.nome)
+                                      FROM public.usuarios aj WHERE aj.id_usuario = a.ajustada_por)
+                       ) END
+  )
+  INTO v_resultado
+  FROM public.avaliacoes a
+  JOIN public.projetos p  ON p.id_projeto = a.id_projeto
+  LEFT JOIN public.usuarios u ON u.id_usuario = a.id_usuario
+  LEFT JOIN public.questionarios q
+    ON q.id_questionario = coalesce(a.id_questionario, p.id_questionario_fixado)
+  LEFT JOIN LATERAL (
+    SELECT
+      jsonb_agg(jsonb_build_object(
+        'id_pergunta',    x.id_pergunta,
+        'ordem',          x.ordem,
+        'criterio',       x.texto_pergunta,
+        'ajuda',          x.descricao_lembrete,
+        'peso_calculo',   x.peso_calculo,
+        'peso_desempate', x.peso_desempate,
+        'nota',           x.nota_atribuida,
+        'produto',        x.nota_atribuida * x.peso_calculo
+      ) ORDER BY x.ordem, x.texto_pergunta) AS lista,
+      sum(x.nota_atribuida * x.peso_calculo) FILTER (WHERE x.peso_calculo > 0)        AS soma_produtos,
+      sum(x.peso_calculo) FILTER (WHERE x.peso_calculo > 0)                           AS soma_pesos,
+      sum(x.nota_atribuida * x.peso_calculo) FILTER (WHERE x.peso_calculo > 0)
+        / nullif(sum(x.peso_calculo) FILTER (WHERE x.peso_calculo > 0), 0)             AS nota_bruta,
+      round(sum(x.nota_atribuida * x.peso_calculo) FILTER (WHERE x.peso_calculo > 0)
+        / nullif(sum(x.peso_calculo) FILTER (WHERE x.peso_calculo > 0), 0), 2)         AS nota_arredondada
+    FROM (
+      SELECT pq.id_pergunta, pq.ordem, pq.texto_pergunta, pq.descricao_lembrete,
+             pq.peso_calculo, pq.peso_desempate, r.nota_atribuida
+      FROM public.respostas_avaliacao r
+      JOIN public.perguntas_questionario pq ON pq.id_pergunta = r.id_pergunta
+      WHERE r.id_avaliacao = a.id_avaliacao
+    ) x
+  ) crit ON true
+  WHERE a.id_avaliacao = p_id_avaliacao;
+
+  RETURN v_resultado;
+END $$;
+
+
+ALTER FUNCTION "public"."fn_memorial_avaliacao"("p_id_avaliacao" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_memorial_avaliacao"("p_id_avaliacao" "uuid") IS 'Conta aberta de uma nota: critério, peso, nota, produto, soma, divisão e o que está gravado. Só Admin.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_memorial_por_codigo"("p_codigo_projeto" "text", "p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id_projeto uuid;
+  v_id_evento  uuid := coalesce(p_id_evento, public.evento_ativo_id());
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: o memorial de cálculo é restrito a administradores.'
+      USING ERRCODE = '42501';
+  END IF;
+
+  SELECT p.id_projeto INTO v_id_projeto
+  FROM public.projetos p
+  WHERE p.id_evento = v_id_evento
+    AND upper(btrim(p.codigo_projeto::text)) = upper(btrim(p_codigo_projeto))
+  LIMIT 1;
+
+  IF v_id_projeto IS NULL THEN
+    RAISE EXCEPTION 'Nenhum projeto com o código % neste evento.', p_codigo_projeto
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  RETURN public.fn_memorial_projeto(v_id_projeto);
+END $$;
+
+
+ALTER FUNCTION "public"."fn_memorial_por_codigo"("p_codigo_projeto" "text", "p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_memorial_por_codigo"("p_codigo_projeto" "text", "p_id_evento" "uuid") IS 'Memorial do projeto a partir do codigo_projeto, para a interface não precisar de UUID.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_resultado jsonb;
+  v_id_evento uuid;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: o memorial de cálculo é restrito a administradores.'
+      USING ERRCODE = '42501';
+  END IF;
+
+  SELECT p.id_evento INTO v_id_evento FROM public.projetos p WHERE p.id_projeto = p_id_projeto;
+
+  SELECT jsonb_build_object(
+    'id_projeto',       p.id_projeto,
+    'codigo_projeto',   p.codigo_projeto,
+    'titulo',           p.titulo,
+    'modalidade',       coalesce(m.nome_modalidade, 'Sem modalidade'),
+    'area_tematica',    coalesce(ar.nome_area, 'Sem área temática'),
+    'instituicao',      coalesce(inst.nome_exibicao, 'Não informada'),
+    'estande',          p.estande,
+    'check_in',         coalesce(p.is_check_in_realizado, false),
+    'fora_da_competicao', coalesce(p.is_fora_da_competicao, false),
+    'cota',             coalesce(p.cota_avaliacoes_customizada, coalesce(e.cota_avaliacoes_padrao, 3)),
+    'questionario_fixado', (SELECT jsonb_build_object('id_questionario', q.id_questionario, 'titulo', q.titulo,
+                                                      'escala_minima', q.escala_minima, 'escala_maxima', q.escala_maxima)
+                              FROM public.questionarios q WHERE q.id_questionario = p.id_questionario_fixado),
+
+    'avaliacoes_ativas', coalesce((
+      SELECT jsonb_agg(public.fn_memorial_avaliacao(a.id_avaliacao) ORDER BY a.created_at)
+      FROM public.avaliacoes a
+      WHERE a.id_projeto = p.id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')
+    ), '[]'::jsonb),
+    'avaliacoes_canceladas', coalesce((
+      SELECT jsonb_agg(public.fn_memorial_avaliacao(a.id_avaliacao) ORDER BY a.created_at)
+      FROM public.avaliacoes a
+      WHERE a.id_projeto = p.id_projeto AND a.status = 'CANCELADA'
+    ), '[]'::jsonb),
+
+    'total_avaliacoes',  ativas.qtd,
+    'notas',             coalesce(ativas.notas, '[]'::jsonb),
+    'media_geral',       ativas.media,
+    'ajuste_media',      coalesce(p.ajuste_media, 0),
+    'media_final',       CASE WHEN ativas.qtd > 0 THEN ativas.media + coalesce(p.ajuste_media, 0) END,
+    'ajuste_media_em',   p.ajuste_media_em,
+    'ajuste_media_motivo', p.ajuste_media_motivo,
+    'ajuste_media_por',  (SELECT jsonb_build_object('id_usuario', c.id_usuario, 'nome', c.nome)
+                            FROM public.usuarios c WHERE c.id_usuario = p.ajuste_media_por),
+    'media_do_ranking',  rk.media_final,
+    'posicao_no_ranking',rk.posicao,
+
+    'desempate', jsonb_build_object(
+      'chave', coalesce(to_jsonb(public.fn_chave_desempate(p.id_projeto)), '[]'::jsonb),
+      'por_prioridade', coalesce((
+        SELECT jsonb_agg(jsonb_build_object(
+                 'prioridade', d.peso_desempate,
+                 'ordem',      d.ordem,
+                 'criterio',   d.texto_pergunta,
+                 'media',      d.media
+               ) ORDER BY d.peso_desempate, d.ordem)
+        FROM (
+          SELECT pq.peso_desempate, pq.ordem, pq.texto_pergunta,
+                 round(avg(r.nota_atribuida), 2) AS media
+          FROM public.avaliacoes a
+          JOIN public.respostas_avaliacao r ON r.id_avaliacao = a.id_avaliacao
+          JOIN public.perguntas_questionario pq ON pq.id_pergunta = r.id_pergunta
+          WHERE a.id_projeto = p.id_projeto
+            AND (a.status IS NULL OR a.status <> 'CANCELADA')
+            AND pq.peso_desempate > 0
+          GROUP BY pq.id_pergunta, pq.peso_desempate, pq.ordem, pq.texto_pergunta
+        ) d
+      ), '[]'::jsonb)
+    ),
+
+    'quarentena', jsonb_build_object(
+      'pendente',      EXISTS (SELECT 1 FROM public.view_projetos_quarentena vq WHERE vq.id_projeto = p.id_projeto),
+      'nota_minima',   ativas.nota_min,
+      'nota_maxima',   ativas.nota_max,
+      'divergencia',   round(ativas.nota_max - ativas.nota_min, 2),
+      'limite',        2.5,
+      'resolvida_em',  p.quarentena_resolvida_em,
+      'resolvida_por', (SELECT jsonb_build_object('id_usuario', c.id_usuario, 'nome', c.nome)
+                          FROM public.usuarios c WHERE c.id_usuario = p.quarentena_resolvida_por)
+    ),
+
+    'achados', coalesce((
+      SELECT jsonb_agg(jsonb_build_object(
+               'severidade', f.severidade, 'codigo', f.codigo, 'titulo', f.titulo,
+               'id_avaliacao', f.id_avaliacao, 'esperado', f.esperado,
+               'encontrado', f.encontrado, 'detalhe', f.detalhe
+             ) ORDER BY f.severidade, f.codigo)
+      FROM public.fn_auditar_notas(v_id_evento) f
+      WHERE f.id_projeto = p.id_projeto
+    ), '[]'::jsonb),
+
+    'trilha', coalesce((
+      SELECT jsonb_agg(jsonb_build_object(
+               'id_log', l.id_log, 'quando', l.criado_em, 'acao', l.acao,
+               'operacao', l.operacao, 'tabela', l.tabela, 'origem', l.origem,
+               'motivo', l.motivo, 'ator_papel', l.ator_papel,
+               'ator', (SELECT at.nome FROM public.usuarios at WHERE at.id_usuario = l.ator_usuario),
+               'campos_alterados', l.campos_alterados,
+               'dados_antes', l.dados_antes, 'dados_depois', l.dados_depois
+             ) ORDER BY l.id_log DESC)
+      FROM public.log_auditoria l
+      WHERE l.id_projeto = p.id_projeto
+    ), '[]'::jsonb),
+
+    'trilha_comeca_em', (SELECT min(l.criado_em) FROM public.log_auditoria l)
+  )
+  INTO v_resultado
+  FROM public.projetos p
+  LEFT JOIN public.eventos e        ON e.id_evento = p.id_evento
+  LEFT JOIN public.modalidades m    ON m.id_modalidade = p.id_modalidade
+  LEFT JOIN public.areas_tematicas ar ON ar.id_area = p.id_area
+  LEFT JOIN public.instituicoes inst  ON inst.id_instituicao = p.id_instituicao
+  LEFT JOIN public.view_ranking_top3 rk ON rk.id_projeto = p.id_projeto
+  LEFT JOIN LATERAL (
+    SELECT count(*) AS qtd,
+           round(avg(a.nota_final), 2) AS media,
+           min(a.nota_final) AS nota_min,
+           max(a.nota_final) AS nota_max,
+           jsonb_agg(a.nota_final ORDER BY a.created_at) AS notas
+    FROM public.avaliacoes a
+    WHERE a.id_projeto = p.id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')
+  ) ativas ON true
+  WHERE p.id_projeto = p_id_projeto;
+
+  RETURN v_resultado;
+END $$;
+
+
+ALTER FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid") IS 'Memorial do projeto: avaliações, média, desempate, quarentena, achados da conferência e trilha. Só Admin.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_meu_perfil"() RETURNS "jsonb"
@@ -2422,6 +3621,7 @@ DECLARE
   v_pend public.pareamentos_pendentes;
   v_nome text;
 BEGIN
+  PERFORM public.auditoria_marcar_origem('fn_parear_dispositivo');
   PERFORM public.exigir_staff_ou_admin();
 
   SELECT * INTO v_pend FROM public.pareamentos_pendentes
@@ -2514,6 +3714,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_registrar_impedimento"("p_id_projeto" "u
 DECLARE
   v_usuario uuid := public.avaliador_atual();
 BEGIN
+  PERFORM public.auditoria_marcar_origem('fn_registrar_impedimento');
   IF v_usuario IS NULL THEN
     RAISE EXCEPTION 'Acesso negado: este aparelho não está vinculado a um avaliador.' USING ERRCODE = '42501';
   END IF;
@@ -2748,7 +3949,7 @@ BEGIN
           AND (av.status IS NULL OR av.status != 'CANCELADA')
       ) AS total_avaliacoes,
       (
-        SELECT COALESCE(ROUND(AVG(av.nota_final)::numeric, 2), 0.00)
+        SELECT COALESCE(ROUND(AVG(av.nota_final)::numeric, 2) + coalesce(p.ajuste_media, 0), 0.00)
         FROM public.avaliacoes av
         WHERE av.id_projeto = p.id_projeto
           AND (av.status IS NULL OR av.status != 'CANCELADA')
@@ -2799,7 +4000,7 @@ $$;
 ALTER FUNCTION "public"."fn_relatorio_instituicoes_completo"("p_id_evento" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id_projeto" "uuid", "id_evento" "uuid", "codigo_projeto" "text", "titulo" "text", "estande" "text", "corredor" "text", "modalidade" "text", "area_conhecimento" "text", "nome_instituicao" "text", "id_instituicao" "uuid", "is_check_in_realizado" boolean, "is_fora_da_competicao" boolean, "total_avaliacoes" integer, "media_geral" numeric, "notas" numeric[], "detalhes_avaliacoes" "jsonb", "cota_avaliacoes" integer)
+CREATE OR REPLACE FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id_projeto" "uuid", "id_evento" "uuid", "codigo_projeto" "text", "titulo" "text", "estande" "text", "corredor" "text", "modalidade" "text", "area_conhecimento" "text", "nome_instituicao" "text", "id_instituicao" "uuid", "is_check_in_realizado" boolean, "is_fora_da_competicao" boolean, "total_avaliacoes" integer, "media_geral" numeric, "notas" numeric[], "detalhes_avaliacoes" "jsonb", "cota_avaliacoes" integer, "ajuste_media" numeric, "media_final" numeric, "tem_ajuste_manual" boolean)
     LANGUAGE "sql" STABLE
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -2807,7 +4008,8 @@ CREATE OR REPLACE FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_event
     SELECT a.id_avaliacao, a.id_projeto, a.id_usuario, u.nome AS avaliador_nome,
       round(a.nota_final::numeric, 2) AS nota_final,
       coalesce(a.parecer_final, '') AS parecer,
-      coalesce(a.tempo_submissao, a.created_at) AS data
+      coalesce(a.tempo_submissao, a.created_at) AS data,
+      a.ajuste_tipo, a.ajuste_motivo
     FROM public.avaliacoes a
     JOIN public.usuarios u ON u.id_usuario = a.id_usuario
     WHERE a.status IS NULL OR a.status <> 'CANCELADA'
@@ -2824,9 +4026,13 @@ CREATE OR REPLACE FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_event
     coalesce(array_agg(av.nota_final ORDER BY av.data DESC) FILTER (WHERE av.nota_final IS NOT NULL), '{}'::numeric[]),
     coalesce(jsonb_agg(jsonb_build_object(
       'id_avaliacao', av.id_avaliacao, 'id_usuario', av.id_usuario, 'avaliador_nome', av.avaliador_nome,
-      'nota_final', av.nota_final, 'parecer', av.parecer, 'data', av.data
+      'nota_final', av.nota_final, 'parecer', av.parecer, 'data', av.data,
+      'ajuste_tipo', av.ajuste_tipo, 'ajuste_motivo', av.ajuste_motivo
     ) ORDER BY av.data DESC) FILTER (WHERE av.id_avaliacao IS NOT NULL), '[]'::jsonb),
-    coalesce(p.cota_avaliacoes_customizada, ev.cota_avaliacoes_padrao, 3)::int
+    coalesce(p.cota_avaliacoes_customizada, ev.cota_avaliacoes_padrao, 3)::int,
+    coalesce(p.ajuste_media, 0),
+    coalesce(round(avg(av.nota_final), 2), 0.00) + coalesce(p.ajuste_media, 0),
+    coalesce(p.ajuste_media, 0) <> 0 OR bool_or(av.ajuste_tipo IS NOT NULL)
   FROM public.projetos p
   JOIN public.eventos ev ON ev.id_evento = p.id_evento
   LEFT JOIN public.modalidades m ON m.id_modalidade = p.id_modalidade
@@ -3017,6 +4223,79 @@ $$;
 ALTER FUNCTION "public"."fn_validar_dados_questionario"("p_titulo" "text", "p_escala_minima" numeric, "p_escala_maxima" numeric, "p_perguntas" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_validar_respostas"("p_id_questionario" "uuid", "p_respostas" "jsonb") RETURNS numeric
+    LANGUAGE "plpgsql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_total_perguntas integer;
+  v_qtd_respostas   integer;
+  v_distintas       integer;
+  v_alheias         integer;
+  v_nulas           integer;
+  v_fora_escala     integer;
+  v_escala_min      numeric;
+  v_escala_max      numeric;
+  v_soma            numeric;
+  v_nota            numeric;
+BEGIN
+  IF jsonb_typeof(p_respostas) IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'Respostas em formato inválido.' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT q.escala_minima, q.escala_maxima INTO v_escala_min, v_escala_max
+  FROM public.questionarios q WHERE q.id_questionario = p_id_questionario;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Questionário não encontrado.' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT count(*) INTO v_total_perguntas
+  FROM public.perguntas_questionario pq WHERE pq.id_questionario = p_id_questionario;
+
+  SELECT count(*),
+         count(DISTINCT r ->> 'id_pergunta'),
+         count(*) FILTER (WHERE pq.id_pergunta IS NULL),
+         count(*) FILTER (WHERE jsonb_typeof(r -> 'nota') IS DISTINCT FROM 'number')
+    INTO v_qtd_respostas, v_distintas, v_alheias, v_nulas
+  FROM jsonb_array_elements(p_respostas) AS r
+  LEFT JOIN public.perguntas_questionario pq
+    ON pq.id_pergunta::text = r ->> 'id_pergunta' AND pq.id_questionario = p_id_questionario;
+
+  IF v_total_perguntas = 0 OR v_qtd_respostas <> v_total_perguntas OR v_distintas <> v_qtd_respostas
+     OR v_alheias > 0 OR v_nulas > 0 THEN
+    RAISE EXCEPTION 'Responda todas as % perguntas do questionário, uma vez cada, com uma nota.', v_total_perguntas
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT count(*) FILTER (WHERE (r ->> 'nota')::numeric < v_escala_min
+                             OR (r ->> 'nota')::numeric > v_escala_max),
+         coalesce(sum((r ->> 'nota')::numeric), 0)
+    INTO v_fora_escala, v_soma
+  FROM jsonb_array_elements(p_respostas) AS r;
+
+  IF v_fora_escala > 0 THEN
+    RAISE EXCEPTION 'Nota fora da escala do questionário (% a %).', v_escala_min, v_escala_max
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT ROUND(SUM((r ->> 'nota')::numeric * pq.peso_calculo) / NULLIF(SUM(pq.peso_calculo), 0), 2)
+    INTO v_nota
+  FROM jsonb_array_elements(p_respostas) AS r
+  JOIN public.perguntas_questionario pq
+    ON pq.id_pergunta::text = r ->> 'id_pergunta' AND pq.id_questionario = p_id_questionario
+  WHERE pq.peso_calculo > 0;
+
+  RETURN coalesce(v_nota, ROUND(v_soma / v_qtd_respostas, 2));
+END $$;
+
+
+ALTER FUNCTION "public"."fn_validar_respostas"("p_id_questionario" "uuid", "p_respostas" "jsonb") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_validar_respostas"("p_id_questionario" "uuid", "p_respostas" "jsonb") IS 'Valida o conjunto de respostas e devolve a média ponderada pelo peso_calculo. Mesma regra de fn_enviar_avaliacao.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_vincular_com_codigo"("p_email" "text", "p_codigo" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3030,6 +4309,7 @@ DECLARE
   -- (sem isso, a demora do bcrypt revelava quais e-mails são de avaliadores com código pendente)
   v_hash_falso  constant text := '$2a$08$ie/XW71pyb9bnxcEXTtuY.As1yr3hdoN6v.lALJZUc8swDbePZkOS';
 BEGIN
+  PERFORM public.auditoria_marcar_origem('fn_vincular_com_codigo');
   IF auth.uid() IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'erro', 'Sessão do aparelho não iniciada.');
   END IF;
@@ -3218,6 +4498,8 @@ CREATE TABLE IF NOT EXISTS "public"."eventos" (
     "tamanho_codigo" integer DEFAULT 6 NOT NULL,
     "max_tentativas_codigo" integer DEFAULT 5 NOT NULL,
     "metodos_vinculo" "text" DEFAULT 'ambos'::"text" NOT NULL,
+    "url_icone" "text",
+    "url_imagem_evento" "text",
     CONSTRAINT "ck_eventos_max_tentativas_codigo" CHECK ((("max_tentativas_codigo" >= 1) AND ("max_tentativas_codigo" <= 10))),
     CONSTRAINT "ck_eventos_metodos_vinculo" CHECK (("metodos_vinculo" = ANY (ARRAY['ambos'::"text", 'pareamento'::"text", 'codigo'::"text"]))),
     CONSTRAINT "ck_eventos_minutos_validade_codigo_acesso" CHECK ((("minutos_validade_codigo_acesso" >= 1) AND ("minutos_validade_codigo_acesso" <= 120))),
@@ -3245,6 +4527,14 @@ COMMENT ON COLUMN "public"."eventos"."data_evento" IS 'Data oficial de realizaç
 
 
 
+COMMENT ON COLUMN "public"."eventos"."url_icone" IS 'URL pública do ícone do evento (bucket identidade-visual). Substitui o "IF" do cabeçalho e serve de favicon.';
+
+
+
+COMMENT ON COLUMN "public"."eventos"."url_imagem_evento" IS 'URL pública da imagem do evento (bucket identidade-visual): login, autocadastro, Telão, relatórios e topo da tela do avaliador.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."parametros_acesso"("p_id_evento" "uuid") RETURNS "public"."eventos"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3256,7 +4546,7 @@ $$;
 ALTER FUNCTION "public"."parametros_acesso"("p_id_evento" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid") RETURNS "jsonb"
+CREATE OR REPLACE FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid", "p_motivo" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -3269,6 +4559,7 @@ DECLARE
   v_codigo text;
   v_quarentena boolean;
 BEGIN
+  PERFORM public.auditoria_marcar_origem('restaurar_avaliacao', p_motivo);
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
   END IF;
@@ -3325,7 +4616,11 @@ END;
 $$;
 
 
-ALTER FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid") OWNER TO "postgres";
+ALTER FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid", "p_motivo" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid", "p_motivo" "text") IS 'Restaura avaliação cancelada se a cota permitir, com motivo opcional na trilha. Só Admin.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."sessao_de_conta_da_equipe"() RETURNS boolean
@@ -3561,7 +4856,12 @@ CREATE TABLE IF NOT EXISTS "public"."avaliacoes" (
     "status_avaliacao" character varying(30) DEFAULT 'concluida'::character varying,
     "tempo_submissao" timestamp with time zone DEFAULT "now"(),
     "cancelada_em" timestamp with time zone,
-    "cancelada_por" "uuid"
+    "cancelada_por" "uuid",
+    "ajuste_tipo" "text",
+    "ajustada_em" timestamp with time zone,
+    "ajustada_por" "uuid",
+    "ajuste_motivo" "text",
+    CONSTRAINT "ck_avaliacoes_ajuste_tipo" CHECK ((("ajuste_tipo" IS NULL) OR ("ajuste_tipo" = ANY (ARRAY['respostas_corrigidas'::"text", 'nota_arbitrada'::"text", 'lancada_pelo_admin'::"text"]))))
 );
 
 
@@ -3573,6 +4873,14 @@ COMMENT ON COLUMN "public"."avaliacoes"."cancelada_em" IS 'Quando o Admin cancel
 
 
 COMMENT ON COLUMN "public"."avaliacoes"."cancelada_por" IS 'Admin (usuarios.id_usuario) que cancelou a avaliação. Sem FK de propósito (embed do PostgREST).';
+
+
+
+COMMENT ON COLUMN "public"."avaliacoes"."ajuste_tipo" IS 'Marca de ajuste manual do Admin: respostas_corrigidas, nota_arbitrada ou lancada_pelo_admin. NULL = avaliação enviada pelo avaliador.';
+
+
+
+COMMENT ON COLUMN "public"."avaliacoes"."ajustada_por" IS 'Admin (usuarios.id_usuario) que fez o ajuste. Sem FK de propósito, como cancelada_por.';
 
 
 
@@ -3725,6 +5033,58 @@ COMMENT ON COLUMN "public"."locks_ativos"."atribuido_por" IS 'Admin (usuarios.id
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."log_auditoria" (
+    "id_log" bigint NOT NULL,
+    "criado_em" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "id_evento" "uuid",
+    "tabela" "text" NOT NULL,
+    "operacao" "text" NOT NULL,
+    "acao" "text" NOT NULL,
+    "id_registro" "text",
+    "id_projeto" "uuid",
+    "id_avaliacao" "uuid",
+    "ator_auth" "uuid",
+    "ator_usuario" "uuid",
+    "ator_papel" "text",
+    "origem" "text" NOT NULL,
+    "motivo" "text",
+    "dados_antes" "jsonb",
+    "dados_depois" "jsonb",
+    "campos_alterados" "text"[],
+    CONSTRAINT "log_auditoria_operacao_check" CHECK (("operacao" = ANY (ARRAY['INSERT'::"text", 'UPDATE'::"text", 'DELETE'::"text", 'EVENTO'::"text"])))
+);
+
+
+ALTER TABLE "public"."log_auditoria" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."log_auditoria" IS 'Trilha de auditoria append-only. Preenchida por trigger, inclusive quando a escrita vem direto da API REST. Sobrevive ao reset global.';
+
+
+
+COMMENT ON COLUMN "public"."log_auditoria"."operacao" IS 'INSERT/UPDATE/DELETE da trigger, ou EVENTO para registro feito por RPC (reset global, por exemplo).';
+
+
+
+COMMENT ON COLUMN "public"."log_auditoria"."acao" IS 'Rótulo semântico estável (nota_alterada, credenciamento_concedido, check_in_realizado...). A interface traduz para português.';
+
+
+
+COMMENT ON COLUMN "public"."log_auditoria"."origem" IS 'Nome da RPC que se identificou por auditoria_marcar_origem(), ou ''direto'' quando a escrita não passou por função nenhuma.';
+
+
+
+ALTER TABLE "public"."log_auditoria" ALTER COLUMN "id_log" ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME "public"."log_auditoria_id_log_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."modalidade_aliases" (
     "id_alias" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "id_modalidade" "uuid" NOT NULL,
@@ -3832,7 +5192,11 @@ CREATE TABLE IF NOT EXISTS "public"."projetos" (
     "forcar_topo_fila" boolean DEFAULT false,
     "created_at" timestamp with time zone DEFAULT "now"(),
     "quarentena_resolvida_em" timestamp with time zone,
-    "quarentena_resolvida_por" "uuid"
+    "quarentena_resolvida_por" "uuid",
+    "ajuste_media" numeric(5,2) DEFAULT 0 NOT NULL,
+    "ajuste_media_em" timestamp with time zone,
+    "ajuste_media_por" "uuid",
+    "ajuste_media_motivo" "text"
 );
 
 
@@ -3844,6 +5208,10 @@ COMMENT ON COLUMN "public"."projetos"."quarentena_resolvida_em" IS 'Quando o Adm
 
 
 COMMENT ON COLUMN "public"."projetos"."quarentena_resolvida_por" IS 'Admin (usuarios.id_usuario) que resolveu a quarentena. Sem FK de propósito (embed do PostgREST).';
+
+
+
+COMMENT ON COLUMN "public"."projetos"."ajuste_media" IS 'Bónus (positivo) ou penalidade (negativo) de comissão somado à média do projeto. 0 = sem ajuste. media_final = media_geral + ajuste_media.';
 
 
 
@@ -3992,6 +5360,8 @@ CREATE OR REPLACE VIEW "public"."view_ranking_top3" WITH ("security_invoker"='tr
             COALESCE("inst"."nome_exibicao", 'Não informada'::character varying) AS "nome_instituicao",
             COALESCE("array_agg"("round"(("a"."nota_final")::numeric, 2) ORDER BY "a"."tempo_submissao", "a"."created_at") FILTER (WHERE ("a"."nota_final" IS NOT NULL)), '{}'::numeric[]) AS "notas",
             COALESCE("round"("avg"("a"."nota_final"), 2), 0.00) AS "media_geral",
+            COALESCE("p"."ajuste_media", (0)::numeric) AS "ajuste_media",
+            (COALESCE("round"("avg"("a"."nota_final"), 2), 0.00) + COALESCE("p"."ajuste_media", (0)::numeric)) AS "media_final",
             "count"("a"."id_avaliacao") AS "total_avaliacoes",
             "p"."id_evento"
            FROM (((("public"."projetos" "p"
@@ -4000,7 +5370,7 @@ CREATE OR REPLACE VIEW "public"."view_ranking_top3" WITH ("security_invoker"='tr
              LEFT JOIN "public"."instituicoes" "inst" ON (("inst"."id_instituicao" = "p"."id_instituicao")))
              JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")))))
           WHERE (NOT COALESCE("p"."is_fora_da_competicao", false))
-          GROUP BY "p"."id_projeto", "p"."codigo_projeto", "p"."titulo", "p"."estande", "p"."corredor", "m"."nome_modalidade", "ar"."nome_area", "inst"."nome_exibicao", "p"."id_evento"
+          GROUP BY "p"."id_projeto", "p"."codigo_projeto", "p"."titulo", "p"."estande", "p"."corredor", "m"."nome_modalidade", "ar"."nome_area", "inst"."nome_exibicao", "p"."id_evento", "p"."ajuste_media"
         ), "com_chave" AS (
          SELECT "b_1"."id_projeto",
             "b_1"."codigo_projeto",
@@ -4012,6 +5382,8 @@ CREATE OR REPLACE VIEW "public"."view_ranking_top3" WITH ("security_invoker"='tr
             "b_1"."nome_instituicao",
             "b_1"."notas",
             "b_1"."media_geral",
+            "b_1"."ajuste_media",
+            "b_1"."media_final",
             "b_1"."total_avaliacoes",
             "b_1"."id_evento",
             "public"."fn_chave_desempate"("b_1"."id_projeto") AS "chave_desempate"
@@ -4029,13 +5401,15 @@ CREATE OR REPLACE VIEW "public"."view_ranking_top3" WITH ("security_invoker"='tr
     "media_geral",
     "total_avaliacoes",
     "id_evento",
-    "rank"() OVER (PARTITION BY "id_evento", "modalidade", "area_tematica" ORDER BY "media_geral" DESC, "chave_desempate" DESC) AS "posicao",
+    "rank"() OVER (PARTITION BY "id_evento", "modalidade", "area_tematica" ORDER BY "media_final" DESC, "chave_desempate" DESC) AS "posicao",
     (EXISTS ( SELECT 1
            FROM "public"."view_projetos_quarentena" "q"
           WHERE ("q"."id_projeto" = "b"."id_projeto"))) AS "em_quarentena",
-    "chave_desempate"
+    "chave_desempate",
+    "ajuste_media",
+    "media_final"
    FROM "com_chave" "b"
-  ORDER BY "media_geral" DESC, "codigo_projeto";
+  ORDER BY "media_final" DESC, "codigo_projeto";
 
 
 ALTER VIEW "public"."view_ranking_top3" OWNER TO "postgres";
@@ -4049,7 +5423,7 @@ CREATE OR REPLACE VIEW "public"."view_relatorio_admin" WITH ("security_invoker"=
     "p"."corredor",
     COALESCE("round"("avg"("a"."nota_final"), 2), 0.00) AS "media_notas"
    FROM ("public"."projetos" "p"
-     LEFT JOIN "public"."avaliacoes" "a" ON (("a"."id_projeto" = "p"."id_projeto")))
+     LEFT JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")))))
   GROUP BY "p"."id_projeto", "p"."codigo_projeto", "p"."titulo", "p"."estande", "p"."corredor";
 
 
@@ -4222,6 +5596,11 @@ ALTER TABLE ONLY "public"."locks_ativos"
 
 
 
+ALTER TABLE ONLY "public"."log_auditoria"
+    ADD CONSTRAINT "log_auditoria_pkey" PRIMARY KEY ("id_log");
+
+
+
 ALTER TABLE ONLY "public"."modalidade_aliases"
     ADD CONSTRAINT "modalidade_aliases_pkey" PRIMARY KEY ("id_alias");
 
@@ -4377,6 +5756,26 @@ CREATE INDEX "idx_locks_expira" ON "public"."locks_ativos" USING "btree" ("expir
 
 
 
+CREATE INDEX "idx_log_auditoria_avaliacao" ON "public"."log_auditoria" USING "btree" ("id_avaliacao") WHERE ("id_avaliacao" IS NOT NULL);
+
+
+
+CREATE INDEX "idx_log_auditoria_evento" ON "public"."log_auditoria" USING "btree" ("id_evento", "criado_em" DESC);
+
+
+
+CREATE INDEX "idx_log_auditoria_fora_fluxo" ON "public"."log_auditoria" USING "btree" ("criado_em" DESC) WHERE ("origem" = 'direto'::"text");
+
+
+
+CREATE INDEX "idx_log_auditoria_projeto" ON "public"."log_auditoria" USING "btree" ("id_projeto") WHERE ("id_projeto" IS NOT NULL);
+
+
+
+CREATE INDEX "idx_log_auditoria_tabela" ON "public"."log_auditoria" USING "btree" ("tabela", "criado_em" DESC);
+
+
+
 CREATE INDEX "idx_modalidade_aliases_norm" ON "public"."modalidade_aliases" USING "btree" ("alias_normalizado");
 
 
@@ -4421,7 +5820,51 @@ CREATE UNIQUE INDEX "uq_questionarios_evento_origem" ON "public"."questionarios"
 
 
 
+CREATE OR REPLACE TRIGGER "auditar_avaliacoes" AFTER INSERT OR DELETE OR UPDATE ON "public"."avaliacoes" FOR EACH ROW EXECUTE FUNCTION "public"."fn_auditar"('avaliacao');
+
+
+
+CREATE OR REPLACE TRIGGER "auditar_avaliadores_evento" AFTER INSERT OR DELETE OR UPDATE ON "public"."avaliadores_evento" FOR EACH ROW EXECUTE FUNCTION "public"."fn_auditar"('credenciamento');
+
+
+
+CREATE OR REPLACE TRIGGER "auditar_dispositivos_avaliador" AFTER INSERT OR DELETE OR UPDATE ON "public"."dispositivos_avaliador" FOR EACH ROW EXECUTE FUNCTION "public"."fn_auditar"('dispositivo');
+
+
+
+CREATE OR REPLACE TRIGGER "auditar_eventos" AFTER UPDATE ON "public"."eventos" FOR EACH ROW EXECUTE FUNCTION "public"."fn_auditar"('evento');
+
+
+
+CREATE OR REPLACE TRIGGER "auditar_perguntas_questionario" AFTER INSERT OR DELETE OR UPDATE ON "public"."perguntas_questionario" FOR EACH ROW EXECUTE FUNCTION "public"."fn_auditar"('pergunta');
+
+
+
+CREATE OR REPLACE TRIGGER "auditar_projetos" AFTER INSERT OR DELETE OR UPDATE OF "codigo_projeto", "titulo", "id_evento", "id_instituicao", "id_area", "id_modalidade", "id_questionario_fixado", "cota_avaliacoes_customizada", "is_check_in_realizado", "is_fora_da_competicao", "quarentena_resolvida_em", "quarentena_resolvida_por" ON "public"."projetos" FOR EACH ROW EXECUTE FUNCTION "public"."fn_auditar"('projeto');
+
+
+
+CREATE OR REPLACE TRIGGER "auditar_questionarios" AFTER INSERT OR DELETE OR UPDATE ON "public"."questionarios" FOR EACH ROW EXECUTE FUNCTION "public"."fn_auditar"('questionario');
+
+
+
+CREATE OR REPLACE TRIGGER "auditar_respostas_avaliacao" AFTER DELETE OR UPDATE ON "public"."respostas_avaliacao" FOR EACH ROW EXECUTE FUNCTION "public"."fn_auditar"('resposta_alterada');
+
+
+
+CREATE OR REPLACE TRIGGER "auditar_usuarios" AFTER DELETE OR UPDATE OF "papel" ON "public"."usuarios" FOR EACH ROW EXECUTE FUNCTION "public"."fn_auditar"('usuario');
+
+
+
 CREATE OR REPLACE TRIGGER "instituicoes_normalizar" BEFORE INSERT OR UPDATE OF "nome_exibicao", "nome_normalizado", "sigla" ON "public"."instituicoes" FOR EACH ROW EXECUTE FUNCTION "public"."trg_instituicoes_normalizar"();
+
+
+
+CREATE OR REPLACE TRIGGER "log_auditoria_imutavel_linha" BEFORE DELETE OR UPDATE ON "public"."log_auditoria" FOR EACH ROW EXECUTE FUNCTION "public"."fn_log_auditoria_imutavel"();
+
+
+
+CREATE OR REPLACE TRIGGER "log_auditoria_imutavel_truncate" BEFORE TRUNCATE ON "public"."log_auditoria" FOR EACH STATEMENT EXECUTE FUNCTION "public"."fn_log_auditoria_imutavel"();
 
 
 
@@ -4431,7 +5874,11 @@ ALTER TABLE ONLY "public"."areas_tematicas"
 
 
 ALTER TABLE ONLY "public"."avaliacoes"
-    ADD CONSTRAINT "avaliacoes_id_projeto_fkey" FOREIGN KEY ("id_projeto") REFERENCES "public"."projetos"("id_projeto") ON DELETE CASCADE;
+    ADD CONSTRAINT "avaliacoes_id_projeto_fkey" FOREIGN KEY ("id_projeto") REFERENCES "public"."projetos"("id_projeto") ON DELETE RESTRICT;
+
+
+
+COMMENT ON CONSTRAINT "avaliacoes_id_projeto_fkey" ON "public"."avaliacoes" IS 'RESTRICT: apagar projeto com nota é recusado (antes era CASCADE e apagava as notas em silêncio).';
 
 
 
@@ -4441,7 +5888,11 @@ ALTER TABLE ONLY "public"."avaliacoes"
 
 
 ALTER TABLE ONLY "public"."avaliacoes"
-    ADD CONSTRAINT "avaliacoes_id_usuario_fkey" FOREIGN KEY ("id_usuario") REFERENCES "public"."usuarios"("id_usuario") ON DELETE CASCADE;
+    ADD CONSTRAINT "avaliacoes_id_usuario_fkey" FOREIGN KEY ("id_usuario") REFERENCES "public"."usuarios"("id_usuario") ON DELETE RESTRICT;
+
+
+
+COMMENT ON CONSTRAINT "avaliacoes_id_usuario_fkey" ON "public"."avaliacoes" IS 'RESTRICT: apagar usuário com nota é recusado. Para tirar o avaliador do evento, descredencie.';
 
 
 
@@ -4621,7 +6072,7 @@ ALTER TABLE ONLY "public"."respostas_avaliacao"
 
 
 ALTER TABLE ONLY "public"."respostas_avaliacao"
-    ADD CONSTRAINT "respostas_avaliacao_id_pergunta_fkey" FOREIGN KEY ("id_pergunta") REFERENCES "public"."perguntas_questionario"("id_pergunta") ON DELETE CASCADE;
+    ADD CONSTRAINT "respostas_avaliacao_id_pergunta_fkey" FOREIGN KEY ("id_pergunta") REFERENCES "public"."perguntas_questionario"("id_pergunta") ON DELETE RESTRICT;
 
 
 
@@ -4670,6 +6121,9 @@ ALTER TABLE "public"."instituicoes" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."locks_ativos" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."log_auditoria" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."modalidade_aliases" ENABLE ROW LEVEL SECURITY;
@@ -4750,7 +6204,9 @@ CREATE POLICY "rls_avaliacoes_leitura" ON "public"."avaliacoes" FOR SELECT TO "a
 
 
 
-CREATE POLICY "rls_avaliacoes_staff_apaga_pendentes" ON "public"."avaliacoes" FOR DELETE TO "authenticated" USING (("public"."is_staff"() AND ("nota_final" IS NULL)));
+CREATE POLICY "rls_avaliacoes_staff_apaga_pendentes" ON "public"."avaliacoes" FOR DELETE TO "authenticated" USING (("public"."is_staff"() AND ("nota_final" IS NULL) AND (("status" IS NULL) OR (("status")::"text" <> 'CANCELADA'::"text")) AND (NOT (EXISTS ( SELECT 1
+   FROM "public"."respostas_avaliacao" "r"
+  WHERE ("r"."id_avaliacao" = "avaliacoes"."id_avaliacao"))))));
 
 
 
@@ -4840,6 +6296,10 @@ CREATE POLICY "rls_locks_ativos_leitura" ON "public"."locks_ativos" FOR SELECT T
 
 
 
+CREATE POLICY "rls_log_auditoria_admin_le" ON "public"."log_auditoria" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+
+
+
 CREATE POLICY "rls_modalidade_aliases_admin" ON "public"."modalidade_aliases" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
 
 
@@ -4914,6 +6374,18 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."admin_ajustar_media_projeto"("p_id_projeto" "uuid", "p_delta" numeric, "p_motivo" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_ajustar_media_projeto"("p_id_projeto" "uuid", "p_delta" numeric, "p_motivo" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_ajustar_media_projeto"("p_id_projeto" "uuid", "p_delta" numeric, "p_motivo" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_arbitrar_nota_final"("p_id_avaliacao" "uuid", "p_nota" numeric, "p_motivo" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_arbitrar_nota_final"("p_id_avaliacao" "uuid", "p_nota" numeric, "p_motivo" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_arbitrar_nota_final"("p_id_avaliacao" "uuid", "p_nota" numeric, "p_motivo" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."admin_atribuir_banca"("p_id_projeto" "uuid", "p_ids_usuarios" "uuid"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_atribuir_banca"("p_id_projeto" "uuid", "p_ids_usuarios" "uuid"[]) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_atribuir_banca"("p_id_projeto" "uuid", "p_ids_usuarios" "uuid"[]) TO "service_role";
@@ -4941,6 +6413,12 @@ GRANT ALL ON FUNCTION "public"."admin_bloquear_modalidade_avaliador"("p_id_usuar
 REVOKE ALL ON FUNCTION "public"."admin_copiar_questionario"("p_id_origem" "uuid", "p_id_evento" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_copiar_questionario"("p_id_origem" "uuid", "p_id_evento" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_copiar_questionario"("p_id_origem" "uuid", "p_id_evento" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_corrigir_respostas_avaliacao"("p_id_avaliacao" "uuid", "p_respostas" "jsonb", "p_motivo" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_corrigir_respostas_avaliacao"("p_id_avaliacao" "uuid", "p_respostas" "jsonb", "p_motivo" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_corrigir_respostas_avaliacao"("p_id_avaliacao" "uuid", "p_respostas" "jsonb", "p_motivo" "text") TO "service_role";
 
 
 
@@ -4998,6 +6476,12 @@ GRANT ALL ON FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") TO "
 
 
 
+REVOKE ALL ON FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_id_usuario" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_motivo" "text", "p_confirmar_acima_da_cota" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_id_usuario" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_motivo" "text", "p_confirmar_acima_da_cota" boolean) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_id_usuario" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_motivo" "text", "p_confirmar_acima_da_cota" boolean) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_id_evento" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_id_evento" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_id_evento" "uuid") TO "service_role";
@@ -5010,15 +6494,15 @@ GRANT ALL ON FUNCTION "public"."admin_remover_avaliador_evento"("p_id_usuario" "
 
 
 
-REVOKE ALL ON FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid") FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid") TO "service_role";
+REVOKE ALL ON FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid", "p_motivo" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid", "p_motivo" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_remover_quarentena"("p_id_projeto" "uuid", "p_motivo" "text") TO "service_role";
 
 
 
-REVOKE ALL ON FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid") FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid") TO "service_role";
+REVOKE ALL ON FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid", "p_motivo" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid", "p_motivo" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_remover_quarentena_evento"("p_id_evento" "uuid", "p_motivo" "text") TO "service_role";
 
 
 
@@ -5088,6 +6572,33 @@ GRANT ALL ON FUNCTION "public"."admin_salvar_staff"("p_id_evento" "uuid", "p_ite
 
 
 
+REVOKE ALL ON FUNCTION "public"."auditoria_ator"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."auditoria_ator"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."auditoria_marcar_origem"("p_origem" "text", "p_motivo" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."auditoria_marcar_origem"("p_origem" "text", "p_motivo" "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."auditoria_motivo"() TO "anon";
+GRANT ALL ON FUNCTION "public"."auditoria_motivo"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."auditoria_motivo"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."auditoria_origem"() TO "anon";
+GRANT ALL ON FUNCTION "public"."auditoria_origem"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."auditoria_origem"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."auditoria_registrar"("p_acao" "text", "p_tabela" "text", "p_id_evento" "uuid", "p_dados" "jsonb", "p_motivo" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."auditoria_registrar"("p_acao" "text", "p_tabela" "text", "p_id_evento" "uuid", "p_dados" "jsonb", "p_motivo" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."avaliador_atual"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."avaliador_atual"() TO "anon";
 GRANT ALL ON FUNCTION "public"."avaliador_atual"() TO "authenticated";
@@ -5107,9 +6618,9 @@ GRANT ALL ON FUNCTION "public"."evento_ativo_id"() TO "service_role";
 
 
 
-REVOKE ALL ON FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid") FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid") TO "service_role";
+REVOKE ALL ON FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid", "p_motivo" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid", "p_motivo" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."excluir_avaliacao"("p_id_avaliacao" "uuid", "p_motivo" "text") TO "service_role";
 
 
 
@@ -5127,6 +6638,17 @@ GRANT ALL ON FUNCTION "public"."fn_aparar_texto"("p_texto" "text") TO "service_r
 REVOKE ALL ON FUNCTION "public"."fn_assumir_item_fila"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_assumir_item_fila"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_assumir_item_fila"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_auditar"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_auditar"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") TO "service_role";
 
 
 
@@ -5196,9 +6718,39 @@ GRANT ALL ON FUNCTION "public"."fn_gerar_codigo_acesso"("p_id_usuario" "uuid") T
 
 
 
+REVOKE ALL ON FUNCTION "public"."fn_identidade_visual"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_identidade_visual"() TO "anon";
+GRANT ALL ON FUNCTION "public"."fn_identidade_visual"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_identidade_visual"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_janela_avaliacao_aberta"("p_id_evento" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_janela_avaliacao_aberta"("p_id_evento" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_janela_avaliacao_aberta"("p_id_evento" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_log_auditoria_imutavel"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_log_auditoria_imutavel"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_memorial_avaliacao"("p_id_avaliacao" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_memorial_avaliacao"("p_id_avaliacao" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_memorial_avaliacao"("p_id_avaliacao" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_memorial_por_codigo"("p_codigo_projeto" "text", "p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_memorial_por_codigo"("p_codigo_projeto" "text", "p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_memorial_por_codigo"("p_codigo_projeto" "text", "p_id_evento" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid") TO "service_role";
 
 
 
@@ -5302,6 +6854,12 @@ GRANT ALL ON FUNCTION "public"."fn_validar_dados_questionario"("p_titulo" "text"
 
 
 
+REVOKE ALL ON FUNCTION "public"."fn_validar_respostas"("p_id_questionario" "uuid", "p_respostas" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_validar_respostas"("p_id_questionario" "uuid", "p_respostas" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_validar_respostas"("p_id_questionario" "uuid", "p_respostas" "jsonb") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_vincular_com_codigo"("p_email" "text", "p_codigo" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_vincular_com_codigo"("p_email" "text", "p_codigo" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_vincular_com_codigo"("p_email" "text", "p_codigo" "text") TO "service_role";
@@ -5349,9 +6907,9 @@ GRANT ALL ON FUNCTION "public"."parametros_acesso"("p_id_evento" "uuid") TO "ser
 
 
 
-REVOKE ALL ON FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid") FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid") TO "service_role";
+REVOKE ALL ON FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid", "p_motivo" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid", "p_motivo" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid", "p_motivo" "text") TO "service_role";
 
 
 
@@ -5445,6 +7003,15 @@ GRANT ALL ON TABLE "public"."instituicoes" TO "service_role";
 
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."locks_ativos" TO "authenticated";
 GRANT ALL ON TABLE "public"."locks_ativos" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."log_auditoria" TO "service_role";
+GRANT SELECT ON TABLE "public"."log_auditoria" TO "authenticated";
+
+
+
+GRANT ALL ON SEQUENCE "public"."log_auditoria_id_log_seq" TO "service_role";
 
 
 
