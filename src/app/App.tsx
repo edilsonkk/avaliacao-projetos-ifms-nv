@@ -67,6 +67,13 @@ function ConteudoApp() {
     set_aba_login('avaliador');
   };
 
+  // Sair do autocadastro: a query do QR Code (?cadastro=avaliador) precisa sair da URL, senão
+  // qualquer atualização de página reentra no formulário de cadastro em vez de ficar no login.
+  const irParaLogin = () => {
+    window.history.replaceState({}, '', '/');
+    set_tela_atual('login');
+  };
+
   // O papel salvo no navegador é só um atalho de tela: confere com a sessão real no banco.
   // Se não bater (localStorage editado, aparelho desvinculado, sessão expirada), volta ao login.
   useEffect(() => {
@@ -197,12 +204,7 @@ function ConteudoApp() {
       case 'telao':
         return <TelaoAoVivo />;
       case 'autocadastro':
-        return (
-          <TelaAutocadastroAvaliador
-            aoConcluir={() => set_tela_atual('login')}
-            aoVoltar={() => set_tela_atual('login')}
-          />
-        );
+        return <TelaAutocadastroAvaliador aoConcluir={irParaLogin} aoVoltar={irParaLogin} />;
       case 'redefinir-senha':
         return <TelaRedefinirSenha aoConcluir={() => set_tela_atual('login')} />;
       case 'login':
