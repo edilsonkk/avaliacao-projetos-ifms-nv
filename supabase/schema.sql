@@ -3329,6 +3329,59 @@ COMMENT ON FUNCTION "public"."fn_memorial_avaliacao"("p_id_avaliacao" "uuid") IS
 
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_memorial_evento"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id_evento uuid := coalesce(p_id_evento, public.evento_ativo_id());
+  v_resultado jsonb;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: a folha de conferência é restrita a administradores.'
+      USING ERRCODE = '42501';
+  END IF;
+
+  WITH achados AS (
+    SELECT f.id_projeto,
+           jsonb_agg(jsonb_build_object(
+             'severidade', f.severidade, 'codigo', f.codigo, 'titulo', f.titulo,
+             'id_avaliacao', f.id_avaliacao, 'esperado', f.esperado,
+             'encontrado', f.encontrado, 'detalhe', f.detalhe
+           ) ORDER BY f.severidade, f.codigo) AS lista
+    FROM public.fn_auditar_notas(v_id_evento) f
+    WHERE f.id_projeto IS NOT NULL
+    GROUP BY f.id_projeto
+  )
+  SELECT jsonb_build_object(
+    'evento', (SELECT jsonb_build_object('id_evento', e.id_evento, 'nome', e.nome_evento,
+                                         'edicao', e.edicao, 'data_evento', e.data_evento)
+                 FROM public.eventos e WHERE e.id_evento = v_id_evento),
+    'emitida_em', now(),
+    'trilha_comeca_em', (SELECT min(l.criado_em) FROM public.log_auditoria l),
+    'projetos', coalesce(jsonb_agg(x.memorial ORDER BY x.codigo_projeto), '[]'::jsonb)
+  )
+  INTO v_resultado
+  FROM (
+    SELECT p.codigo_projeto,
+           public.fn_memorial_projeto(p.id_projeto, false)
+             || jsonb_build_object('achados', coalesce(a.lista, '[]'::jsonb)) AS memorial
+    FROM public.projetos p
+    LEFT JOIN achados a ON a.id_projeto = p.id_projeto
+    WHERE p.id_evento = v_id_evento
+  ) x;
+
+  RETURN v_resultado;
+END $$;
+
+
+ALTER FUNCTION "public"."fn_memorial_evento"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_memorial_evento"("p_id_evento" "uuid") IS 'Folha de conferência consolidada: todos os projetos do evento com o memorial de cada avaliação. Só Admin.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_memorial_por_codigo"("p_codigo_projeto" "text", "p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3364,7 +3417,7 @@ COMMENT ON FUNCTION "public"."fn_memorial_por_codigo"("p_codigo_projeto" "text",
 
 
 
-CREATE OR REPLACE FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid") RETURNS "jsonb"
+CREATE OR REPLACE FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid", "p_incluir_achados" boolean DEFAULT true) RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -3451,7 +3504,10 @@ BEGIN
                           FROM public.usuarios c WHERE c.id_usuario = p.quarentena_resolvida_por)
     ),
 
-    'achados', coalesce((
+    -- A folha consolidada do evento passa p_incluir_achados = false e anexa os achados
+    -- de uma única rodada de fn_auditar_notas: rodar a conferência inteira por projeto
+    -- seria o mesmo trabalho repetido centenas de vezes.
+    'achados', CASE WHEN NOT p_incluir_achados THEN '[]'::jsonb ELSE coalesce((
       SELECT jsonb_agg(jsonb_build_object(
                'severidade', f.severidade, 'codigo', f.codigo, 'titulo', f.titulo,
                'id_avaliacao', f.id_avaliacao, 'esperado', f.esperado,
@@ -3459,7 +3515,7 @@ BEGIN
              ) ORDER BY f.severidade, f.codigo)
       FROM public.fn_auditar_notas(v_id_evento) f
       WHERE f.id_projeto = p.id_projeto
-    ), '[]'::jsonb),
+    ), '[]'::jsonb) END,
 
     'trilha', coalesce((
       SELECT jsonb_agg(jsonb_build_object(
@@ -3498,10 +3554,10 @@ BEGIN
 END $$;
 
 
-ALTER FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid") OWNER TO "postgres";
+ALTER FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid", "p_incluir_achados" boolean) OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid") IS 'Memorial do projeto: avaliações, média, desempate, quarentena, achados da conferência e trilha. Só Admin.';
+COMMENT ON FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid", "p_incluir_achados" boolean) IS 'Memorial do projeto: avaliações, média aberta, desempate, quarentena, achados e trilha. Só Admin.';
 
 
 
@@ -6742,15 +6798,21 @@ GRANT ALL ON FUNCTION "public"."fn_memorial_avaliacao"("p_id_avaliacao" "uuid") 
 
 
 
+REVOKE ALL ON FUNCTION "public"."fn_memorial_evento"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_memorial_evento"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_memorial_evento"("p_id_evento" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_memorial_por_codigo"("p_codigo_projeto" "text", "p_id_evento" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_memorial_por_codigo"("p_codigo_projeto" "text", "p_id_evento" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_memorial_por_codigo"("p_codigo_projeto" "text", "p_id_evento" "uuid") TO "service_role";
 
 
 
-REVOKE ALL ON FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid") FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid") TO "service_role";
+REVOKE ALL ON FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid", "p_incluir_achados" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid", "p_incluir_achados" boolean) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_memorial_projeto"("p_id_projeto" "uuid", "p_incluir_achados" boolean) TO "service_role";
 
 
 
