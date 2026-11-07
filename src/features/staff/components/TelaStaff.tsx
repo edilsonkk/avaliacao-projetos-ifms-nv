@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { aoRetomarApp } from '@/lib/keepAliveSessao';
 import {
   Search,
   CheckCircle2,
@@ -88,6 +89,9 @@ type ColunaOrdenacaoAvaliador =
   | 'email'
   | 'modalidades_bloqueadas'
   | 'areas';
+
+/** De quanto em quanto tempo a recepção recarrega sozinha (autocadastro feito em outro aparelho). */
+const INTERVALO_ATUALIZACAO_MS = 30_000;
 
 const dados_contingencia_projetos: ProjetoStaff[] = [
   {
@@ -233,9 +237,19 @@ export const TelaStaff: React.FC = () => {
   };
 
   // 1. Resolução do Evento Ativo e Carga Inicial
-  const carregar_dados = async () => {
-    set_carregando_dados(true);
-    set_mensagem_erro_banco(null);
+  // `silencioso` é a atualização automática: não pisca o estado de carregamento nem cobre a tela com
+  // um erro, para uma falha momentânea de rede deixar no lugar os dados que já estavam certos.
+  const carregar_dados = async ({ silencioso = false }: { silencioso?: boolean } = {}) => {
+    if (!silencioso) {
+      set_carregando_dados(true);
+      set_mensagem_erro_banco(null);
+    }
+    const encerrar_carregamento = () => {
+      if (!silencioso) set_carregando_dados(false);
+    };
+    const falhar = (mensagem: string) => {
+      if (!silencioso) set_mensagem_erro_banco(mensagem);
+    };
 
     if (!conexao_banco_configurada) {
       set_projetos_lista(dados_contingencia_projetos);
@@ -254,7 +268,7 @@ export const TelaStaff: React.FC = () => {
         { id_area: 'area-2', nome_area: 'Biológicas e Saúde' },
         { id_area: 'area-3', nome_area: 'Engenharias' },
       ]);
-      set_carregando_dados(false);
+      encerrar_carregamento();
       return;
     }
 
@@ -273,8 +287,8 @@ export const TelaStaff: React.FC = () => {
       if (!idEvt) {
         set_projetos_lista([]);
         set_avaliadores_lista([]);
-        set_mensagem_erro_banco('Não há evento ativo: peça ao Admin para ativar o evento.');
-        set_carregando_dados(false);
+        falhar('Não há evento ativo: peça ao Admin para ativar o evento.');
+        encerrar_carregamento();
         return;
       }
       localStorage.setItem('evento_ativo_id', idEvt);
@@ -323,7 +337,7 @@ export const TelaStaff: React.FC = () => {
 
       if (erroProjetos) {
         console.error('Erro ao buscar projetos:', erroProjetos.message);
-        set_mensagem_erro_banco(`Erro ao buscar projetos: ${erroProjetos.message}`);
+        falhar(`Erro ao buscar projetos: ${erroProjetos.message}`);
       } else if (dadosProjetos) {
         const mapeados = dadosProjetos.map((p: any) => {
           const instObj = Array.isArray(p.instituicoes) ? p.instituicoes[0] : p.instituicoes;
@@ -422,14 +436,22 @@ export const TelaStaff: React.FC = () => {
       set_avaliadores_lista(avaliadoresMapeados);
     } catch (errGeral: any) {
       console.error('Falha ao sincronizar dados da feira:', errGeral);
-      set_mensagem_erro_banco('Não foi possível carregar os dados em tempo real.');
+      falhar('Não foi possível carregar os dados em tempo real.');
     } finally {
-      set_carregando_dados(false);
+      encerrar_carregamento();
     }
   };
 
   useEffect(() => {
     carregar_dados();
+    // Autocadastro e credenciamento feitos em outro aparelho têm de aparecer aqui sem ninguém dar F5
+    const atualizar = () => carregar_dados({ silencioso: true });
+    const intervalo = setInterval(atualizar, INTERVALO_ATUALIZACAO_MS);
+    const pararRetomada = aoRetomarApp(atualizar);
+    return () => {
+      clearInterval(intervalo);
+      pararRetomada();
+    };
   }, [conexao_banco_configurada]);
 
   // Alternar Check-in de Projeto (Expositores)
@@ -970,7 +992,7 @@ export const TelaStaff: React.FC = () => {
           </div>
           <button
             type="button"
-            onClick={carregar_dados}
+            onClick={() => carregar_dados()}
             className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Tentar Novamente
@@ -992,9 +1014,10 @@ export const TelaStaff: React.FC = () => {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={carregar_dados}
+            onClick={() => carregar_dados()}
             disabled={carregando_dados}
-            title="Recarregar Dados"
+            aria-label="Recarregar dados"
+            title="Recarregar dados"
             className="p-3 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl transition-all border border-slate-200 dark:border-slate-600 shrink-0"
           >
             <RefreshCw className={`w-5 h-5 ${carregando_dados ? 'animate-spin text-emerald-600' : ''}`} />

@@ -86,6 +86,11 @@ hora.
 - **Sem botão de excluir**: o Staff não pode apagar usuários.
 - Sem botão "+ Novo Avaliador": o cadastro na recepção é feito por autocadastro.
 
+A tela se atualiza sozinha a cada 30 segundos e também ao voltar para a aba, para quem se autocadastrou pelo QR
+Code aparecer na recepção sem ninguém recarregar a página. A atualização é silenciosa: não pisca a lista nem cobre
+a tela com erro se a rede falhar, e não fecha o modal de edição que estiver aberto. O botão de recarregar no
+cabeçalho força a atualização na hora.
+
 O botão de navegação para o **Telão** fica oculto para o Staff (só o Admin vê).
 
 ## Autocadastro do avaliador (QR Code)
