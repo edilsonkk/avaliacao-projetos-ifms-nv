@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.11.1...v0.12.0) (2026-11-07)
+
+
+### Funcionalidades
+
+* **auditoria:** conferência e auditoria de notas ([#102](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/102)) ([0cfeca2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/0cfeca2a199b84478456c0cd00a86f1e101382d1))
+
 ## [0.11.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.11.0...v0.11.1) (2026-11-07)
 
 
