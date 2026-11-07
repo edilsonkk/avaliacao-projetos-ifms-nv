@@ -81,7 +81,7 @@ Os critérios de aceite referenciam as suítes de teste (`src/**/__tests__/`) qu
 ### 5.3 Acesso e autocadastro — `TelaLogin`, `TelaAutocadastroAvaliador`, `App`
 | ID | Requisito | Critério de aceite |
 |---|---|---|
-| RF-30 | Login em abas por perfil: Avaliador e Staff só com e-mail; Admin com e-mail + senha no Supabase Auth | `LoginZeroFriccao.test` |
+| RF-30 | Login em abas por perfil: Avaliador e Staff só com e-mail; Admin com e-mail + senha no Supabase Auth | `TelaLogin.test` |
 | RF-31 | Usuário sem papel `admin` não acessa a aba Admin, mesmo com senha válida (sessão é encerrada) | — |
 | RF-32 | Escrita administrativa sem sessão válida dispara o aviso "Sessão de administrador expirada" e redireciona ao login | `SessaoAdmin.test` |
 | RF-33 | O Staff exibe QR Code com `?cadastro=avaliador&evento=<id>`; o formulário mobile cria um avaliador **pendente de credenciamento** | `TelaStaffLayoutEAutocadastro.test` |
@@ -160,7 +160,7 @@ Os critérios de aceite referenciam as suítes de teste (`src/**/__tests__/`) qu
 | Segurança | RLS em todas as tabelas. Escrita administrativa só para `authenticated` com `is_admin()`. Operações de avaliador e Staff limitadas ao escopo operacional. `TRUNCATE` revogado; views com `security_invoker` |
 | Resiliência | Fallback quando o schema cache do PostgREST diverge; RPCs com fallback para views e tabelas; enriquecimento em lote para evitar campos "N/I"; contingência em `localStorage` |
 | Usabilidade | Interface sem jargão técnico; dashboard admin em Bento Grid com modais; UUIDs nunca exibidos; Staff em widescreen (até 1800 px) e tablet; avaliador e autocadastro mobile-first; modo escuro |
-| Qualidade | TDD com Vitest + Testing Library (padrão AAA, seletores acessíveis), **31 suítes / 169 testes passando** (26-10-2026); `tsc --noEmit`; CI com build de produção |
+| Qualidade | TDD com Vitest + Testing Library (padrão AAA, seletores acessíveis); `tsc --noEmit`; CI com build de produção |
 | DevOps | GitHub Actions: `ci.yml`, `deploy-frontend.yml` (Firebase Hosting), `security.yml` (CodeQL, Trivy, npm audit), `supabase-migrations.yml` |
 
 ## 8. Modelo de dados (resumo)

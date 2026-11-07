@@ -106,5 +106,5 @@ O botão de navegação para o **Telão** fica oculto para o Staff (só o Admin 
 Contagens de credenciados usam conjuntos únicos de `id_usuario`, filtram por `id_evento` e separam por `papel`
 (`AVALIADOR` × `STAFF`). Ver [troubleshooting](../operacao/troubleshooting.md#contagem-duplicada-de-credenciados).
 
-Testes: `src/features/auth/__tests__/LoginZeroFriccao.test.tsx`, `src/features/avaliadores/__tests__/`,
+Testes: `src/features/auth/__tests__/TelaLogin.test.tsx`, `src/features/auth/__tests__/VinculoAvaliador.test.tsx`, `src/features/avaliadores/__tests__/`,
 `src/__tests__/integracao/TelaStaffLayoutEAutocadastro.test.tsx`.

@@ -1,7 +1,7 @@
 # AGENTS.md
 
-Guia para agentes de IA (Claude Code, Antigravity, Codex etc.) que trabalham neste repositório. Humanos: leiam o
-[CONTRIBUTING](CONTRIBUTING.md).
+Guia para agentes de IA (Claude Code, Antigravity, Codex etc.) que trabalham neste repositório.
+Humanos: leiam o [CONTRIBUTING](CONTRIBUTING.md).
 
 ## Projeto
 
@@ -14,7 +14,7 @@ SPA React 19 + Vite + Tailwind 4 + TypeScript sobre Supabase/PostgreSQL, usada e
 ```bash
 npm install          # dependências (.npmrc usa legacy-peer-deps)
 npm run dev          # http://localhost:3000
-npm run lint         # tsc --noEmit + guardas de interface (scripts/guardas.mjs)
+npm run lint         # tsc --noEmit + guardas de interface e de documentação (scripts/guardas*.mjs)
 npm test             # vitest run (todos os testes)
 npx vitest run <caminho>   # um arquivo de teste
 npm run build        # build de produção
@@ -39,6 +39,19 @@ Antes de dar uma tarefa como concluída: `npm run lint`, `npm test` e `npm run b
 - `docs/`: documentação. Comece por [`docs/README.md`](docs/README.md), que mapeia cada assunto para um arquivo.
 
 Antes de mudar uma regra de negócio, leia o arquivo correspondente em `docs/regras-de-negocio/`.
+
+## Custo de contexto
+
+- **Subagentes:** peça permissão antes de abrir mais de 2 em paralelo.
+- **Leia por seção, não por arquivo.** A documentação inteira custa ~60 mil tokens. Para achar uma regra:
+  1. a tabela "Procurando…" de [`docs/README.md`](docs/README.md) aponta o arquivo;
+  2. `grep -n '^#' <arquivo>` lista as seções com o número da linha;
+  3. leia só a faixa daquela seção, não o arquivo todo.
+- Nenhuma doc passa de 270 linhas, então a seção certa resolve. Em
+  [`docs/operacao/troubleshooting.md`](docs/operacao/troubleshooting.md) há um cabeçalho por sintoma: procure a
+  mensagem de erro.
+- Este arquivo entra em toda sessão: `npm run lint` recusa `CLAUDE.md` + `AGENTS.md` acima de 8 KB. Detalhe novo
+  vai para `docs/`, não para cá.
 
 ## Regras invioláveis
 

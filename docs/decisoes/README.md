@@ -13,7 +13,7 @@ Correções de bug e ajustes visuais não precisam de ADR: o commit e a doc do d
 
 ## Como escrever
 
-1. Copie `0000-modelo.md` para `NNNN-titulo-curto.md` (próximo número).
+1. Copie [`0000-modelo.md`](0000-modelo.md) para `NNNN-titulo-curto.md` (próximo número).
 2. Preencha e abra o PR junto com a mudança.
 3. ADRs aceitos não são editados. Se a decisão mudar, crie um novo ADR com status "Substitui NNNN" e marque o antigo
    como "Substituído por NNNN".

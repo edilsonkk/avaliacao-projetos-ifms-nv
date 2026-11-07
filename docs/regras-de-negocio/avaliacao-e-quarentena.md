@@ -44,8 +44,8 @@ projeto. Esse projeto não volta a ser sorteado para o mesmo avaliador.
 - Cada pergunta tem texto, texto de ajuda opcional (aparece para o avaliador), peso e prioridade de desempate. O
   **peso** entra na nota final (média ponderada) e a **prioridade** define a ordem do desempate no ranking (1, 2, 3…;
   0 = fora do desempate). Ver [relatórios](relatorios-e-monitoramento.md).
-- **Questionários prontos:** 7 modelos (Feira de Software: Técnico Ideia, Protótipo e Produção; Convalidação de TCC;
-  Voto popular; Feira de Ciências científica e tecnológica), escala 1 a 5, peso 1. Em cada item "Critério: texto de
+- **Questionários prontos:** 7 modelos (Feira de Software: Tecnológico Ideia, Protótipo e Produção; Convalidação de TCC;
+  Voto popular; Feira de Ciências: Científica e Tecnológica), escala 1 a 5, peso 1. Em cada item "Critério: texto de
   ajuda" do documento de origem, o critério é o texto da pergunta e o resto é o texto de ajuda (com as âncoras 1/3/5,
   quando houver). O interruptor **"Ativo neste evento"** copia o modelo para o evento (`admin_copiar_questionario`);
   desligar exclui a cópia, o que o banco recusa se ela já foi usada. A cópia é editável sem alterar o modelo. O voto

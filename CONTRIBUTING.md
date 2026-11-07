@@ -1,6 +1,6 @@
 # Como Contribuir
 
-Obrigado por contribuir com o Sistema de Avaliação de Projetos IFMS. Este guia descreve o fluxo de trabalho. A
+Obrigado por contribuir com o Sistema de Avaliação de Projetos IFMS do campus Naviraí. Este guia descreve o fluxo de trabalho. A
 documentação técnica está em [`docs/`](docs/README.md).
 
 ## Ambiente
