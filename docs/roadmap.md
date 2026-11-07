@@ -27,6 +27,25 @@ fica **riscado** com a data, em vez de sair da tabela: é o histórico de como o
 | L10 | Sem multi-evento simultâneo nem histórico consultável após o reset global | Perda de dados históricos se o reset for usado no lugar do arquivamento | Arquivar o evento (flag `is_ativo`) em vez de apagar; exportação completa antes do reset | Média |
 | L11 | ~~`view_ranking_top3` sem filtrar "fora da competição" e sem posição de empate~~ **Resolvido** (migration `20261030060000`): fora da competição não entra; `posicao` por `RANK()` (empate divide) por modalidade e área; marca `em_quarentena`. Desde a migration `20261031050000`, o empate na média é desfeito pelo `peso_desempate` (prioridade das perguntas) | ~~Empates sem critério oficial~~ (questão 3 decidida) | — | Média |
 
+---
+
+> **Auditoria de notas (06-11-2026).** Uma revisão de como as notas são calculadas, exibidas e alteradas
+> encontrou seis caminhos pelos quais uma nota mudava ou desaparecia **sem deixar vestígio**, e uma origem de
+> dado contaminada no formulário do avaliador. As migrations `20261106010000` a `20261106060000` endereçam
+> L15 a L21. Desenho em [auditoria de notas](regras-de-negocio/auditoria-de-notas.md),
+> [ADR 0014](decisoes/0014-trilha-de-auditoria-append-only.md) e
+> [ADR 0015](decisoes/0015-ajuste-manual-de-notas.md).
+
+| # | Achado no código | Risco | Recomendação | Prioridade |
+|---|---|---|---|---|
+| L15 | ~~**Nota alterável sem rastro:** a policy `FOR ALL` do Admin permitia `UPDATE avaliacoes SET nota_final = X` pela API REST; não havia `atualizado_em` nem trigger nenhuma no banco~~ **Resolvido em 2026-11-06**: `log_auditoria` append-only gravada por trigger (pega também a escrita direta), e a conferência acusa como achado grave (C10) | Resultado de feira alterado sem prova, inclusive por quem não é da coordenação se a sessão do Admin vazar | Fechar a policy `FOR ALL` (escrita de nota só por RPC) é o passo seguinte possível: com o ajuste manual oficial, o `UPDATE` direto perdeu o motivo de existir | **Alta** |
+| L16 | ~~**A conta da nota era invisível:** `peso_calculo` entra em toda nota final e não aparecia em nenhuma tela; nada permitia refazer a conta~~ **Resolvido em 2026-11-06**: memorial de cálculo (`fn_memorial_*`) e conferência por recálculo (`fn_auditar_notas`, 12 checagens) | Impossível responder a um recurso ou conferir o resultado sem abrir o banco | — | **Alta** |
+| L17 | ~~**Reset global apagava avaliações de todos os eventos:** os `DELETE` de `respostas_avaliacao` e `avaliacoes` não tinham filtro de evento, e sem evento ativo a função apagava o banco inteiro~~ **Resolvido em 2026-11-06**: filtra por evento, recusa rodar sem evento definido e registra na trilha o que vai apagar | Perda do histórico de todas as feiras anteriores num clique | Relacionado a L10 (arquivar em vez de apagar) | **Alta** |
+| L18 | ~~**`ON DELETE CASCADE` apagava notas em silêncio:** apagar projeto ou usuário levava as avaliações; `GestorProjetos` tratava um erro `23503` que nunca acontecia~~ **Resolvido em 2026-11-06**: FKs em `RESTRICT`, com recusa explícita e mensagem | Resultado apagado como efeito colateral de uma operação de cadastro | — | **Alta** |
+| L19 | ~~**Formulário do avaliador vinha com a nota máxima marcada** em todos os critérios (`escala_maxima`)~~ **Resolvido em 2026-11-06**: começa em branco e o envio exige nota em todos os critérios | Nota cheia gravada sem avaliação, indistinguível de uma decisão real do avaliador | — | **Alta** |
+| L20 | ~~**Caminho legado de gravação no front** calculava a nota como média **simples** em JavaScript, ignorando os pesos~~ **Resolvido em 2026-11-06**: caminho removido; nota só por `fn_enviar_avaliacao` | Nota divergente da regra oficial quando algum peso ≠ 1 | — | Média |
+| L21 | ~~**Três formatos de nota** na interface (`toFixed(1)`, `toFixed(2)`, `toLocaleString`) e `view_relatorio_admin` somando avaliação cancelada~~ **Resolvido em 2026-11-06**: `src/lib/formatoNota.ts` (duas casas, vírgula) e filtro de canceladas na view | A mesma nota com números diferentes em telas diferentes põe o resultado em dúvida | — | Média |
+
 **Roadmap sugerido**
 - **Feito:** as migrations `...010000`, `...020000` e `...030000` estão aplicadas e o `TelaAvaliador` já envia a nota por `rpc('fn_enviar_avaliacao')`. Resta [recriar o banco de teste](banco-de-dados/migrations.md#recriar-o-banco-remoto-do-zero).
 - **Curto prazo (antes do próximo evento):** L1 (OTP, é o que fecha o L12 por completo), L4 e L5.

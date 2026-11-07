@@ -35,3 +35,5 @@ Correções de bug e ajustes visuais não precisam de ADR: o commit e a doc do d
 | [0011](0011-identidade-real-avaliador-e-staff.md) | Identidade real para Avaliador e Staff (vínculo do celular) | Aceito |
 | [0012](0012-mfa-admin-e-expiracao-de-sessao.md) | Segundo fator do Admin e expiração de sessão configuráveis | Aceito |
 | [0013](0013-design-system-e-acessibilidade.md) | Base de design própria com acessibilidade verificada | Aceito |
+| [0014](0014-trilha-de-auditoria-append-only.md) | Trilha de auditoria append-only, gravada por trigger | Aceito |
+| [0015](0015-ajuste-manual-de-notas.md) | Ajuste manual de notas como RPC marcada | Aceito |

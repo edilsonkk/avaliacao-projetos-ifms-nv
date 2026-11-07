@@ -396,22 +396,14 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
         set_lista_criterios(formatadas);
 
-        const questObj = questionarios_disponiveis.find((q) => q.id_questionario === id_questionario);
-        const notaPadrao = questObj?.escala_maxima || 5;
-
-        const notasInit: Record<string, number> = {};
-        formatadas.forEach((f) => {
-          notasInit[f.id_criterio] = notaPadrao;
-        });
-        set_notas_criterios(notasInit);
+        // Nenhuma nota pré-marcada: antes o formulário vinha com a nota MÁXIMA em todos os
+        // critérios, e quem só apertasse "Salvar" dava nota cheia sem ter avaliado nada —
+        // uma nota que a auditoria não consegue distinguir de uma decisão real do avaliador.
+        set_notas_criterios({});
       } else {
         // Fallback caso o questionário não possua perguntas criadas ainda no banco
         set_lista_criterios(criterios_avaliacao_likert);
-        const notasInit: Record<string, number> = {};
-        criterios_avaliacao_likert.forEach((f) => {
-          notasInit[f.id_criterio] = 5;
-        });
-        set_notas_criterios(notasInit);
+        set_notas_criterios({});
       }
     } catch (e: any) {
       console.warn('Erro ao carregar perguntas do questionário:', e?.message || e);
@@ -1001,13 +993,21 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       return;
     }
 
+    if (avaliacao_incompleta) {
+      await avisar({
+        tipo: 'atencao',
+        titulo: 'Avaliação incompleta',
+        mensagem: `Falta dar nota em ${criterios_sem_nota} critério(s). Toda pergunta do questionário precisa de uma nota.`,
+      });
+      return;
+    }
+
     setIsProcessing(true);
     const id_projeto_alvo = projeto_atual.id_projeto || projeto_atual.id;
 
-    const valores_notas = Object.values(notas_criterios);
-    const soma_notas = valores_notas.reduce((acc, curr) => acc + curr, 0);
-    const nota_final = Number((soma_notas / (valores_notas.length || 1)).toFixed(2));
-
+    // A nota final é calculada no servidor (fn_enviar_avaliacao), pela média ponderada dos
+    // pesos lidos do banco. O cliente nunca calcula nota: a média simples que existia aqui
+    // ignorava os pesos e gravava um valor diferente da regra oficial.
     const timestampSubmissao = new Date().toISOString();
     const timestampInicio = horario_inicio_avaliacao || timestampSubmissao;
 
@@ -1043,69 +1043,15 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       });
 
       if (erro_rpc) {
-        // Fallback resiliente: só enquanto a migration do RPC ainda não foi
-        // aplicada no banco (função inexistente). Nesse caso, grava pelo caminho
-        // legado para não travar a feira. Após aplicar a migration, o RPC existe
-        // e o INSERT anônimo direto deixa de ser permitido pela RLS.
-        const rpcAusente =
-          erro_rpc.code === 'PGRST202' ||
-          erro_rpc.code === '42883' ||
-          /function .*fn_enviar_avaliacao.* does not exist|could not find the function/i.test(
-            erro_rpc.message || ''
-          );
-
-        if (!rpcAusente) {
-          console.error('Erro ao gravar avaliação (RPC):', erro_rpc.message);
-          await avisar({ tipo: 'erro', titulo: 'Falha ao salvar a avaliação', mensagem: erro_rpc.message });
-          set_mensagem_erro(`Falha no salvamento: ${erro_rpc.message}`);
-          setIsProcessing(false);
-          return;
-        }
-
-        console.warn('RPC fn_enviar_avaliacao indisponível; usando gravação legada.');
-        const { data: avaliacao_gerada, error: erro_avaliacao } = await supabase
-          .from('avaliacoes')
-          .insert({
-            id_projeto: id_projeto_alvo,
-            id_usuario: avaliadorId,
-            nota_final: nota_final,
-            parecer_final: parecer_avaliador,
-            tempo_presenca: timestampInicio,
-            tempo_submissao: timestampSubmissao,
-          })
-          .select('id_avaliacao')
-          .single();
-
-        if (erro_avaliacao) {
-          console.error('Erro ao gravar avaliação:', erro_avaliacao.message);
-          await avisar({ tipo: 'erro', titulo: 'Falha ao salvar a avaliação', mensagem: erro_avaliacao.message });
-          set_mensagem_erro(`Falha no salvamento: ${erro_avaliacao.message}`);
-          setIsProcessing(false);
-          return;
-        }
-
-        const id_avaliacao_retornado = avaliacao_gerada?.id_avaliacao || 'aval-' + Date.now();
-        const respostasMapeadas = Object.entries(notas_criterios).map(([id_crit, nota_val]) => ({
-          id_avaliacao: id_avaliacao_retornado,
-          id_pergunta: id_crit,
-          nota_atribuida: nota_val,
-        }));
-        const { error: erro_respostas } = await supabase
-          .from('respostas_avaliacao')
-          .insert(respostasMapeadas);
-        if (erro_respostas) {
-          console.warn('Erro ao inserir respostas em lote:', erro_respostas.message);
-          await avisar({ tipo: 'atencao', titulo: 'Respostas gravadas com aviso', mensagem: erro_respostas.message });
-        }
-
-        if (!projetoAtual.id_questionario_fixado && idQuestionarioEscolhido) {
-          await supabase.rpc('fn_fixar_questionario', {
-            p_id_projeto: projetoAtual.id_projeto || projetoAtual.id,
-            p_id_questionario: idQuestionarioEscolhido,
-          });
-        }
-        // fn_enviar_avaliacao já liberou a trava e concluiu o item da fila
-        await supabase.from('locks_ativos').delete().eq('id_usuario', avaliadorId);
+        // Sem caminho alternativo: a nota só é gravada por fn_enviar_avaliacao, que valida
+        // trava, cota, janela e escala e calcula a média ponderada (ADR 0007). O INSERT
+        // direto que existia aqui calculava média simples em JavaScript e gravava um valor
+        // divergente da regra quando os pesos eram diferentes de 1.
+        console.error('Erro ao gravar avaliação (RPC):', erro_rpc.message);
+        await avisar({ tipo: 'erro', titulo: 'Falha ao salvar a avaliação', mensagem: erro_rpc.message });
+        set_mensagem_erro(`Falha no salvamento: ${erro_rpc.message}`);
+        setIsProcessing(false);
+        return;
       }
 
       set_projeto_atual(null);
@@ -1136,6 +1082,17 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
   const selecionar_nota_criterio = (id_criterio: string, valor_nota: number) => {
     set_notas_criterios((prev) => ({ ...prev, [id_criterio]: valor_nota }));
   };
+
+  /**
+   * Critérios ainda sem nota. O banco já recusa avaliação incompleta
+   * (fn_enviar_avaliacao exige todas as perguntas, uma vez cada), mas sem isto o avaliador
+   * só descobriria no erro — e, antes, nem descobria: o formulário vinha com a nota máxima
+   * marcada em tudo.
+   */
+  const criterios_sem_nota = lista_criterios.filter(
+    (criterio) => notas_criterios[criterio.id_criterio] === undefined,
+  ).length;
+  const avaliacao_incompleta = criterios_sem_nota > 0;
 
   // TELA INICIAL: SIMULADOR DE LOGIN DO AVALIADOR
   if (!id_usuario_logado) {
@@ -1707,10 +1664,15 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
                   {/* Botões de Ação Empilhados protegidos contra concorrência e duplo clique */}
                   <div className="pt-2 space-y-2.5">
+                    {avaliacao_incompleta && (
+                      <p role="status" className="rounded-2xl border border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40 p-3 text-apoio font-semibold text-amber-800 dark:text-amber-200">
+                        Falta dar nota em {criterios_sem_nota} de {lista_criterios.length} critério(s).
+                      </p>
+                    )}
                     <button
                       type="button"
                       onClick={enviar_avaliacao}
-                      disabled={isProcessing}
+                      disabled={isProcessing || avaliacao_incompleta}
                       className="w-full py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-base transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isProcessing ? (

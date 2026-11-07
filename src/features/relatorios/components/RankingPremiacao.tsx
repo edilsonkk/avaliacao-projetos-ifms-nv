@@ -14,6 +14,8 @@ import { buscarTodas } from '@/lib/buscarTodas';
 import { tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { compararNatural } from '@/components/ui/CabecalhoOrdenavel';
 import { baixarCsv } from '@/lib/csv';
+import { formatarAjuste, formatarNota } from '@/lib/formatoNota';
+import { buscarAchados } from '@/features/auditoria';
 
 export interface ItemRankingTop3 {
   id_projeto: string;
@@ -24,7 +26,12 @@ export interface ItemRankingTop3 {
   modalidade: string;
   area_tematica: string;
   notas: number[];
+  /** Média das notas ativas, sem ajuste. */
   media_geral: number;
+  /** Bónus ou penalidade de comissão no projeto (0 quando não há). */
+  ajuste_media: number;
+  /** media_geral + ajuste_media: é por esta que o banco ordena o pódio. */
+  media_final: number;
   total_avaliacoes: number;
   /** Posição dentro da modalidade e área, calculada no banco (empate divide a posição). */
   posicao: number;
@@ -35,7 +42,7 @@ export interface ItemRankingTop3 {
 }
 
 const COLUNAS_RANKING =
-  'id_projeto, codigo_projeto, titulo, estande, nome_instituicao, modalidade, area_tematica, notas, media_geral, total_avaliacoes, posicao, em_quarentena, chave_desempate';
+  'id_projeto, codigo_projeto, titulo, estande, nome_instituicao, modalidade, area_tematica, notas, media_geral, ajuste_media, media_final, total_avaliacoes, posicao, em_quarentena, chave_desempate';
 
 const lerNotas = (valor: unknown): number[] => {
   if (Array.isArray(valor)) return valor.map(Number);
@@ -73,6 +80,10 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
   const [filtro_modalidade, set_filtro_modalidade] = useState<string>('todas');
   const [filtro_area, set_filtro_area] = useState<string>('todas');
 
+  // Achados graves da conferência de notas: homologar com nota que não fecha é o erro que
+  // esta tela pode evitar (ver docs/regras-de-negocio/auditoria-de-notas.md).
+  const [achados_graves, set_achados_graves] = useState<number>(0);
+
   const conexao_banco_configurada = verificar_conexao_configurada();
 
   const buscar_dados_ranking = useCallback(async () => {
@@ -99,12 +110,23 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
           area_tematica: (item.area_tematica as string) || 'Sem área temática',
           notas: lerNotas(item.notas),
           media_geral: Number(item.media_geral ?? 0),
+          ajuste_media: Number(item.ajuste_media ?? 0),
+          // Sem a coluna (banco anterior à migration do ajuste), a média final é a das notas
+          media_final: Number(item.media_final ?? item.media_geral ?? 0),
           total_avaliacoes: Number(item.total_avaliacoes ?? 0),
           posicao: Number(item.posicao ?? 0),
           em_quarentena: item.em_quarentena === true,
           chave_desempate: lerNotas(item.chave_desempate),
         }))
       );
+      // A conferência é informativa: se falhar, o ranking continua aparecendo
+      try {
+        const achados = await buscarAchados(idEvento);
+        set_achados_graves(achados.filter((a) => a.severidade === 'grave').length);
+      } catch (erroConferencia) {
+        console.warn('Conferência de notas indisponível:', erroConferencia);
+        set_achados_graves(0);
+      }
     } catch (e) {
       console.error('Erro ao consultar view_ranking_top3:', e);
       set_projetos_ranking([]);
@@ -156,7 +178,7 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
 
   const exportar_csv_ranking = () => {
     const linhas = [
-      ['Modalidade', 'Área Temática', 'Posição', 'Código', 'Estande', 'Título do Projeto', 'Instituição', 'Notas', 'Média Geral', 'Em quarentena'],
+      ['Modalidade', 'Área Temática', 'Posição', 'Código', 'Estande', 'Título do Projeto', 'Instituição', 'Notas', 'Média das Notas', 'Ajuste de Comissão', 'Média Final', 'Em quarentena'],
     ];
     modalidades_ordenadas.forEach((mod) => {
       Object.keys(grupos_agrupados_classificados[mod])
@@ -173,6 +195,8 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
               item.nome_instituicao || '',
               item.notas.map((n) => n.toFixed(2)).join('; '),
               item.media_geral.toFixed(2),
+              Number(item.ajuste_media ?? 0).toFixed(2),
+              Number(item.media_final ?? item.media_geral).toFixed(2),
               item.em_quarentena ? 'Sim' : 'Não',
             ]);
           });
@@ -237,6 +261,14 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
           <AlertTriangle className="w-5 h-5 shrink-0" />
           {total_em_quarentena} projeto(s) do pódio estão em quarentena (notas divergentes). Resolva a quarentena antes de
           homologar.
+        </div>
+      )}
+
+      {achados_graves > 0 && (
+        <div role="alert" className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-2xl text-xs sm:text-sm text-rose-800 dark:text-rose-200 font-semibold flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5 shrink-0" />
+          A conferência de notas encontrou {achados_graves} problema(s) grave(s) neste evento: há nota que não fecha com
+          as notas por critério. Abra a Auditoria de Notas antes de homologar.
         </div>
       )}
 
@@ -327,8 +359,9 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
                             const medalha = MEDALHAS[item.posicao] ?? MEDALHAS[3];
                             const empatado = lista_ordenada.some((o) => o !== item && o.posicao === item.posicao);
                             const desempatado = lista_ordenada.some(
-                              (o) => o !== item && o.media_geral === item.media_geral && o.posicao !== item.posicao
+                              (o) => o !== item && o.media_final === item.media_final && o.posicao !== item.posicao
                             );
+                            const temAjuste = Number(item.ajuste_media ?? 0) !== 0;
                             return (
                               <li
                                 key={item.id_projeto}
@@ -387,20 +420,39 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
                                       {item.notas.map((n, i) => (
                                         <span
                                           key={i}
-                                          className="px-1.5 py-0.5 rounded bg-white/90 dark:bg-slate-800 text-[10px] font-mono font-bold border border-slate-300 dark:border-slate-600"
+                                          className="px-1.5 py-0.5 rounded bg-white/90 dark:bg-slate-800 text-legenda font-mono font-bold border border-slate-300 dark:border-slate-600"
                                         >
-                                          {n.toFixed(2)}
+                                          {formatarNota(n)}
                                         </span>
                                       ))}
                                     </div>
                                   )}
 
+                                  {temAjuste && (
+                                    <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
+                                      <span>Média das notas + ajuste de comissão:</span>
+                                      <span className="font-mono font-bold">
+                                        {formatarNota(item.media_geral)} {formatarAjuste(item.ajuste_media)}
+                                      </span>
+                                    </div>
+                                  )}
+
                                   <div className="flex items-center justify-between text-xs font-extrabold pt-1">
-                                    <span className="text-slate-700 dark:text-slate-300">Média Geral:</span>
+                                    <span className="text-slate-700 dark:text-slate-300">
+                                      {temAjuste ? 'Média Final:' : 'Média Geral:'}
+                                    </span>
                                     <span className="font-mono text-emerald-700 dark:text-emerald-400 text-base font-black">
-                                      {item.media_geral.toFixed(2)} pts
+                                      {formatarNota(item.media_final ?? item.media_geral)} pts
                                     </span>
                                   </div>
+
+                                  {/* O desempate sai do title e vira texto: a comissão precisa ler, não passar o mouse */}
+                                  {desempatado && item.chave_desempate.length > 0 && (
+                                    <p className="text-legenda text-slate-600 dark:text-slate-300">
+                                      <span className="font-bold">Desempate por pergunta: </span>
+                                      {item.chave_desempate.map((n) => formatarNota(n)).join(' · ')}
+                                    </p>
+                                  )}
                                 </div>
                               </li>
                             );

@@ -16,6 +16,7 @@ import {
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { CabecalhoOrdenavel } from '@/components/ui/CabecalhoOrdenavel';
+import { formatarNota, formatarPeso } from '@/lib/formatoNota';
 
 export interface AvaliacaoDetalhada {
   id_avaliacao: string;
@@ -28,6 +29,12 @@ export interface AvaliacaoDetalhada {
   is_quarentena?: boolean;
   created_at?: string;
   tempo_presenca?: string;
+  /** Rastro do soft delete (ADR 0004): existia no banco e não aparecia em tela nenhuma. */
+  cancelada_em?: string | null;
+  cancelada_por?: string | null;
+  /** Marca de ajuste manual do Admin (ver docs/regras-de-negocio/auditoria-de-notas.md). */
+  ajuste_tipo?: 'respostas_corrigidas' | 'nota_arbitrada' | 'lancada_pelo_admin' | null;
+  ajuste_motivo?: string | null;
   projetos?: {
     id_projeto?: string;
     codigo_projeto?: string;
@@ -107,6 +114,9 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
 
   // Confirmação de exclusão
   const [avaliacaoParaExcluir, setAvaliacaoParaExcluir] = useState<AvaliacaoDetalhada | null>(null);
+  // Motivo opcional da exclusão: vai para a trilha de auditoria (log_auditoria) e para a
+  // folha de conferência. Num recurso, é o que explica a decisão da coordenação.
+  const [motivoExclusao, setMotivoExclusao] = useState<string>('');
   const [processandoAcao, setProcessandoAcao] = useState<boolean>(false);
 
   // Toast flutuante com opção de Desfazer (Undo)
@@ -203,6 +213,10 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
             parecer_final,
             is_quarentena,
             created_at,
+            cancelada_em,
+            cancelada_por,
+            ajuste_tipo,
+            ajuste_motivo,
             projetos!inner ( id_projeto, codigo_projeto, titulo, estande, corredor, id_evento, id_area ),
             usuarios ( id_usuario, nome, email ),
             respostas_avaliacao ( id_resposta, id_pergunta, nota_atribuida, perguntas_questionario ( texto_pergunta, peso_calculo ) )
@@ -243,7 +257,10 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
       let saiuDaQuarentena = false;
       if (conexaoConfigurada) {
         if (!(await garantirSessaoAdmin())) return;
-        const { data, error } = await supabase.rpc('excluir_avaliacao', { p_id_avaliacao: id });
+        const { data, error } = await supabase.rpc('excluir_avaliacao', {
+          p_id_avaliacao: id,
+          p_motivo: motivoExclusao.trim() || null,
+        });
         if (error) throw error;
         if (data?.sucesso === false) throw new Error(data.mensagem || 'Não foi possível cancelar a avaliação.');
         saiuDaQuarentena = Boolean(item.is_quarentena) && data?.projeto_em_quarentena === false;
@@ -256,6 +273,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
         })
       );
       setAvaliacaoParaExcluir(null);
+      setMotivoExclusao('');
       if (aoSucesso) aoSucesso();
 
       if (timeoutUndoRef.current) clearTimeout(timeoutUndoRef.current);
@@ -285,7 +303,10 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
     try {
       if (conexaoConfigurada) {
         if (!(await garantirSessaoAdmin())) return;
-        const { data, error } = await supabase.rpc('restaurar_avaliacao', { p_id_avaliacao: id });
+        const { data, error } = await supabase.rpc('restaurar_avaliacao', {
+          p_id_avaliacao: id,
+          p_motivo: null,
+        });
         if (error) throw error;
         if (data?.sucesso === false) throw new Error(data.mensagem || 'Não foi possível restaurar a avaliação.');
       }
@@ -678,26 +699,78 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
                                 </div>
 
                                 {av.respostas_avaliacao && av.respostas_avaliacao.length > 0 ? (
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                                    {av.respostas_avaliacao.map((resp, rIdx) => {
-                                      const texto =
-                                        resp.perguntas_questionario?.texto_pergunta ||
-                                        `Critério #${rIdx + 1}`;
-                                      return (
-                                        <div
-                                          key={resp.id_resposta || rIdx}
-                                          className="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2"
-                                        >
-                                          <span className="text-[11px] text-slate-700 dark:text-slate-300 font-medium line-clamp-1">
-                                            {texto}
-                                          </span>
-                                          <span className="px-2 py-0.5 rounded-md font-mono font-bold text-xs bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white">
-                                            {Number(resp.nota_atribuida).toFixed(1)}
-                                          </span>
-                                        </div>
+                                  <>
+                                    <table className="w-full text-left text-xs border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                                      <caption className="sr-only">
+                                        Notas por critério, peso e produto desta avaliação
+                                      </caption>
+                                      <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                        <tr>
+                                          <th scope="col" className="px-3 py-2 font-bold uppercase">Critério</th>
+                                          <th scope="col" className="px-3 py-2 font-bold uppercase">Peso</th>
+                                          <th scope="col" className="px-3 py-2 font-bold uppercase">Nota</th>
+                                          <th scope="col" className="px-3 py-2 font-bold uppercase">Peso × Nota</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                        {av.respostas_avaliacao.map((resp, rIdx) => {
+                                          const texto =
+                                            resp.perguntas_questionario?.texto_pergunta ||
+                                            `Critério #${rIdx + 1}`;
+                                          const peso = Number(resp.perguntas_questionario?.peso_calculo ?? 1);
+                                          const nota = Number(resp.nota_atribuida);
+                                          return (
+                                            <tr key={resp.id_resposta || rIdx}>
+                                              <th scope="row" className="px-3 py-2 text-left font-medium text-slate-700 dark:text-slate-300">
+                                                {texto}
+                                              </th>
+                                              <td className="px-3 py-2 font-mono">{formatarPeso(peso)}</td>
+                                              <td className="px-3 py-2 font-mono font-bold">{formatarNota(nota)}</td>
+                                              <td className="px-3 py-2 font-mono">{formatarNota(peso * nota)}</td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                    {(() => {
+                                      // A conta da nota final, aberta: é o peso que explica por que a média
+                                      // não é a média simples das notas acima.
+                                      const somaPesos = av.respostas_avaliacao.reduce(
+                                        (total, r) => total + Number(r.perguntas_questionario?.peso_calculo ?? 1),
+                                        0,
                                       );
-                                    })}
-                                  </div>
+                                      const somaProdutos = av.respostas_avaliacao.reduce(
+                                        (total, r) =>
+                                          total +
+                                          Number(r.nota_atribuida) * Number(r.perguntas_questionario?.peso_calculo ?? 1),
+                                        0,
+                                      );
+                                      const calculada = somaPesos > 0 ? Math.round((somaProdutos / somaPesos) * 100) / 100 : null;
+                                      const confere =
+                                        calculada !== null && Math.abs(calculada - Number(av.nota_final ?? NaN)) < 0.005;
+                                      return (
+                                        <p className="text-xs text-slate-700 dark:text-slate-300">
+                                          <span className="font-bold">Nota final: </span>
+                                          {formatarNota(somaProdutos)} ÷ {formatarPeso(somaPesos)} ={' '}
+                                          <span className="font-mono font-bold">{formatarNota(calculada)}</span>
+                                          {' · gravado: '}
+                                          <span className="font-mono font-bold">{formatarNota(av.nota_final)}</span>
+                                          {av.ajuste_tipo === 'nota_arbitrada' ? (
+                                            <span className="ml-2 font-bold text-amber-700 dark:text-amber-300">
+                                              nota arbitrada pelo Admin
+                                              {av.ajuste_motivo ? ` — ${av.ajuste_motivo}` : ''}
+                                            </span>
+                                          ) : confere ? (
+                                            <span className="ml-2 font-bold text-emerald-700 dark:text-emerald-400">confere</span>
+                                          ) : (
+                                            <span className="ml-2 font-bold text-red-700 dark:text-red-400">
+                                              não fecha com as notas por critério
+                                            </span>
+                                          )}
+                                        </p>
+                                      );
+                                    })()}
+                                  </>
                                 ) : (
                                   <p className="text-xs text-slate-400 italic">
                                     Nenhum item discriminado individualmente registrado para esta avaliação.
@@ -814,6 +887,24 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
                 </div>
               </div>
 
+              <div className="space-y-1.5">
+                <label htmlFor="motivo-exclusao-avaliacao" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Motivo (opcional)
+                </label>
+                <textarea
+                  id="motivo-exclusao-avaliacao"
+                  rows={2}
+                  maxLength={1000}
+                  value={motivoExclusao}
+                  onChange={(e) => setMotivoExclusao(e.target.value)}
+                  placeholder="Ex.: nota fora da curva conferida com o avaliador"
+                  className="w-full px-3 py-2 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white border border-slate-300 dark:border-slate-700"
+                />
+                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                  Fica registrado na trilha de auditoria e sai na folha de conferência do projeto.
+                </p>
+              </div>
+
               <p id="texto-confirmar-exclusao" className="text-xs text-slate-500 dark:text-slate-400">
                 A nota deixa de contar no resultado e no ranking, e a vaga fica livre para outro avaliador. Se o projeto estava em
                 quarentena por causa desta nota, ele sai da quarentena. Você pode desfazer logo em seguida; depois, restaure pela lista
@@ -824,7 +915,10 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
                 <button
                   type="button"
                   disabled={processandoAcao}
-                  onClick={() => setAvaliacaoParaExcluir(null)}
+                  onClick={() => {
+                    setAvaliacaoParaExcluir(null);
+                    setMotivoExclusao('');
+                  }}
                   className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   Cancelar

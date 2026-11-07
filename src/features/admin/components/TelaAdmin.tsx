@@ -32,7 +32,8 @@ import {
   ExternalLink,
   Pencil,
   FileX2,
-  Layers
+  Layers,
+  ScrollText
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { ModalConfiguracoesEvento } from './ModalConfiguracoesEvento';
@@ -51,6 +52,7 @@ import { ProjetosQuarentena } from '@/features/atribuicoes';
 import { AtribuicaoForcada } from '@/features/atribuicoes';
 import { TelaoAoVivo } from '@/features/relatorios';
 import { ModalExclusaoAvaliacao } from '@/features/atribuicoes';
+import { PainelAuditoria } from '@/features/auditoria';
 
 // O Painel não exibe contadores (os números ficam no Telão, nos Relatórios e em cada gestor):
 // guarda só o evento ativo, que as telas abertas daqui recebem por props.
@@ -102,6 +104,7 @@ export const TelaAdmin: React.FC = () => {
   const [novo_nome_evento_input, set_novo_nome_evento_input] = useState<string>('');
   const [salvando_nome_evento, set_salvando_nome_evento] = useState<boolean>(false);
   const [mostrar_modal_ranking, set_mostrar_modal_ranking] = useState<boolean>(false);
+  const [mostrar_modal_auditoria, set_mostrar_modal_auditoria] = useState<boolean>(false);
   const [mostrar_gestor_questionarios, set_mostrar_gestor_questionarios] = useState<boolean>(false);
   const [mostrar_gestor_instituicoes, set_mostrar_gestor_instituicoes] = useState<boolean>(false);
   const [mostrar_gestor_modalidades, set_mostrar_gestor_modalidades] = useState<boolean>(false);
@@ -703,7 +706,7 @@ export const TelaAdmin: React.FC = () => {
                 <span className="w-2 h-2 rounded-full bg-amber-500"></span> Bloco 3: Monitoramento em Tempo Real & Relatórios
               </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
                 <button
                   type="button"
                   onClick={() => set_mostrar_modal_ranking(true)}
@@ -740,6 +743,19 @@ export const TelaAdmin: React.FC = () => {
                   </div>
                   <span className="text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
                     Mapa de Estandes
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => set_mostrar_modal_auditoria(true)}
+                  className="bg-white dark:bg-slate-800/90 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/90 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600 p-3.5 sm:p-4 rounded-2xl shadow-xs hover:shadow-md flex items-center gap-3 transition-all hover:scale-[1.01] cursor-pointer group text-left w-full"
+                >
+                  <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/60 group-hover:scale-105 transition-transform shrink-0">
+                    <ScrollText className="w-5 h-5" />
+                  </div>
+                  <span className="text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                    Auditoria de Notas
                   </span>
                 </button>
               </div>
@@ -1158,6 +1174,18 @@ export const TelaAdmin: React.FC = () => {
                 set_mostrar_gestor_quarentena(false);
                 fetchDashboardData();
               }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* MODAL AUDITORIA DE NOTAS: conferência, memorial de cálculo, trilha e ajustes */}
+      {mostrar_modal_auditoria && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="w-[98vw] max-w-[98vw] h-[95vh] max-h-[95vh] my-auto flex flex-col">
+            <PainelAuditoria
+              id_evento_ativo={metricas_admin.evento_ativo_id}
+              aoFechar={() => set_mostrar_modal_auditoria(false)}
             />
           </div>
         </div>

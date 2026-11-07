@@ -11,7 +11,10 @@ consulta nada (o id de evento guardado no navegador não é usado).
 Card **Relatórios** no Bloco 3, com cinco abas:
 
 1. **Projetos e Médias**: código do projeto em destaque (o estande **não** aparece). A coluna Avaliações expande as
-   notas individuais: avaliador, data/hora de envio e parecer.
+   notas individuais: avaliador, data/hora de envio e parecer. No accordion, o link **"Ver a conta das notas"**
+   abre o [memorial de cálculo](auditoria-de-notas.md#memorial-de-cálculo) de cada avaliação (critério, peso e
+   produto), carregado sob demanda. A coluna de média mostra a **média final** e, quando há ajuste de comissão,
+   a conta aberta embaixo (`média das notas ± ajuste`), com o selo **Ajustada**.
 2. **Avaliadores e Notas Atribuídas**: agrupado por avaliador (nome, e-mail, quantidade, média, tempo médio). Ao
    expandir, aparecem os projetos com código, título, nota, início, fim, duração e parecer.
 3. **Avaliadores e Ausências Atribuídas**: agrupado por avaliador (nome, e-mail, total). Ao expandir: código, título,
@@ -35,9 +38,11 @@ Regras comuns:
 - Indicadores, projetos: **não credenciados** = sem check-in; **ausentes** = com check-in, marcados ausentes no
   estande e sem avaliação.
 - Grupos começam recolhidos, com `Expandir Todos` / `Recolher Todos`.
-- Datas no formato `DD-MM-YYYY`.
+- Datas no formato `DD-MM-YYYY`. Notas e médias em **duas casas com vírgula** (`8,75 pts`), por
+  `src/lib/formatoNota.ts` — o mesmo formato em todas as telas.
 - **Exportar CSV** exporta a aba ativa (sem estande), em UTF-8 com BOM e com campos protegidos contra fórmulas
-  (`src/lib/csv.ts`).
+  (`src/lib/csv.ts`). Na aba Projetos saem três colunas de resultado: **Média das Notas**, **Ajuste de Comissão** e
+  **Média Final**.
 - Duração de avaliação = `tempo_submissao − tempo_presenca`, formatada `Xm Ys`.
 
 ## Impressão em PDF
@@ -60,20 +65,27 @@ Card **Classificação**: pódio para homologação e premiação, só do **even
 não consulta nada). Os dados vêm de `view_ranking_top3`:
 
 - Entram os projetos com ao menos uma avaliação não cancelada; projetos **fora da competição não entram**.
-- A média é a simples das notas finais, calculada no banco. A `posicao` também vem do banco: `RANK()` por evento,
-  modalidade e área. **Empate na média é desfeito pela prioridade das perguntas** (`peso_desempate` 1, 2, 3…; 0 fica
+- A média é a simples das notas finais, calculada no banco, e aparece aberta: `media_geral` (média das notas)
+  **+** `ajuste_media` (bónus ou penalidade de comissão) **=** `media_final`. A `posicao` também vem do banco:
+  `RANK()` por evento, modalidade e área, **ordenado pela média final**. **Empate na média é desfeito pela prioridade das perguntas** (`peso_desempate` 1, 2, 3…; 0 fica
   fora): vence a maior média do projeto na pergunta de prioridade 1; persistindo, a 2, e assim por diante
-  (`fn_chave_desempate`, coluna `chave_desempate`). O card desempatado mostra o selo "Desempate", com as médias no
-  `title`. Se tudo empatar, a posição é dividida (1º, 1º, 3º), o card mostra "(empate)" e a comissão decide. Projetos
+  (`fn_chave_desempate`, coluna `chave_desempate`). O card desempatado mostra o selo "Desempate" e as médias por
+  pergunta **em texto** (antes elas ficavam só no `title`, e a comissão precisa ler, não passar o mouse). Se tudo empatar, a posição é dividida (1º, 1º, 3º), o card mostra "(empate)" e a comissão decide. Projetos
   com questionários diferentes na mesma modalidade/área são comparados posição a posição da prioridade.
 - O pódio de cada modalidade/área mostra todos com posição até 3 (um empate pode colocar mais de três).
 - Projeto com notas divergentes ainda não resolvidas na Quarentena (`em_quarentena`) aparece marcado, e a tela avisa
   para resolver antes de homologar.
+- Se a [conferência de notas](auditoria-de-notas.md#conferência-o-que-é-verificado) achar algo **grave** no evento,
+  uma faixa vermelha aparece no topo: há nota que não fecha com as notas por critério, e homologar nesse estado é o
+  erro que a faixa evita.
+- **Folha de conferência**: o PDF por projeto e o consolidado do evento saem do painel de Auditoria de Notas
+  ([auditoria](auditoria-de-notas.md#folha-de-conferência-pdf)).
 - Sem modalidade/área, aparece "Sem modalidade"/"Sem área temática"; estande e instituição ausentes não são
   inventados.
 - Erro de leitura aparece como alerta (não como "nenhum projeto").
 - **Exportar CSV** (`classificacao_premiacao.csv`): UTF-8 com BOM (acentos certos no Excel), posição do banco, coluna
-  "Em quarentena" e campos começados por `=`, `+`, `-` ou `@` prefixados com `'` (não viram fórmula).
+  "Em quarentena", as colunas **Média das Notas**, **Ajuste de Comissão** e **Média Final**, e campos começados por
+  `=`, `+`, `-` ou `@` prefixados com `'` (não viram fórmula).
 
 ## Telão ao Vivo (`TelaoAoVivo`)
 

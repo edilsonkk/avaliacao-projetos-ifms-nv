@@ -387,7 +387,7 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
     fireEvent.click(btnConfirmar);
 
     await waitFor(() => {
-      expect(mockRpc).toHaveBeenCalledWith('excluir_avaliacao', { p_id_avaliacao: expect.any(String) });
+      expect(mockRpc).toHaveBeenCalledWith('excluir_avaliacao', { p_id_avaliacao: expect.any(String), p_motivo: null });
       expect(mockUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'CANCELADA' }));
       expect(mockSucesso).toHaveBeenCalled();
       // Toast flutuante com Desfazer
@@ -399,7 +399,7 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
     fireEvent.click(btnDesfazer);
 
     await waitFor(() => {
-      expect(mockRpc).toHaveBeenCalledWith('restaurar_avaliacao', { p_id_avaliacao: expect.any(String) });
+      expect(mockRpc).toHaveBeenCalledWith('restaurar_avaliacao', { p_id_avaliacao: expect.any(String), p_motivo: null });
     });
     expect(mockUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'CONCLUIDA' }));
 

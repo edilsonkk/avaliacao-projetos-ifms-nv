@@ -190,7 +190,7 @@ describe('ModalExclusaoAvaliacao', () => {
       await user.click(screen.getByRole('button', { name: /confirmar exclusão/i }));
 
       // Assert
-      expect(supabase.rpc).toHaveBeenCalledWith('excluir_avaliacao', { p_id_avaliacao: 'av-2' });
+      expect(supabase.rpc).toHaveBeenCalledWith('excluir_avaliacao', { p_id_avaliacao: 'av-2', p_motivo: null });
       expect(chamadasDe('avaliacoes', 'update')).toHaveLength(0);
       expect(await screen.findByText(/o projeto saiu da quarentena/i)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Restaurar avaliação de Bruna no projeto AGRO-01' })).toBeInTheDocument();
@@ -227,7 +227,7 @@ describe('ModalExclusaoAvaliacao', () => {
       await user.click(await screen.findByRole('button', { name: /desfazer/i }));
 
       // Assert
-      expect(supabase.rpc).toHaveBeenCalledWith('restaurar_avaliacao', { p_id_avaliacao: 'av-1' });
+      expect(supabase.rpc).toHaveBeenCalledWith('restaurar_avaliacao', { p_id_avaliacao: 'av-1', p_motivo: null });
       await waitFor(() =>
         expect(screen.getByRole('button', { name: 'Excluir avaliação de Carlos no projeto AGRO-01' })).toBeInTheDocument()
       );
@@ -252,5 +252,67 @@ describe('ModalExclusaoAvaliacao', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent('cota completa');
       expect(screen.getByRole('button', { name: 'Restaurar avaliação de Ana no projeto ROBO-02' })).toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * Memorial de cálculo e motivo: o `peso_calculo` já vinha na consulta e nunca aparecia,
+ * então não havia como conferir por que a nota final não é a média simples dos critérios.
+ */
+describe('ModalExclusaoAvaliacao: conferência da nota', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chamadas = [];
+    paginas = [[
+      avaliacao('av-1', 'AGRO-01', 'Carlos', 8.0, {
+        respostas_avaliacao: [
+          { id_resposta: 'av-1-r1', id_pergunta: 'q1', nota_atribuida: 8, perguntas_questionario: { texto_pergunta: 'Originalidade', peso_calculo: 2 } },
+          { id_resposta: 'av-1-r2', id_pergunta: 'q2', nota_atribuida: 8, perguntas_questionario: { texto_pergunta: 'Apresentação', peso_calculo: 1 } },
+        ],
+      }),
+    ]];
+    dados = {
+      areas_tematicas: [{ id_area: 'area-1', nome_area: 'CIÊNCIAS AGRÁRIAS', id_evento: ID_EVENTO }],
+      avaliador_areas: [],
+    };
+    mockarBanco();
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: { sucesso: true }, error: null } as never);
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: { access_token: 'tok' } }, error: null } as never);
+  });
+
+  it('deve abrir a conta da nota com peso, produto e o veredito', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    renderizar();
+    await screen.findByRole('button', { name: /Critérios da avaliação de Carlos/i });
+
+    // Act
+    await user.click(screen.getByRole('button', { name: /Critérios da avaliação de Carlos/i }));
+
+    // Assert — peso, nota e produto de cada critério, e a conta final
+    const linha = await screen.findByRole('row', { name: /Originalidade/ });
+    expect(linha).toHaveTextContent('2');
+    expect(linha).toHaveTextContent('8,00');
+    expect(linha).toHaveTextContent('16,00');
+    expect(screen.getByText(/Nota final:/).closest('p')).toHaveTextContent('÷');
+  });
+
+  it('deve enviar o motivo escrito pelo Admin ao cancelar', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    renderizar();
+    await user.click(await screen.findByRole('button', { name: 'Excluir avaliação de Carlos no projeto AGRO-01' }));
+
+    // Act
+    await user.type(screen.getByRole('textbox', { name: /Motivo/i }), 'nota fora da curva');
+    await user.click(screen.getByRole('button', { name: /confirmar exclusão/i }));
+
+    // Assert
+    await waitFor(() =>
+      expect(supabase.rpc).toHaveBeenCalledWith('excluir_avaliacao', {
+        p_id_avaliacao: 'av-1',
+        p_motivo: 'nota fora da curva',
+      }),
+    );
   });
 });

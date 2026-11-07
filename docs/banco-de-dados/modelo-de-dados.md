@@ -121,6 +121,8 @@ Modalidades que o avaliador não pode avaliar. PK `(id_usuario, id_evento, id_mo
 | `is_fora_da_competicao` | Participa sem concorrer |
 | `forcar_topo_fila` | Prioridade máxima no sorteio |
 | `quarentena_resolvida_em`, `quarentena_resolvida_por` | Quando e qual Admin aceitou a divergência de notas (quarentena) |
+| `ajuste_media` | Bónus (positivo) ou penalidade (negativo) de comissão somado à média. `0` = sem ajuste; `media_final = media_geral + ajuste_media` |
+| `ajuste_media_em`, `ajuste_media_por`, `ajuste_media_motivo` | Quando, quem e por quê |
 
 A tabela **não** tem colunas textuais `modalidade`, `area_conhecimento` ou `nome_instituicao`. Use os relacionamentos
 (`modalidades(nome_modalidade)`, `areas_tematicas(nome_area)`, `instituicoes(nome_exibicao, sigla)`).
@@ -150,12 +152,19 @@ A tabela **não** tem colunas textuais `modalidade`, `area_conhecimento` ou `nom
 | `status_avaliacao` | Espelho legado de `status` em minúsculas |
 | `is_quarentena` | Marcada por divergência de notas (recalculada ao cancelar/restaurar) |
 | `cancelada_em`, `cancelada_por` | Quando e qual Admin cancelou (sem FK: ver regra 12 de migrations) |
+| `ajuste_tipo` | Ajuste manual do Admin: `respostas_corrigidas`, `nota_arbitrada` ou `lancada_pelo_admin`. `NULL` = enviada pelo avaliador ([auditoria](../regras-de-negocio/auditoria-de-notas.md#ajuste-manual-do-admin)) |
+| `ajustada_em`, `ajustada_por`, `ajuste_motivo` | Quando, quem e por quê (sem FK, como `cancelada_por`) |
 | `tempo_presenca` | Início da avaliação (confirmação de presença no estande) |
 | `tempo_submissao` | Envio |
 
 Restrição `unica_avaliacao_por_usuario UNIQUE (id_projeto, id_usuario)`: um avaliador avalia um projeto **uma única
 vez**, inclusive se a avaliação foi cancelada. Ver
 [ADR 0005](../decisoes/0005-sorteio-nao-repete-avaliador.md).
+
+As FKs `id_projeto` e `id_usuario` são **`ON DELETE RESTRICT`**: apagar um projeto ou um usuário com nota é
+recusado (erro `23503`). Antes eram `CASCADE` e levavam as notas em silêncio — apagar um cadastro apagava
+resultado de feira. `respostas_avaliacao → avaliacoes` continua `CASCADE` (a resposta é parte da avaliação, e o
+soft delete nunca apaga a avaliação); `respostas_avaliacao → perguntas_questionario` também passou a `RESTRICT`.
 
 ### `respostas_avaliacao`
 Nota por critério: `id_resposta`, `id_avaliacao`, `id_pergunta`, `nota_atribuida`.
@@ -173,12 +182,32 @@ Atribuições feitas pela coordenação: `id_atribuicao`, `id_usuario`, `id_proj
 Registro de conflitos e ausências: `id_usuario`, `id_projeto`, `tipo`, `created_at`. Alimenta o relatório de
 ausências.
 
+### `log_auditoria`
+Trilha de auditoria **append-only** (ver [auditoria de notas](../regras-de-negocio/auditoria-de-notas.md) e
+[ADR 0014](../decisoes/0014-trilha-de-auditoria-append-only.md)). Preenchida por trigger, inclusive quando a
+escrita vem direto da API REST. Sobrevive ao reset global.
+
+| Coluna | Descrição |
+|---|---|
+| `id_log` | PK (identidade) |
+| `criado_em` | Quando |
+| `id_evento`, `id_projeto`, `id_avaliacao`, `id_registro` | Escopo do que mudou (`id_registro` guarda a chave do registro em texto) |
+| `tabela`, `operacao`, `acao` | Onde (`avaliacoes`…), o quê (`INSERT`/`UPDATE`/`DELETE`/`EVENTO`) e o rótulo semântico (`nota_alterada`, `credenciamento_concedido`…) |
+| `ator_auth`, `ator_usuario`, `ator_papel` | Quem (sessão do Auth, usuário resolvido e papel) |
+| `origem` | Nome da RPC que se identificou, ou `direto` quando não passou por função nenhuma |
+| `motivo` | Justificativa opcional informada pelo Admin |
+| `dados_antes`, `dados_depois`, `campos_alterados` | O antes, o depois e quais colunas mudaram |
+
+Ninguém altera nem apaga: não há policy de escrita, os `GRANT` de escrita são revogados e um trigger recusa
+`UPDATE`/`DELETE`/`TRUNCATE`. Leitura só com `is_admin()`. Dado pessoal de `usuarios` (`cpf`, `celular`,
+`id_auth`) não entra no antes/depois.
+
 ## Views
 
 | View | Conteúdo |
 |---|---|
-| `view_ranking_top3` | Apesar do nome: todos os projetos **na competição** com avaliação não cancelada, com modalidade, área, notas, média **simples**, `posicao` (`RANK()` por evento, modalidade e área; empate divide) e `em_quarentena`. O front filtra por `id_evento` e mostra quem tem posição até 3 |
-| `view_relatorio_admin` | Por projeto: quantidade de avaliações, estande e média |
+| `view_ranking_top3` | Apesar do nome: todos os projetos **na competição** com avaliação não cancelada, com modalidade, área, notas, `media_geral` (média simples das notas), `ajuste_media`, `media_final` (= `media_geral + ajuste_media`), `posicao` (`RANK()` por evento, modalidade e área **pela média final**; empate divide) e `em_quarentena`. O front filtra por `id_evento` e mostra quem tem posição até 3 |
+| `view_relatorio_admin` | Por projeto: quantidade de avaliações, estande e média (só avaliações **não canceladas**) |
 | `view_relatorio_projetos` | Projetos com notas individuais em JSON (`avaliacoes_detalhadas`) |
 | `view_relatorio_avaliadores` | Avaliações por avaliador com início, fim e duração (`tempo_formatado`) |
 | `view_relatorio_ausencias` | Ausências de `avaliacoes` (status `AUSENTE`) e `historico_impedimentos` |

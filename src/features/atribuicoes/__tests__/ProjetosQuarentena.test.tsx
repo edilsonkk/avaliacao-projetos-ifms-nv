@@ -87,8 +87,8 @@ describe('ProjetosQuarentena', () => {
     const linha = (await screen.findByText('FETEC-002')).closest('tr')!;
 
     // Assert
-    expect(within(linha).getByText('4,5 pts')).toBeInTheDocument();
-    expect(within(linha).getByText('Menor 5,0 · Maior 9,5')).toBeInTheDocument();
+    expect(within(linha).getByText('4,50 pts')).toBeInTheDocument();
+    expect(within(linha).getByText('Menor 5,00 · Maior 9,50')).toBeInTheDocument();
     expect(screen.queryByText('EST-00')).not.toBeInTheDocument();
     expect(screen.queryByText(/flag manual|divergência aritmética/i)).not.toBeInTheDocument();
   });
@@ -115,7 +115,7 @@ describe('ProjetosQuarentena', () => {
     // Assert
     const lista = await screen.findByRole('list', { name: 'Notas do projeto FETEC-001' });
     expect(within(lista).getByText('Ana')).toBeInTheDocument();
-    expect(within(lista).getByText('6,5')).toBeInTheDocument();
+    expect(within(lista).getByText('6,50')).toBeInTheDocument();
     expect(botao).toHaveAttribute('aria-expanded', 'true');
     expect(chamadasDe('avaliacoes', 'or').map((c) => c.args[0])).toContain('status.is.null,status.neq.CANCELADA');
   });
@@ -129,10 +129,15 @@ describe('ProjetosQuarentena', () => {
 
     // Act
     await user.click(screen.getByRole('button', { name: 'Aceitar divergência do projeto FETEC-001' }));
+    const dialogo = await screen.findByRole('alertdialog', { name: /Aceitar a divergência deste projeto/ });
+    await user.type(within(dialogo).getByRole('textbox', { name: /Motivo/ }), 'notas conferidas com os avaliadores');
+    await user.click(within(dialogo).getByRole('button', { name: 'Aceitar divergência' }));
 
-    // Assert
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringMatching(/só volta se chegar uma avaliação nova/));
-    expect(supabase.rpc).toHaveBeenCalledWith('admin_remover_quarentena', { p_id_projeto: 'p-FETEC-001' });
+    // Assert — a decisão do Admin fica registrada com o motivo
+    expect(supabase.rpc).toHaveBeenCalledWith('admin_remover_quarentena', {
+      p_id_projeto: 'p-FETEC-001',
+      p_motivo: 'notas conferidas com os avaliadores',
+    });
     await waitFor(() => expect(screen.queryByText('FETEC-001')).not.toBeInTheDocument());
     expect(aoAtualizarMetricas).toHaveBeenCalled();
     expect(chamadasDe('avaliacoes', 'update')).toHaveLength(0);
@@ -141,13 +146,13 @@ describe('ProjetosQuarentena', () => {
   it('não deve fazer nada se o Admin cancelar a confirmação', async () => {
     // Arrange
     const user = userEvent.setup();
-    vi.mocked(window.confirm).mockReturnValue(false);
     render(<ProjetosQuarentena id_evento_ativo={ID_EVENTO} />);
     await screen.findByText('FETEC-001');
 
     // Act
     await user.click(screen.getByRole('button', { name: 'Aceitar divergência do projeto FETEC-001' }));
-    await user.click(screen.getByRole('button', { name: /resolver todos/i }));
+    const dialogo = await screen.findByRole('alertdialog');
+    await user.click(within(dialogo).getByRole('button', { name: 'Cancelar' }));
 
     // Assert
     expect(supabase.rpc).not.toHaveBeenCalled();
@@ -162,10 +167,12 @@ describe('ProjetosQuarentena', () => {
 
     // Act
     await user.click(screen.getByRole('button', { name: /resolver todos/i }));
+    const dialogo = await screen.findByRole('alertdialog', { name: /Aceitar a divergência de todos/ });
+    expect(dialogo).toHaveTextContent('Os 3 projetos em quarentena');
+    await user.click(within(dialogo).getByRole('button', { name: 'Aceitar divergência' }));
 
     // Assert
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('dos 3 projetos em quarentena deste evento'));
-    expect(supabase.rpc).toHaveBeenCalledWith('admin_remover_quarentena_evento', { p_id_evento: ID_EVENTO });
+    expect(supabase.rpc).toHaveBeenCalledWith('admin_remover_quarentena_evento', { p_id_evento: ID_EVENTO, p_motivo: null });
     expect(supabase.rpc).not.toHaveBeenCalledWith('admin_remover_quarentena_todos');
     expect(await screen.findByText('Nenhum projeto em quarentena.')).toBeInTheDocument();
   });
@@ -179,6 +186,9 @@ describe('ProjetosQuarentena', () => {
 
     // Act
     await user.click(screen.getByRole('button', { name: 'Aceitar divergência do projeto FETEC-001' }));
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Aceitar divergência' }),
+    );
 
     // Assert
     expect(await screen.findByRole('alert')).toHaveTextContent('Erro ao tirar da quarentena: falha no banco');

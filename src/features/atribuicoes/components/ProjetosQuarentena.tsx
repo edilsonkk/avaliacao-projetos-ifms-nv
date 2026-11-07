@@ -4,6 +4,8 @@ import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { aoRetomarApp } from '@/lib/keepAliveSessao';
 import { CabecalhoOrdenavel, compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { Modal, Botao, CampoArea } from '@/components/ui';
+import { formatarNota } from '@/lib/formatoNota';
 
 /**
  * Projetos em Quarentena (view_projetos_quarentena) do evento ativo.
@@ -46,8 +48,6 @@ type Coluna = 'codigo' | 'estande' | 'titulo' | 'diferenca' | 'avaliacoes';
 /** Limite de divergência da regra de quarentena (mesmo valor da view e de fn_enviar_avaliacao). */
 export const LIMITE_DIVERGENCIA = 2.5;
 
-const formatarNota = (n: number | null | undefined) =>
-  n === null || n === undefined ? '-' : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
 
 export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({ aoFechar, aoAtualizarMetricas, id_evento_ativo }) => {
   const [projetos, set_projetos] = useState<ProjetoQuarentena[]>([]);
@@ -58,6 +58,12 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({ aoFechar
   const [aberto, set_aberto] = useState<string | null>(null);
   const [avaliacoes, set_avaliacoes] = useState<Record<string, AvaliacaoDoProjeto[] | 'carregando' | 'erro'>>({});
   const [coluna, set_coluna] = useState<Coluna>('diferenca');
+  /**
+   * Aceitar divergência é decisão de coordenação: pede confirmação e aceita um motivo,
+   * que vai para a trilha de auditoria e para a folha de conferência do projeto.
+   */
+  const [confirmacao, set_confirmacao] = useState<{ tipo: 'um' | 'todos'; projeto?: ProjetoQuarentena } | null>(null);
+  const [motivo, set_motivo] = useState<string>('');
   const [direcao, set_direcao] = useState<'asc' | 'desc'>('desc');
 
   const conexao_banco = verificar_conexao_configurada();
@@ -138,22 +144,20 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({ aoFechar
 
   const aceitar_divergencia = async (projeto: ProjetoQuarentena) => {
     const codigo = projeto.codigo_projeto || projeto.titulo;
-    const confirmado = window.confirm(
-      `Aceitar a divergência de notas do projeto ${codigo}?\n\n` +
-        'Ele sai da quarentena com as notas atuais e só volta se chegar uma avaliação nova. ' +
-        'Para descartar uma nota fora da curva, use o card "Excluir uma avaliação".'
-    );
-    if (!confirmado) return;
-
+    set_confirmacao(null);
     set_processando(projeto.id_projeto);
     set_mensagem_erro(null);
     try {
       if (conexao_banco) {
         if (!(await garantirSessaoAdmin())) return;
-        const { error } = await supabase.rpc('admin_remover_quarentena', { p_id_projeto: projeto.id_projeto });
+        const { error } = await supabase.rpc('admin_remover_quarentena', {
+          p_id_projeto: projeto.id_projeto,
+          p_motivo: motivo.trim() || null,
+        });
         if (error) throw error;
       }
       set_projetos((prev) => prev.filter((p) => p.id_projeto !== projeto.id_projeto));
+      set_motivo('');
       exibir_sucesso(`Projeto ${codigo} saiu da quarentena.`);
       if (aoAtualizarMetricas) aoAtualizarMetricas();
     } catch (err) {
@@ -165,21 +169,20 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({ aoFechar
   };
 
   const aceitar_todos = async () => {
-    const confirmado = window.confirm(
-      `Aceitar a divergência dos ${projetos.length} projetos em quarentena deste evento?\n\n` +
-        'Todos saem da quarentena com as notas atuais e só voltam se chegar uma avaliação nova.'
-    );
-    if (!confirmado) return;
-
+    set_confirmacao(null);
     set_processando('todos');
     set_mensagem_erro(null);
     try {
       if (conexao_banco) {
         if (!(await garantirSessaoAdmin())) return;
-        const { error } = await supabase.rpc('admin_remover_quarentena_evento', { p_id_evento: idEvento });
+        const { error } = await supabase.rpc('admin_remover_quarentena_evento', {
+          p_id_evento: idEvento,
+          p_motivo: motivo.trim() || null,
+        });
         if (error) throw error;
       }
       set_projetos([]);
+      set_motivo('');
       exibir_sucesso('Todos os projetos do evento saíram da quarentena.');
       if (aoAtualizarMetricas) aoAtualizarMetricas();
     } catch (err) {
@@ -243,7 +246,7 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({ aoFechar
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={aceitar_todos}
+            onClick={() => set_confirmacao({ tipo: 'todos' })}
             disabled={processando !== null || total === 0 || (conexao_banco && !idEvento)}
             className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer"
           >
@@ -366,7 +369,7 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({ aoFechar
                           </button>
                           <button
                             type="button"
-                            onClick={() => aceitar_divergencia(p)}
+                            onClick={() => set_confirmacao({ tipo: 'um', projeto: p })}
                             disabled={processando !== null}
                             aria-label={`Aceitar divergência do projeto ${codigo}`}
                             className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold text-xs border border-emerald-300 dark:border-emerald-800 transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
@@ -420,6 +423,54 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({ aoFechar
           </div>
         )}
       </div>
+
+      {/* Aceitar divergência: confirmação da própria tela (não o confirm() do navegador) com motivo opcional */}
+      <Modal
+        aberto={confirmacao !== null}
+        aoFechar={() => {
+          set_confirmacao(null);
+          set_motivo('');
+        }}
+        papel="alertdialog"
+        titulo={confirmacao?.tipo === 'todos' ? 'Aceitar a divergência de todos?' : 'Aceitar a divergência deste projeto?'}
+        descricao={
+          confirmacao?.tipo === 'todos'
+            ? `Os ${projetos.length} projetos em quarentena saem da lista com as notas atuais e só voltam se chegar uma avaliação nova.`
+            : `O projeto ${confirmacao?.projeto?.codigo_projeto || confirmacao?.projeto?.titulo || ''} sai da quarentena com as notas atuais e só volta se chegar uma avaliação nova. Para descartar uma nota fora da curva, use o card "Excluir uma avaliação".`
+        }
+        acoes={
+          <>
+            <Botao
+              variante="secundario"
+              onClick={() => {
+                set_confirmacao(null);
+                set_motivo('');
+              }}
+            >
+              Cancelar
+            </Botao>
+            <Botao
+              variante="primario"
+              carregando={processando !== null}
+              onClick={() => {
+                if (confirmacao?.tipo === 'todos') aceitar_todos();
+                else if (confirmacao?.projeto) aceitar_divergencia(confirmacao.projeto);
+              }}
+            >
+              Aceitar divergência
+            </Botao>
+          </>
+        }
+      >
+        <CampoArea
+          rotulo="Motivo (opcional)"
+          descricao="Fica na trilha de auditoria e na folha de conferência: é o que explica a decisão num recurso."
+          rows={2}
+          maxLength={1000}
+          value={motivo}
+          onChange={(evento) => set_motivo(evento.target.value)}
+        />
+      </Modal>
 
       {/* Rodapé */}
       <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end bg-slate-50/50 dark:bg-slate-900/50">
