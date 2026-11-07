@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.11.0...v0.11.1) (2026-11-07)
+
+
+### Correções
+
+* lista do Staff, rota do autocadastro e rolagem das configurações ([#100](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/100)) ([4464bcd](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/4464bcd66992701a0826fdff2a157eb2e3fe2c8b))
+
 ## [0.11.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.10.0...v0.11.0) (2026-11-02)
 
 
