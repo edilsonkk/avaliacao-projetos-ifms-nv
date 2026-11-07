@@ -53,3 +53,7 @@ docs/
 - Não registre contagens que mudam a todo commit (número de testes, de migrations).
 - Não coloque segredos, chaves ou senhas em nenhum documento.
 - Quando não tiver certeza de um fato, marque com `> ⚠️ A confirmar` em vez de adivinhar.
+- `npm run lint` roda `scripts/guardas-docs.mjs`, que confere estas regras: link e âncora que resolvem, caminho
+  de código citado em backticks que existe, ADR no índice, doc alcançável a partir deste arquivo, `npm run`
+  que existe, versão do Supabase CLI igual à do workflow e ausência de segredos. Caminho fictício de propósito
+  (exemplo) entra na lista `EXCECOES` do script.
