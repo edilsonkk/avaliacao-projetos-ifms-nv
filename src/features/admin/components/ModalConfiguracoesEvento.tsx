@@ -244,12 +244,12 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
     'w-full px-3 py-2.5 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-700 text-left transition-all flex items-center justify-between gap-2 cursor-pointer group';
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="titulo-configuracoes-evento"
-        className="bg-white dark:bg-slate-800 rounded-3xl p-4 sm:p-6 w-full max-w-6xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden lg:overflow-visible lg:max-h-none border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4"
+        className="bg-white dark:bg-slate-800 rounded-3xl p-4 sm:p-6 w-full max-w-6xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4"
       >
         {/* Cabeçalho do Modal */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
