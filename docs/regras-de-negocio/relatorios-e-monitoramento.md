@@ -1,28 +1,47 @@
 # Relatórios, Classificação e Telão
 
 Código: `src/features/relatorios/` (`RelatoriosAdmin`, `RankingPremiacao`, `TelaoAoVivo`).
-Dados: funções `fn_relatorio_projetos_completo`, `fn_relatorio_avaliadores_completo` e `fn_relatorio_ausencias_completo`,
+Dados: funções `fn_relatorio_projetos_completo`, `fn_relatorio_avaliadores_completo`,
+`fn_relatorio_ausencias_completo`, `fn_relatorio_devolucoes_completo` e `fn_relatorio_voto_popular_completo`,
 sempre com o `id_evento` do evento ativo ([funções](../banco-de-dados/funcoes-e-rpcs.md#relatórios)). Não há consultas
 alternativas: se uma função falhar, a tela mostra o erro (não um relatório vazio). Sem evento ativo, a tela avisa e não
 consulta nada (o id de evento guardado no navegador não é usado).
 
 ## Relatórios (`RelatoriosAdmin`)
 
-Card **Relatórios** no Bloco 3, com cinco abas:
+Card **Relatórios** no Bloco 3, com sete abas:
 
 1. **Projetos e Médias**: código do projeto em destaque (o estande **não** aparece). A coluna Avaliações expande as
-   notas individuais: avaliador, data/hora de envio e parecer. No accordion, o link **"Ver a conta das notas"**
-   abre o [memorial de cálculo](auditoria-de-notas.md#memorial-de-cálculo) de cada avaliação (critério, peso e
-   produto), carregado sob demanda. A coluna de média mostra a **média final** e, quando há ajuste de comissão,
-   a conta aberta embaixo (`média das notas ± ajuste`), com o selo **Ajustada**.
+   notas individuais: avaliador, data/hora de envio e parecer. No accordion, o quadro **Média geral do projeto** abre
+   a conta do projeto — `(nota + nota + nota) ÷ n = média das notas`, o ajuste da comissão e a média final — com os
+   dados que a própria consulta do relatório já traz (sem consulta a mais) e avisando quando o resultado exato foi
+   arredondado para duas casas. Logo abaixo, o link **"Ver a conta das notas"** abre o
+   [memorial de cálculo](auditoria-de-notas.md#memorial-de-cálculo) de cada avaliação (critério, peso e produto),
+   carregado sob demanda. A coluna de média mostra a **média final** e, quando há ajuste de comissão, a conta aberta
+   embaixo (`média das notas ± ajuste`), com o selo **Ajustada**; a ordenação dessa coluna usa a média final, que é o
+   número exibido. O mesmo quadro é usado na [auditoria de notas](auditoria-de-notas.md), para a conta do projeto ser
+   idêntica nas duas telas (`src/features/auditoria/components/MemorialMediaProjeto.tsx`). Uma coluna **Voto
+   Popular** mostra a média e a quantidade de votos do projeto, sempre **fora** da média técnica; `media_geral`,
+   `media_final` e a contagem de avaliações são só de nota técnica.
 2. **Avaliadores e Notas Atribuídas**: agrupado por avaliador (nome, e-mail, quantidade, média, tempo médio). Ao
    expandir, aparecem os projetos com código, título, nota, início, fim, duração e parecer.
 3. **Avaliadores e Ausências Atribuídas**: agrupado por avaliador (nome, e-mail, total). Ao expandir: código, título,
-   área, modalidade, instituição, data/hora e status atual (sem estande). Fonte: `historico_impedimentos` e
-   avaliações com status `AUSENTE`.
-4. **Instituições e Projetos Submetidos**: agrupado por escola com total de trabalhos. Ao expandir: código, nome,
+   área, modalidade, instituição, data/hora e status atual (sem estande). Fonte: `historico_impedimentos` com
+   `tipo = 'ausencia'`, por `fn_relatorio_ausencias_completo`.
+4. **Avaliadores e Devoluções Atribuídas**: quantas devoluções cada avaliador fez. **Devolução** é o botão
+   **"Devolver (Conflito de Interesse)"** da tela do avaliador, que devolve o projeto à fila e grava
+   `historico_impedimentos` com `tipo = 'conflito'` (`fn_registrar_impedimento`). Mesmas colunas da aba de
+   Ausências — código, título, modalidade, área, instituição, data/hora da devolução e situação atual do projeto
+   (sem estande) —, por `fn_relatorio_devolucoes_completo`. Ausência e devolução são contagens **separadas**: cada
+   aba conta só o seu tipo.
+5. **Voto Popular**: um projeto por linha, ordenado pela **média bayesiana** calculada no banco
+   (`fn_relatorio_voto_popular_completo`), com posição, votos, média dos votos e média bayesiana. Acima da tabela,
+   a conta aberta da fórmula, com a âncora (média de todos os votos do evento) e o peso em votos. A aba só mostra
+   projetos que receberam voto. Ver [voto popular](avaliacao-e-quarentena.md#voto-popular) e
+   [ADR 0016](../decisoes/0016-voto-popular-separado-e-media-bayesiana.md).
+6. **Instituições e Projetos Submetidos**: agrupado por escola com total de trabalhos. Ao expandir: código, nome,
    área, modalidade e média (ou "Ausente"/"Não Credenciado").
-5. **Indicadores do evento: NOME DO EVENTO**: horário inicial e final, status, barra de conclusão global, KPIs de
+7. **Indicadores do evento: NOME DO EVENTO**: horário inicial e final, status, barra de conclusão global, KPIs de
    projetos (total, presentes, ausentes, não credenciados), de avaliadores (cadastrados, credenciados, ausentes) e de
    eficiência (avaliações, média geral, tempo médio por projeto). Inclui distribuição por cota (sem avaliação,
    abaixo da cota, cota concluída), quarentena, top 5 avaliadores mais produtivos e distribuição por modalidade e
@@ -37,7 +56,9 @@ Regras comuns:
   conta no máximo até a sua cota. A distribuição por cota considera só esses projetos.
 - Indicadores, projetos: **não credenciados** = sem check-in; **ausentes** = com check-in, marcados ausentes no
   estande e sem avaliação.
-- Grupos começam recolhidos, com `Expandir Todos` / `Recolher Todos`.
+- Grupos começam recolhidos, com `Expandir Todos` / `Recolher Todos`. As abas de Ausências e de Devoluções são o
+  mesmo componente (`src/features/relatorios/components/AbaImpedimentos.tsx`) com rótulos diferentes, e o
+  agrupamento, a busca e a ordenação vêm de `src/features/relatorios/impedimentos.ts`.
 - Datas no formato `DD-MM-YYYY`. Notas e médias em **duas casas com vírgula** (`8,75 pts`), por
   `src/lib/formatoNota.ts` — o mesmo formato em todas as telas.
 - **Exportar CSV** exporta a aba ativa (sem estande), em UTF-8 com BOM e com campos protegidos contra fórmulas
@@ -53,7 +74,8 @@ Botão **Imprimir PDF** em todas as abas (`window.print()`).
 - Imprime **100% dos registros do evento**, ignorando a busca da tela e mantendo a ordenação escolhida (listas
   memoizadas `*_todos_ordenados`).
 - Layout **só texto**: sem badges, cards, sombras ou bordas. Detalhes recuados abaixo de cada item
-  (`• Avaliador: Nota | Parecer`). Grupos expandidos automaticamente.
+  (`• Avaliador: Nota | Parecer`). Grupos expandidos automaticamente. Na aba Projetos sai também a linha
+  `Conta da média: (… + …) ÷ n = … | ajuste da comissão: … | média final: … pts`, a mesma conta que a tela mostra.
 - Cabeçalho oficial: nome do evento em maiúsculas, nome do relatório, data/hora de emissão e data do evento.
 - Isolamento do DOM: só `#relatorio-print-root` fica visível; o modal pai em `TelaAdmin` remove posicionamento fixo,
   backdrop e scroll na impressão. Botões, abas e busca ficam ocultos (`print:hidden`); linhas não quebram entre
@@ -86,12 +108,25 @@ não consulta nada). Os dados vêm de `view_ranking_top3`:
 - **Exportar CSV** (`classificacao_premiacao.csv`): UTF-8 com BOM (acentos certos no Excel), posição do banco, coluna
   "Em quarentena", as colunas **Média das Notas**, **Ajuste de Comissão** e **Média Final**, e campos começados por
   `=`, `+`, `-` ou `@` prefixados com `'` (não viram fórmula).
+- **Voto popular**: seção à parte no fim da tela, com classificação própria ordenada pela **média bayesiana**
+  (`fn_relatorio_voto_popular_completo`), mostrando média dos votos, quantidade de votos e a conta da âncora. Não
+  interfere no pódio técnico, que segue por `view_ranking_top3` (já sem o voto popular). As posições do voto popular
+  **mudam durante a votação**, porque a âncora e o peso são do evento inteiro — está escrito na tela.
 
 ## Telão ao Vivo (`TelaoAoVivo`)
 
-Projeção pública (rota `/telao`, sem login; também abre como modal no painel do Admin). Mostra a evolução da feira
+Projeção pública (rota `/telao`, sem login). O botão **Telão** do cabeçalho abre essa rota **em uma aba nova**, para
+a tela em uso (o painel do Admin, por exemplo) não se perder; o botão não aparece para o Staff nem dentro do próprio
+Telão. Não há painel de monitoramento separado: o Telão é a única tela de acompanhamento ao vivo. Mostra a evolução da feira
 **sem revelar notas, nomes ou títulos**: os dados vêm só de `fn_telao_resumo` (agregados), atualizada a cada 10 s e na
 hora em que a tela volta do segundo plano. O Telão **não** mostra o ranking (a premiação usa a Classificação).
+
+- **Voto popular**: um bloco com três contadores — votos registrados, projetos votados e votantes credenciados —,
+  exibido só quando o evento tem votante ou voto. São **agregados**, nunca nota ou nome: a média do voto popular fica
+  na Classificação, que é do Admin. O teste `supabase/tests/18_telao_test.sql` garante que o resumo do Telão não
+  contenha `nota`, `media`, `titulo` nem `email` — é por isso que as chaves são `votos_populares`, `projetos_votados`
+  e `votantes_credenciados`.
+- Meta, realizadas, em andamento e "avaliação finalizada" contam **só nota técnica**.
 
 - Sempre o **evento ativo do banco** (não um id guardado no navegador). O título é o nome (e a edição) do evento; sem
   evento ativo, "Nenhum evento ativo".
