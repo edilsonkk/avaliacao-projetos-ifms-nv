@@ -1,6 +1,6 @@
 # Sistema de Avaliação de Projetos IFMS
 
-Sistema web para gestão, sorteio, avaliação e homologação de projetos no Instituto Federal de Mato Grosso do Sul (IFMS).
+Sistema web para gestão, sorteio, avaliação e homologação de projetos no Instituto Federal de Mato Grosso do Sul (IFMS) campus Naviraí.
 
 ---
 
