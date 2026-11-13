@@ -66,7 +66,8 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `admin_atribuir_banca(p_id_projeto uuid, p_ids_usuarios uuid[])` | Atribuição forçada em banca (tudo ou nada); devolve quantas travas |
 | `admin_enfileirar_projetos(p_id_usuario uuid, p_ids_projetos uuid[])` | Atribuição forçada em fila; devolve `{ativado, enfileirados}` |
 | `fn_motivo_inelegivel(p_id_projeto uuid, p_id_usuario uuid)` | Interna: motivo de o avaliador não poder avaliar o projeto (`NULL` = pode) |
-| `fn_vagas_projeto(p_id_projeto uuid)` | Interna: cota − avaliações ativas − travas válidas |
+| `fn_vagas_projeto(p_id_projeto uuid)` | Interna: cota − avaliações ativas − travas válidas (as duas só de nota técnica) |
+| `fn_projetos_situacao(p_id_evento uuid)` | Um registro por projeto do evento com a conta pronta: `cota`, `avaliacoes_tecnicas`, `travas_tecnicas`, `vagas_restantes`, `media_tecnica`, `notas_tecnicas`, `votos_populares`, `media_voto_popular` e `em_quarentena`. Mesma regra de `fn_vagas_projeto` e do sorteio, por evento e numa consulta só. Fonte do Mapa de Estandes e da Atribuição Forçada, para a tela não recontar cota e média no navegador ([ADR 0001](../decisoes/0001-logica-critica-no-banco.md)). Só Admin: `SECURITY DEFINER` com `is_admin()`, porque o Staff não lê `avaliacoes` |
 | `admin_remover_quarentena(p_id_projeto uuid, p_motivo text default null)` | Aceita a divergência do projeto (registra `quarentena_resolvida_em/_por`) |
 | `admin_remover_quarentena_todos()` | Aceita a divergência de todos os projetos em quarentena, de todos os eventos (a tela usa a versão por evento) |
 | `excluir_avaliacao(p_id_avaliacao uuid, p_motivo text default null)` | Soft delete: `status = 'CANCELADA'`, `cancelada_em/_por`; recalcula a quarentena; devolve `projeto_em_quarentena` |
@@ -130,6 +131,8 @@ consultas alternativas e mostra o erro se uma falhar.
 | `fn_relatorio_projetos_completo` | Projetos com `detalhes_avaliacoes` e `cota_avaliacoes` (cota do projeto ou a padrão do evento) |
 | `fn_relatorio_avaliadores_completo` | Avaliadores com contagem, média, tempo médio e `avaliacoes` (cada uma com `duracao_segundos`) |
 | `fn_relatorio_ausencias_completo` | Avaliadores com `ausencias` (de `historico_impedimentos` com `tipo = 'ausencia'`) |
+| `fn_relatorio_devolucoes_completo` | Avaliadores com `devolucoes` (de `historico_impedimentos` com `tipo = 'conflito'`: o botão "Devolver (Conflito de Interesse)") |
+| `fn_relatorio_voto_popular_completo` | Voto popular por projeto: votos, média simples, **média bayesiana**, âncora (`media_evento`), peso (`peso_ancora`) e posição. Fonte única do relatório e da classificação do voto popular |
 | `fn_relatorio_instituicoes_completo` | Instituições com `projetos`, status e médias |
 | `fn_relatorio_indicadores_gerenciais` | Métricas globais e distribuições do evento |
 

@@ -43,7 +43,8 @@ A feira. Quase todas as tabelas são isoladas por `id_evento`.
 | `minutos_validade_codigo_acesso` | Validade do código de acesso gerado pelo Staff (padrão 15; 1–120) |
 | `tamanho_codigo` | Tamanho dos dois códigos (padrão 6; 6–10) |
 | `max_tentativas_codigo` | Tentativas por código de acesso antes de invalidá-lo (padrão 5; 1–10) |
-| `metodos_vinculo` | `ambos`, `pareamento` ou `codigo` |
+| `metodos_vinculo` | `pareamento` (padrão) ou `codigo`; `ambos` é legado e não é mais oferecido na interface |
+| `fixar_questionario_primeira_avaliacao` | Ligada (padrão): a primeira avaliação fixa o questionário do projeto |
 | `url_icone` | Ícone do evento (bucket `identidade-visual`): substitui o "IF" do cabeçalho e serve de favicon |
 | `url_imagem_evento` | Imagem do evento: login, autocadastro, Telão, relatórios impressos e topo da tela do avaliador |
 
@@ -148,7 +149,8 @@ A tabela **não** tem colunas textuais `modalidade`, `area_conhecimento` ou `nom
 | `id_projeto`, `id_usuario`, `id_questionario` | FKs |
 | `nota_final` | Calculada no servidor por `fn_enviar_avaliacao` |
 | `parecer_final` | Texto do avaliador |
-| `status` | `CONCLUIDA` (padrão), `CANCELADA` (soft delete), `AUSENTE` |
+| `status` | `CONCLUIDA` (padrão) ou `CANCELADA` (soft delete). Ausência **não** é um status de avaliação: vai para `historico_impedimentos` |
+| `is_voto_popular` | Cópia da marca do questionário no momento da nota, por trigger. `true`: a nota não entra na média técnica, na cota, na quarentena nem no ranking |
 | `status_avaliacao` | Espelho legado de `status` em minúsculas |
 | `is_quarentena` | Marcada por divergência de notas (recalculada ao cancelar/restaurar) |
 | `cancelada_em`, `cancelada_por` | Quando e qual Admin cancelou (sem FK: ver regra 12 de migrations) |
@@ -179,8 +181,11 @@ Atribuições feitas pela coordenação: `id_atribuicao`, `id_usuario`, `id_proj
 `status` (`pendente`, `em_andamento`, `concluido`, `cancelado`, `ja_avaliado`).
 
 ### `historico_impedimentos`
-Registro de conflitos e ausências: `id_usuario`, `id_projeto`, `tipo`, `created_at`. Alimenta o relatório de
-ausências.
+Registro de conflitos e ausências: `id_usuario`, `id_projeto`, `tipo` (`'ausencia'` ou `'conflito'`), `created_at`,
+gravado por `fn_registrar_impedimento`. A chave primária inclui `created_at`, então o histórico de repetições é
+preservado. Alimenta dois relatórios separados: **ausências** (`tipo = 'ausencia'`) e **devoluções**
+(`tipo = 'conflito'`, o botão "Devolver (Conflito de Interesse)" da tela do avaliador). No sorteio, o impedimento
+veta o par avaliador/projeto — só para aquele avaliador, não para os demais.
 
 ### `log_auditoria`
 Trilha de auditoria **append-only** (ver [auditoria de notas](../regras-de-negocio/auditoria-de-notas.md) e
@@ -210,7 +215,7 @@ Ninguém altera nem apaga: não há policy de escrita, os `GRANT` de escrita sã
 | `view_relatorio_admin` | Por projeto: quantidade de avaliações, estande e média (só avaliações **não canceladas**) |
 | `view_relatorio_projetos` | Projetos com notas individuais em JSON (`avaliacoes_detalhadas`) |
 | `view_relatorio_avaliadores` | Avaliações por avaliador com início, fim e duração (`tempo_formatado`) |
-| `view_relatorio_ausencias` | Ausências de `avaliacoes` (status `AUSENTE`) e `historico_impedimentos` |
+| `view_relatorio_ausencias` | Ausências de `historico_impedimentos` (`tipo = 'ausencia'`); view legada, o front-end lê `fn_relatorio_ausencias_completo` |
 | `view_projetos_quarentena` | Projetos com divergência > 2,5 pontos (com 2+ avaliações) ou `is_quarentena = true`; divergência já aceita pelo Admin (`projetos.quarentena_resolvida_em`) só volta com avaliação nova |
 | `view_projetos_pendentes_avaliacao` | Projetos abaixo da cota |
 | `view_avaliadores_credenciados` | Avaliadores com check-in no evento ativo |

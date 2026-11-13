@@ -30,6 +30,20 @@ import { compararNatural } from '@/components/ui/CabecalhoOrdenavel';
 
 export type StatusProjetoMapa = 'nao_credenciado' | 'credenciado' | 'faltando' | 'avaliado';
 
+/** Uma linha de `fn_projetos_situacao`: a conta de cota, vagas, média e quarentena feita no banco. */
+interface SituacaoProjeto {
+  id_projeto: string;
+  cota: number;
+  avaliacoes_tecnicas: number;
+  travas_tecnicas: number;
+  vagas_restantes: number;
+  media_tecnica: number | null;
+  notas_tecnicas: number[] | null;
+  votos_populares: number;
+  media_voto_popular: number | null;
+  em_quarentena: boolean;
+}
+
 export interface ProjetoMapItem {
   id_projeto: string;
   id_evento?: string | null;
@@ -49,6 +63,9 @@ export interface ProjetoMapItem {
   cota: number;
   media_geral: number | null;
   notas: number[];
+  /** Votos do voto popular: contados à parte, não entram na cota nem na média técnica. */
+  votos_populares: number;
+  media_voto_popular: number | null;
   status_mapa: StatusProjetoMapa;
 }
 
@@ -116,8 +133,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
       const cotaEvento = evData?.cota_avaliacoes_padrao || cota_padrao_evento || 3;
       set_cota_efetiva(cotaEvento);
 
-      const agora = new Date().toISOString();
-      const [projetosData, avaliacoes, locks, quarentena] = await Promise.all([
+      const [projetosData, situacao] = await Promise.all([
         buscarTodas<any>(() =>
           supabase
             .from('projetos')
@@ -138,53 +154,22 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
             .eq('id_evento', id_evento_ativo)
             .order('id_projeto', { ascending: true })
         ),
-        // Avaliações válidas (não canceladas) dos projetos deste evento
-        buscarTodas<{ id_projeto: string; nota_final: number | null }>(() =>
-          supabase
-            .from('avaliacoes')
-            .select('id_avaliacao, id_projeto, nota_final, projetos!inner(id_evento)')
-            .eq('projetos.id_evento', id_evento_ativo)
-            .or('status.is.null,status.neq.CANCELADA')
-            .order('id_avaliacao', { ascending: true })
-        ),
-        // Travas ainda válidas: as vencidas só são limpas no próximo sorteio
-        buscarTodas<{ id_projeto: string }>(() =>
-          supabase
-            .from('locks_ativos')
-            .select('id_lock, id_projeto, projetos!inner(id_evento)')
-            .eq('projetos.id_evento', id_evento_ativo)
-            .or(`expira_em.is.null,expira_em.gt.${agora}`)
-            .order('id_lock', { ascending: true })
-        ),
-        // Quarentena pendente (divergência ainda não resolvida), a mesma lista da tela Quarentena
-        buscarTodas<{ id_projeto: string }>(() =>
-          supabase
-            .from('view_projetos_quarentena')
-            .select('id_projeto')
-            .eq('id_evento', id_evento_ativo)
-            .order('id_projeto', { ascending: true })
-        ),
+        // Cota, vagas, média e quarentena vêm prontas do banco, pela mesma regra do
+        // sorteio (fn_projetos_situacao): sem voto popular na cota nem na média técnica.
+        supabase.rpc('fn_projetos_situacao', { p_id_evento: id_evento_ativo }),
       ]);
+      if (situacao.error) throw situacao.error;
 
-      const locksSet = new Set(locks.map((l) => l.id_projeto));
-      const quarentenaSet = new Set(quarentena.map((q) => q.id_projeto));
-      const mapaNotas = new Map<string, number[]>();
-      const mapaQtd = new Map<string, number>();
-      avaliacoes.forEach((a) => {
-        mapaQtd.set(a.id_projeto, (mapaQtd.get(a.id_projeto) || 0) + 1);
-        if (a.nota_final !== null && a.nota_final !== undefined && !isNaN(Number(a.nota_final))) {
-          mapaNotas.set(a.id_projeto, [...(mapaNotas.get(a.id_projeto) || []), Number(a.nota_final)]);
-        }
-      });
+      const mapaSituacao = new Map<string, SituacaoProjeto>(
+        ((situacao.data || []) as SituacaoProjeto[]).map((s) => [s.id_projeto, s])
+      );
 
       const processados: ProjetoMapItem[] = projetosData.map((p) => {
-        const notasDoProjeto = mapaNotas.get(p.id_projeto) || [];
-        const qtdAval = mapaQtd.get(p.id_projeto) || 0;
-        const cotaProjeto = p.cota_avaliacoes_customizada || cotaEvento;
-        const mediaCalculada =
-          notasDoProjeto.length > 0
-            ? Math.round((notasDoProjeto.reduce((acc, curr) => acc + curr, 0) / notasDoProjeto.length) * 100) / 100
-            : null;
+        const s = mapaSituacao.get(p.id_projeto);
+        const notasDoProjeto = (s?.notas_tecnicas || []).map((n) => Number(n));
+        const qtdAval = s?.avaliacoes_tecnicas ?? 0;
+        const cotaProjeto = s?.cota ?? (p.cota_avaliacoes_customizada || cotaEvento);
+        const mediaCalculada = s?.media_tecnica === null || s?.media_tecnica === undefined ? null : Number(s.media_tecnica);
         const isCredenciado = p.is_check_in_realizado === true;
 
         // 4 estados de cor: não credenciado (cinza), credenciado sem avaliação (azul),
@@ -211,12 +196,15 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
           nome_instituicao: relacao(p.instituicoes, 'nome_exibicao'),
           is_check_in_realizado: isCredenciado,
           is_fora_da_competicao: p.is_fora_da_competicao === true,
-          tem_lock: locksSet.has(p.id_projeto),
-          is_quarentena: quarentenaSet.has(p.id_projeto),
+          tem_lock: (s?.travas_tecnicas ?? 0) > 0,
+          is_quarentena: s?.em_quarentena === true,
           qtd_avaliacoes: qtdAval,
           cota: cotaProjeto,
           media_geral: mediaCalculada,
           notas: notasDoProjeto,
+          votos_populares: s?.votos_populares ?? 0,
+          media_voto_popular:
+            s?.media_voto_popular === null || s?.media_voto_popular === undefined ? null : Number(s.media_voto_popular),
           status_mapa,
         };
       });
@@ -266,6 +254,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
           usuarios ( nome, email )
         `)
         .eq('id_projeto', projetoItem.id_projeto)
+        .eq('is_voto_popular', false) // o voto popular tem relatório próprio e não entra nesta média
         .or('status.is.null,status.neq.CANCELADA')
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -673,7 +662,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
                           <div className="flex items-baseline justify-between text-[10px] font-mono">
                             <span className="font-semibold opacity-75">Média:</span>
                             <span className="font-black font-mono text-xs">
-                              {proj.media_geral !== null ? `${proj.media_geral.toFixed(2)}` : '-'}
+                              {proj.media_geral !== null ? formatarNota(proj.media_geral) : '-'}
                             </span>
                           </div>
                           {/* Badges de notas pequenas */}
@@ -761,7 +750,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
                               Média Geral:
                             </span>
                             <span className="text-base font-black font-mono text-slate-900 dark:text-white">
-                              {proj.media_geral !== null ? `${proj.media_geral.toFixed(2)} pts` : '-'}
+                              {proj.media_geral !== null ? `${formatarNota(proj.media_geral)} pts` : '-'}
                             </span>
                           </div>
 
@@ -875,6 +864,17 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
                   {projeto_selecionado.is_quarentena ? 'SIM (Em Análise)' : 'Não'}
                 </span>
               </div>
+              {projeto_selecionado.votos_populares > 0 && (
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Voto popular</span>
+                  <span className="text-xs font-black font-mono text-slate-800 dark:text-slate-200">
+                    {projeto_selecionado.votos_populares} voto(s)
+                    {projeto_selecionado.media_voto_popular !== null
+                      ? ` • ${formatarNota(projeto_selecionado.media_voto_popular)} pts`
+                      : ''}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Lista Detalhada de Avaliações */}

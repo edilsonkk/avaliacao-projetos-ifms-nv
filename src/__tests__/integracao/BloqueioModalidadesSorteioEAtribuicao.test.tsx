@@ -75,6 +75,16 @@ describe('Auditoria de Regressão: Bloqueio Estrito por Modalidade no Sorteio e 
       chamadasRpcSorteio.push({ nomeFn, params });
       // Fila direcionada vazia: o projeto vem do sorteio
       if (nomeFn === 'fn_assumir_item_fila') return Promise.resolve({ data: null, error: null }) as any;
+      // Cota e vagas de cada projeto são contadas no banco, não no navegador
+      if (nomeFn === 'fn_projetos_situacao') {
+        return Promise.resolve({
+          data: [
+            { id_projeto: 'p0000000-0000-0000-0000-000000000001', cota: 3, avaliacoes_tecnicas: 0, travas_tecnicas: 0, vagas_restantes: 3 },
+            { id_projeto: 'p0000000-0000-0000-0000-000000000002', cota: 3, avaliacoes_tecnicas: 0, travas_tecnicas: 0, vagas_restantes: 3 },
+          ],
+          error: null,
+        }) as any;
+      }
       return Promise.resolve({ data: 'p0000000-0000-0000-0000-000000000002', error: null }) as any;
     });
 

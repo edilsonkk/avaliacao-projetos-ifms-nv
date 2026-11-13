@@ -122,6 +122,21 @@ describe('Regras de Negócio: Cota Estrita, Sorteio, Auto-cadastro e De-Para', (
       return criarQueryChain({ data: [], error: null });
     });
 
+    // Cota e vagas são contadas no banco (fn_projetos_situacao), não no navegador
+    mockRpc.mockImplementation((nome: string) =>
+      Promise.resolve(
+        nome === 'fn_projetos_situacao'
+          ? {
+              data: [
+                { id_projeto: 'proj-cheio', cota: 3, avaliacoes_tecnicas: 3, travas_tecnicas: 0, vagas_restantes: 0 },
+                { id_projeto: 'proj-disponivel', cota: 3, avaliacoes_tecnicas: 1, travas_tecnicas: 0, vagas_restantes: 2 },
+              ],
+              error: null,
+            }
+          : { data: null, error: null }
+      )
+    );
+
     render(
       <AtribuicaoForcada
         isOpen={true}
