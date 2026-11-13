@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Printer, Scale, Search, SlidersHorizontal, UserPlus } from 'lucide-react';
 import { Botao, Campo, Estado, Selo, Tabela } from '@/components/ui';
-import { formatarAjuste, formatarNota, formatarPeso } from '@/lib/formatoNota';
+import { formatarNota, formatarPeso } from '@/lib/formatoNota';
 import { buscarAvaliadoresDoEvento, buscarMemorialPorCodigo } from '../api';
 import { dataHoraBr, ROTULO_SEVERIDADE, TOM_POR_SEVERIDADE } from '../rotulos';
 import type { MemorialAvaliacao as Memorial, MemorialProjeto } from '../tipos';
 import { MemorialAvaliacao } from './MemorialAvaliacao';
+import { MemorialMediaProjeto } from './MemorialMediaProjeto';
 import { ModalAjustarMedia, ModalArbitrarNota, ModalCorrigirNotas, ModalLancarAvaliacao } from './AcoesDeAjuste';
 
 /**
@@ -130,35 +131,7 @@ export const AbaProjeto: React.FC<PropriedadesAbaProjeto> = ({ idEvento, codigoI
               </div>
             </div>
 
-            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-apoio">
-              <div>
-                <dt className="text-texto-secundario">Avaliações</dt>
-                <dd className="font-bold text-texto tabular-nums">
-                  {projeto.total_avaliacoes} de {projeto.cota}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-texto-secundario">Média das notas</dt>
-                <dd className="font-bold text-texto tabular-nums">{formatarNota(projeto.media_geral)}</dd>
-              </div>
-              <div>
-                <dt className="text-texto-secundario">Ajuste de comissão</dt>
-                <dd className="font-bold text-texto tabular-nums">{formatarAjuste(projeto.ajuste_media)}</dd>
-              </div>
-              <div>
-                <dt className="text-texto-secundario">Média final</dt>
-                <dd className="font-bold text-texto tabular-nums">{formatarNota(projeto.media_final)}</dd>
-              </div>
-            </dl>
-
-            {projeto.ajuste_media !== 0 && (
-              <p className="text-apoio text-texto">
-                <span className="font-semibold">Ajuste aplicado </span>
-                {projeto.ajuste_media_por?.nome && `por ${projeto.ajuste_media_por.nome} `}
-                {projeto.ajuste_media_em && `em ${dataHoraBr(projeto.ajuste_media_em)}`}. Motivo:{' '}
-                {projeto.ajuste_media_motivo || 'não informado'}
-              </p>
-            )}
+            <MemorialMediaProjeto projeto={projeto} />
 
             <div className="flex flex-wrap gap-2 pt-1">
               <Botao variante="secundario" icone={<UserPlus className="w-4 h-4" />} onClick={() => setLancando(true)}>

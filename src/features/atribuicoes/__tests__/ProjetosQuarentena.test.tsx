@@ -118,6 +118,8 @@ describe('ProjetosQuarentena', () => {
     expect(within(lista).getByText('6,50')).toBeInTheDocument();
     expect(botao).toHaveAttribute('aria-expanded', 'true');
     expect(chamadasDe('avaliacoes', 'or').map((c) => c.args[0])).toContain('status.is.null,status.neq.CANCELADA');
+    // A divergência é entre notas técnicas: voto popular não entra nesta lista
+    expect(chamadasDe('avaliacoes', 'eq').map((c) => c.args)).toContainEqual(['is_voto_popular', false]);
   });
 
   it('deve aceitar a divergência de um projeto pela função do banco, após confirmar', async () => {

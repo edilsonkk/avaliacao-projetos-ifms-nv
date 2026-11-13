@@ -37,6 +37,22 @@ Ao ser chamada, a função:
 
 `sortear_projeto` é um alias com a mesma lógica; qualquer mudança deve ser aplicada nas duas.
 
+## Voto popular: a pista do votante
+
+Avaliador vinculado a um questionário de voto popular
+([avaliação](avaliacao-e-quarentena.md#voto-popular)) sorteia por regras próprias:
+
+- **ignora a cota** do projeto: projeto com as três notas técnicas continua sendo oferecido;
+- **ignora as travas**: vários votantes podem estar no mesmo projeto ao mesmo tempo;
+- o **avaliador técnico também ignora a trava de um votante** (`locks_ativos.is_voto_popular`), então
+  um votante no estande não ocupa vaga de avaliação técnica;
+- mantém check-in, projeto na competição, conflito institucional, modalidade bloqueada, "já avaliou
+  este projeto" e os impedimentos registrados por ele.
+
+A reserva com `FOR UPDATE ... SKIP LOCKED` e o retry continuam nos dois ramos. Banca e fila
+direcionada **recusam** votante (`fn_motivo_inelegivel`): são ferramentas de avaliação técnica e a
+trava ocuparia vaga indevidamente.
+
 ## Conflito de interesse institucional
 
 Um avaliador **nunca** avalia projeto da própria instituição.
@@ -103,6 +119,12 @@ Card **Atribuir Projeto** no Bloco 1 do painel Admin.
 - A lista usa só dados do evento ativo, e só travas válidas (vencidas não ocupam vaga nem deixam o avaliador
   "Em Avaliação"). Projetos em quarentena podem receber atribuição (como no sorteio): é o caminho para uma avaliação
   de desempate.
+- **Vaga e cota não são recontadas no navegador**: a tela lê `fn_projetos_situacao`
+  ([funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#administração)), a mesma regra de `fn_vagas_projeto` e do
+  sorteio. Voto popular não ocupa vaga, então projeto votado continua aparecendo com as vagas técnicas que tem.
+- **Votante não aparece na lista de avaliadores**: vinculado a um questionário de voto popular, a nota dele sairia
+  como voto popular e não entraria na cota. Quem decide é o banco (`fn_motivo_inelegivel` recusa), e a tela já não
+  oferece.
 - No celular, o sorteio **retoma** a trava atribuída pelo Admin em vez de apagá-la; o avaliador vê o projeto ao
   abrir o app ou tocar em sortear.
 - Para a cota, avaliações canceladas não contam.
