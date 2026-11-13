@@ -235,11 +235,10 @@ describe('Auditoria de Desempenho, Ausência de Loop Infinito e Integração de 
     expect(screen.queryByText(/Atribuir ↗/i)).toBeNull();
   });
 
-  it('3. MONITORAMENTO: botão no header deve ser renomeado para "Monitoramento"', async () => {
+  it('3. MONITORAMENTO: o painel não tem botão próprio; o Telão abre pelo cabeçalho, em aba nova', async () => {
     render(<TelaAdmin />);
 
-    const botaoMonitoramento = screen.getByRole('button', { name: /Monitoramento/i });
-    expect(botaoMonitoramento).toBeDefined();
+    expect(screen.queryByRole('button', { name: /Monitoramento/i })).toBeNull();
     expect(screen.queryByText('Projeção no Auditório')).toBeNull();
   });
 

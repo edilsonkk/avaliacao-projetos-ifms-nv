@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Sun, Moon, Laptop, Shield, UserCheck, Award, Tv, LogOut, X } from 'lucide-react';
+import { Sun, Moon, Laptop, Shield, UserCheck, Award, Tv, ExternalLink, LogOut, X } from 'lucide-react';
 import { ambiente_supabase, supabase } from '@/lib/supabase';
 import { useAvisos } from '@/components/ui';
 import { useIdentidadeVisual } from '@/components/layout/IdentidadeVisual';
@@ -232,17 +232,20 @@ export const Cabecalho: React.FC<PropriedadesCabecalho> = ({ tela_atual, ao_muda
               </button>
             )}
 
-            {/* Telão: escondido para o Staff e dentro da tela do Staff */}
-            {tela_atual !== 'staff' && papel !== 'staff' && (
-              <button
-                type="button"
-                onClick={() => ao_mudar_tela('telao')}
-                aria-current={tela_atual === 'telao' ? 'page' : undefined}
-                className={classeBotaoNavegacao(tela_atual === 'telao')}
+            {/* Telão: abre em aba nova, para o painel em uso não se perder.
+                Escondido para o Staff, dentro da tela do Staff e no próprio Telão. */}
+            {tela_atual !== 'staff' && tela_atual !== 'telao' && papel !== 'staff' && (
+              <a
+                href="/telao"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={classeBotaoNavegacao(false)}
               >
                 <Tv aria-hidden="true" className="w-4 h-4" />
                 Telão
-              </button>
+                <ExternalLink aria-hidden="true" className="w-3 h-3" />
+                <span className="sr-only">(abre em nova aba)</span>
+              </a>
             )}
 
             {ao_sair && (

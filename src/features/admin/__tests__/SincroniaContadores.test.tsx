@@ -85,4 +85,13 @@ describe('Painel do Admin: sincronia do evento ativo', () => {
     expect(await screen.findByText(/avaliação finalizada/i)).toBeInTheDocument();
     expect(supabase.rpc).toHaveBeenCalledWith('fn_telao_resumo', { p_id_evento: 'evt-1' });
   });
+
+  it('não deve ter controle de Monitoramento: o Telão abre pelo cabeçalho, em aba nova', async () => {
+    // Arrange / Act
+    render(<TelaAdmin />);
+    await screen.findByText('Feira Ativa');
+
+    // Assert
+    expect(screen.queryByRole('button', { name: /monitoramento/i })).not.toBeInTheDocument();
+  });
 });

@@ -12,7 +12,6 @@ import {
   ShieldCheck,
   ClipboardList,
   Trophy,
-  Tv,
   Printer,
   History,
   PlusCircle,
@@ -50,7 +49,6 @@ import { GestorProjetos } from '@/features/projetos';
 import { ProjetosBloqueados } from '@/features/atribuicoes';
 import { ProjetosQuarentena } from '@/features/atribuicoes';
 import { AtribuicaoForcada } from '@/features/atribuicoes';
-import { TelaoAoVivo } from '@/features/relatorios';
 import { ModalExclusaoAvaliacao } from '@/features/atribuicoes';
 import { PainelAuditoria } from '@/features/auditoria';
 
@@ -108,7 +106,6 @@ export const TelaAdmin: React.FC = () => {
   const [mostrar_gestor_questionarios, set_mostrar_gestor_questionarios] = useState<boolean>(false);
   const [mostrar_gestor_instituicoes, set_mostrar_gestor_instituicoes] = useState<boolean>(false);
   const [mostrar_gestor_modalidades, set_mostrar_gestor_modalidades] = useState<boolean>(false);
-  const [mostrar_modal_telao, set_mostrar_modal_telao] = useState<boolean>(false);
   const [mostrar_modal_exclusao_avaliacao, set_mostrar_modal_exclusao_avaliacao] = useState<boolean>(false);
 
   // Campos de entrada dos modais
@@ -498,7 +495,7 @@ export const TelaAdmin: React.FC = () => {
           </div>
         </div>
 
-        {/* Ações do Header: Novo Evento, Monitoramento e Configurações */}
+        {/* Ações do Header: Novo Evento e Configurações (o Telão abre pelo cabeçalho, em aba nova) */}
         <div className="flex items-center gap-2">
           {/* Botão Novo Evento */}
           <button
@@ -513,18 +510,6 @@ export const TelaAdmin: React.FC = () => {
           >
             <PlusCircle className="w-4 h-4" />
             <span>Novo Evento</span>
-          </button>
-
-          {/* Botão de Monitoramento posicionado imediatamente à esquerda da Engrenagem */}
-          <button
-            type="button"
-            onClick={() => set_mostrar_modal_telao(true)}
-            title="Monitoramento em Tempo Real"
-            className="px-3.5 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700/80 transition-all flex items-center gap-2 shadow-xs cursor-pointer font-bold text-xs sm:text-sm"
-            aria-label="Monitoramento"
-          >
-            <Tv className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-            <span>Monitoramento</span>
           </button>
 
           {/* Ícone de Engrenagem (Configurações) à direita */}
@@ -1121,28 +1106,6 @@ export const TelaAdmin: React.FC = () => {
                 fetchDashboardData();
               }}
             />
-          </div>
-        </div>
-      )}
-
-      {/* MODAL MONITORAMENTO (TELÃO AO VIVO) */}
-      {mostrar_modal_telao && (
-        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col p-4 sm:p-6 overflow-y-auto">
-          <div className="flex items-center justify-between pb-3 max-w-7xl mx-auto w-full border-b border-slate-800 mb-4">
-            <div className="flex items-center gap-2 text-white font-extrabold text-lg">
-              <Tv className="w-6 h-6 text-emerald-400" />
-              Monitoramento em Tempo Real
-            </div>
-            <button
-              type="button"
-              onClick={() => set_mostrar_modal_telao(false)}
-              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold flex items-center gap-2 border border-slate-700 transition-colors cursor-pointer text-sm"
-            >
-              <X className="w-4 h-4" /> Fechar Monitoramento
-            </button>
-          </div>
-          <div className="max-w-7xl mx-auto w-full flex-1">
-            <TelaoAoVivo />
           </div>
         </div>
       )}
