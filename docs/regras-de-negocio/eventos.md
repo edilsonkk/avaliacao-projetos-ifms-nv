@@ -23,8 +23,15 @@ O evento (feira) é a unidade de isolamento de todos os dados. Código: `src/fea
 
 ## Configurações do evento
 
-`ModalConfiguracoesEvento` grava somente as colunas oficiais de `eventos`: `nome_evento`, `data_evento`,
-`horario_inicio`, `horario_fim`, `minutos_timeout_lock`, `cota_avaliacoes_padrao` e `sistema_liberado`.
+`ModalConfiguracoesEvento` grava as colunas oficiais de `eventos`: `nome_evento`, `data_evento`, `horario_inicio`,
+`horario_fim`, `minutos_timeout_lock`, `cota_avaliacoes_padrao` e `sistema_liberado`, mais os parâmetros de acesso
+dos avaliadores (`minutos_validade_pareamento`, `minutos_validade_codigo_acesso`, `tamanho_codigo`,
+`max_tentativas_codigo` e `metodos_vinculo`).
+
+- **Formas de vincular o celular** (`metodos_vinculo`): uma por evento — `pareamento` (padrão) ou `codigo`. Ver
+  [credenciamento](credenciamento-e-pessoas.md#login).
+- **Travar o questionário no primeiro avaliador** (`fixar_questionario_primeira_avaliacao`, padrão ligado): ver
+  [avaliação](avaliacao-e-quarentena.md#fluxo-do-avaliador).
 
 - Não envie `data_inicio`/`data_fim` (legadas) nem string ISO em `limite_corte` (coluna numérica). Isso já causou
   `PGRST204` e perda silenciosa da data (ver [troubleshooting](../operacao/troubleshooting.md#data-do-evento-não-era-salva)).

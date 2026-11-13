@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PainelAparelhoAvaliador } from '@/features/staff/components/PainelAparelhoAvaliador';
 import { supabase } from '@/lib/supabase';
 
@@ -8,9 +8,23 @@ vi.mock('@/lib/supabase', () => ({
   supabase: { rpc: vi.fn() },
 }));
 
+// O painel pergunta ao banco qual forma de vínculo o evento libera (fn_meu_perfil)
+vi.mock('@/features/auth', () => ({
+  obterPerfilSessao: vi.fn(),
+}));
+
+import { obterPerfilSessao } from '@/features/auth';
+
 const avaliador = { id_usuario: 'u-1', nome: 'Maria Souza' };
+const perfilCom = (metodos: 'pareamento' | 'codigo') =>
+  ({ autenticado: true, papel: 'staff' as const, id_usuario: 's-1', nome: 'Ana', email: 'ana@ifms.edu.br', id_evento: 'e-1', metodos_vinculo: metodos });
 
 describe('PainelAparelhoAvaliador', () => {
+  // Sem resposta do banco sobre a forma liberada, o balcão mostra as duas (não trava no dia da feira)
+  beforeEach(() => {
+    vi.mocked(obterPerfilSessao).mockResolvedValue({} as never);
+  });
+
   it('deve parear o celular com o código mostrado nele', async () => {
     // Arrange
     const user = userEvent.setup();
@@ -55,6 +69,32 @@ describe('PainelAparelhoAvaliador', () => {
     expect(supabase.rpc).toHaveBeenCalledWith('fn_gerar_codigo_acesso', { p_id_usuario: 'u-1' });
     expect(await screen.findByRole('status', { name: /código de acesso gerado/i })).toHaveTextContent('R8W2KT');
     expect(screen.getByText(/não será exibido de novo/i)).toBeInTheDocument();
+  });
+
+  it('deve mostrar só o pareamento quando o evento libera só pareamento', async () => {
+    // Arrange
+    vi.mocked(obterPerfilSessao).mockResolvedValue(perfilCom('pareamento') as never);
+
+    // Act
+    render(<PainelAparelhoAvaliador avaliador={avaliador} aparelhoVinculado={false} aoFechar={vi.fn()} aoAlterarVinculo={vi.fn()} />);
+
+    // Assert
+    expect(await screen.findByLabelText(/código mostrado no celular/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /gerar código de acesso/i })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('deve mostrar só o código de acesso quando o evento libera só código', async () => {
+    // Arrange
+    vi.mocked(obterPerfilSessao).mockResolvedValue(perfilCom('codigo') as never);
+
+    // Act
+    render(<PainelAparelhoAvaliador avaliador={avaliador} aparelhoVinculado={false} aoFechar={vi.fn()} aoAlterarVinculo={vi.fn()} />);
+
+    // Assert
+    expect(await screen.findByRole('button', { name: /gerar código de acesso/i })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByLabelText(/código mostrado no celular/i)).not.toBeInTheDocument());
   });
 
   it('deve desvincular o aparelho só quando há um vinculado', async () => {

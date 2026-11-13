@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { KeyRound, Link2, Loader2, Smartphone, Unlink, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { obterPerfilSessao, type MetodoVinculo } from '@/features/auth';
 
 interface PropriedadesPainelAparelho {
   avaliador: { id_usuario: string; nome: string };
@@ -14,8 +15,14 @@ const formatarHora = (iso: string) =>
   new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
 /**
- * Balcão do Staff: vincula o celular do avaliador (pareamento ou código de acesso)
- * ou desvincula um aparelho perdido/trocado. Tudo pelas RPCs com checagem is_staff().
+ * Balcão do Staff: vincula o celular do avaliador ou desvincula um aparelho perdido/trocado.
+ * Tudo pelas RPCs com checagem `is_staff()`.
+ *
+ * Cada evento libera **uma** forma de vínculo (`eventos.metodos_vinculo`), e o painel mostra só
+ * ela: antes oferecia as duas sempre, e no evento configurado para pareamento o botão "Gerar código
+ * de acesso" só podia dar erro ("Código de acesso desativado neste evento"). A forma vem de
+ * `fn_meu_perfil`, que é `SECURITY DEFINER` e já devolve o parâmetro do evento ativo. Se a consulta
+ * falhar, as duas aparecem — no dia da feira, é melhor o balcão tentar do que travar.
  */
 export const PainelAparelhoAvaliador: React.FC<PropriedadesPainelAparelho> = ({
   avaliador,
@@ -27,6 +34,24 @@ export const PainelAparelhoAvaliador: React.FC<PropriedadesPainelAparelho> = ({
   const [codigoGerado, setCodigoGerado] = useState<{ codigo: string; expira_em: string } | null>(null);
   const [processando, setProcessando] = useState<'parear' | 'gerar' | 'desvincular' | null>(null);
   const [mensagem, setMensagem] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null);
+  const [metodo, setMetodo] = useState<MetodoVinculo | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    obterPerfilSessao()
+      .then((perfil) => {
+        if (ativo) setMetodo(perfil.metodos_vinculo);
+      })
+      .catch(() => {
+        // Sem a resposta do banco, o balcão segue com as duas formas à mostra
+      });
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  const mostrarPareamento = metodo !== 'codigo';
+  const mostrarCodigoAcesso = metodo !== 'pareamento';
 
   const executar = async (acao: 'parear' | 'gerar' | 'desvincular') => {
     setMensagem(null);
@@ -85,6 +110,7 @@ export const PainelAparelhoAvaliador: React.FC<PropriedadesPainelAparelho> = ({
           </p>
         )}
 
+        {mostrarPareamento && (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -110,7 +136,9 @@ export const PainelAparelhoAvaliador: React.FC<PropriedadesPainelAparelho> = ({
             </button>
           </div>
         </form>
+        )}
 
+        {mostrarCodigoAcesso && (
         <div className="space-y-2 border-t border-slate-100 dark:border-slate-700 pt-4">
           <p className="text-xs text-slate-500">Sem câmera ou fora do balcão? Gere um código para o avaliador digitar no celular.</p>
           {codigoGerado ? (
@@ -129,6 +157,7 @@ export const PainelAparelhoAvaliador: React.FC<PropriedadesPainelAparelho> = ({
             </button>
           )}
         </div>
+        )}
 
         {aparelhoVinculado && (
           <div className="border-t border-slate-100 dark:border-slate-700 pt-4">

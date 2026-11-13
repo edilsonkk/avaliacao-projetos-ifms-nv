@@ -16,7 +16,7 @@ vi.mock('@/features/auth/vinculoAparelho', () => ({
 
 const perfil = (
   papel: PerfilSessao['papel'],
-  metodos: PerfilSessao['metodos_vinculo'] = 'ambos',
+  metodos: PerfilSessao['metodos_vinculo'] = 'pareamento',
   sessao_equipe = false
 ): PerfilSessao => ({
   autenticado: true,
@@ -81,13 +81,16 @@ describe('VinculoAvaliador', () => {
     // Arrange
     const user = userEvent.setup();
     const aoVincular = vi.fn();
-    vi.mocked(vinculo.obterPerfilSessao).mockResolvedValueOnce(perfil(null)).mockResolvedValue(perfil('avaliador'));
+    // Evento configurado para código de acesso: o celular abre direto no formulário (não há mais
+    // alternância, porque cada evento libera uma forma só)
+    vi.mocked(vinculo.obterPerfilSessao)
+      .mockResolvedValueOnce(perfil(null, 'codigo'))
+      .mockResolvedValue(perfil('avaliador', 'codigo'));
     vi.mocked(vinculo.vincularComCodigoAcesso).mockResolvedValue({ ok: true });
     render(<VinculoAvaliador aoVincular={aoVincular} intervaloConsultaMs={60_000} />);
 
     // Act
-    await user.click(await screen.findByRole('button', { name: /tenho um código de acesso/i }));
-    await user.type(screen.getByLabelText(/e-mail cadastrado/i), 'maria@ifms.edu.br');
+    await user.type(await screen.findByLabelText(/e-mail cadastrado/i), 'maria@ifms.edu.br');
     await user.type(screen.getByRole('textbox', { name: /código de acesso/i }), 'r8w2kt');
     await user.click(screen.getByRole('button', { name: /vincular este celular/i }));
 
@@ -114,6 +117,19 @@ describe('VinculoAvaliador', () => {
     expect(aoVincular).not.toHaveBeenCalled();
   });
 
+  it('não deve oferecer o código de acesso quando o evento só aceita pareamento', async () => {
+    // Arrange
+    vi.mocked(vinculo.obterPerfilSessao).mockResolvedValue(perfil(null, 'pareamento'));
+
+    // Act
+    render(<VinculoAvaliador aoVincular={vi.fn()} />);
+
+    // Assert
+    await waitFor(() => expect(vinculo.solicitarCodigoPareamento).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: /tenho um código de acesso/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/e-mail cadastrado/i)).not.toBeInTheDocument();
+  });
+
   it('deve esconder o pareamento quando o evento só aceita código de acesso', async () => {
     // Arrange
     vi.mocked(vinculo.obterPerfilSessao).mockResolvedValue(perfil(null, 'codigo'));
@@ -129,7 +145,7 @@ describe('VinculoAvaliador', () => {
 
   it('deve avisar quando o navegador está logado como Admin ou Staff, sem pedir código de pareamento', async () => {
     // Arrange: mesma máquina em que o Admin abriu o sistema
-    vi.mocked(vinculo.obterPerfilSessao).mockResolvedValue(perfil('admin', 'ambos', true));
+    vi.mocked(vinculo.obterPerfilSessao).mockResolvedValue(perfil('admin', 'pareamento', true));
 
     // Act
     render(<VinculoAvaliador aoVincular={vi.fn()} />);
@@ -144,7 +160,7 @@ describe('VinculoAvaliador', () => {
     // Arrange
     const user = userEvent.setup();
     vi.mocked(vinculo.obterPerfilSessao)
-      .mockResolvedValueOnce(perfil('admin', 'ambos', true))
+      .mockResolvedValueOnce(perfil('admin', 'pareamento', true))
       .mockResolvedValue(perfil(null));
     render(<VinculoAvaliador aoVincular={vi.fn()} intervaloConsultaMs={60_000} />);
     await screen.findByRole('heading', { name: /logado como admin ou staff/i });

@@ -8,7 +8,6 @@ import {
   solicitarCodigoPareamento,
   vincularComCodigoAcesso,
   type CodigoPareamento,
-  type MetodoVinculo,
   type PerfilSessao,
 } from '../vinculoAparelho';
 
@@ -31,7 +30,6 @@ const formatarHora = (iso: string) =>
 export const VinculoAvaliador: React.FC<PropriedadesVinculoAvaliador> = ({ aoVincular, intervaloConsultaMs = 3000 }) => {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  const [metodos, setMetodos] = useState<MetodoVinculo>('ambos');
   const [modo, setModo] = useState<Modo>('pareamento');
   const [pareamento, setPareamento] = useState<CodigoPareamento | null>(null);
   const [expirado, setExpirado] = useState(false);
@@ -69,7 +67,6 @@ export const VinculoAvaliador: React.FC<PropriedadesVinculoAvaliador> = ({ aoVin
         return;
       }
       setSessaoEquipe(false);
-      setMetodos(perfil.metodos_vinculo);
       const modoInicial: Modo = perfil.metodos_vinculo === 'codigo' ? 'codigo' : 'pareamento';
       setModo(modoInicial);
       if (modoInicial === 'pareamento') await gerarCodigo();
@@ -124,12 +121,6 @@ export const VinculoAvaliador: React.FC<PropriedadesVinculoAvaliador> = ({ aoVin
       pararRetomada();
     };
   }, [modo, pareamento, expirado, aoVincular, intervaloConsultaMs]);
-
-  const mudarModo = async (novo: Modo) => {
-    setErro(null);
-    setModo(novo);
-    if (novo === 'pareamento' && !pareamento) await gerarCodigo();
-  };
 
   const enviarCodigoAcesso = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -254,18 +245,6 @@ export const VinculoAvaliador: React.FC<PropriedadesVinculoAvaliador> = ({ aoVin
             Vincular este celular
           </button>
         </form>
-      )}
-
-      {!sessaoEquipe && metodos === 'ambos' && (
-        <div className="text-center">
-          <button
-            type="button"
-            onClick={() => mudarModo(modo === 'pareamento' ? 'codigo' : 'pareamento')}
-            className="text-xs font-semibold text-slate-600 dark:text-slate-300 underline underline-offset-2"
-          >
-            {modo === 'pareamento' ? 'Tenho um código de acesso' : 'Prefiro parear com o Staff'}
-          </button>
-        </div>
       )}
     </div>
   );

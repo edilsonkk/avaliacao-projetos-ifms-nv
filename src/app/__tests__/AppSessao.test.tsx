@@ -33,7 +33,7 @@ vi.mock('@/features/auth', () => ({
 }));
 
 const perfil = (papel: 'avaliador' | 'staff' | 'admin' | null) => ({
-  autenticado: papel !== null, papel, id_usuario: papel ? 'u-1' : null, nome: null, email: null, id_evento: null, metodos_vinculo: 'ambos' as const,
+  autenticado: papel !== null, papel, id_usuario: papel ? 'u-1' : null, nome: null, email: null, id_evento: null, metodos_vinculo: 'pareamento' as const,
 });
 
 describe('App - sessão confirmada pelo banco', () => {
