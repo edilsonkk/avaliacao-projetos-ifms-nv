@@ -27,6 +27,7 @@ const eventoGravado = {
   tamanho_codigo: 7,
   max_tentativas_codigo: 4,
   metodos_vinculo: 'pareamento',
+  fixar_questionario_primeira_avaliacao: false,
 };
 
 let updates: Record<string, unknown>[] = [];
@@ -112,14 +113,14 @@ describe('ModalConfiguracoesEvento - acesso dos avaliadores', () => {
     // Act
     await user.clear(tamanho);
     await user.type(tamanho, '8');
-    await user.selectOptions(screen.getByLabelText(/formas de vincular o celular/i), 'ambos');
+    await user.selectOptions(screen.getByLabelText(/formas de vincular o celular/i), 'codigo');
     await user.click(screen.getByRole('button', { name: /salvar configurações/i }));
 
     // Assert
     await waitFor(() => expect(updates).toHaveLength(1));
     expect(updates[0]).toMatchObject({
       tamanho_codigo: 8,
-      metodos_vinculo: 'ambos',
+      metodos_vinculo: 'codigo',
       minutos_validade_pareamento: 8,
       minutos_validade_codigo_acesso: 20,
       max_tentativas_codigo: 4,
@@ -137,7 +138,35 @@ describe('ModalConfiguracoesEvento - acesso dos avaliadores', () => {
     await user.hover(dica);
 
     // Assert
-    expect(dica).toHaveAccessibleDescription(/pareamento pelo staff.*código de acesso.*ambos/i);
+    expect(dica).toHaveAccessibleDescription(/pareamento pelo staff.*código de acesso/i);
+  });
+
+  it('deve ler e gravar a trava do questionário no primeiro avaliador', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    renderizar();
+    const trava = await screen.findByRole('checkbox', { name: /travar o questionário no primeiro avaliador/i });
+
+    // Assert: o evento está com a trava desligada no banco
+    expect(trava).not.toBeChecked();
+
+    // Act
+    await user.click(trava);
+    await user.click(screen.getByRole('button', { name: /salvar configurações/i }));
+
+    // Assert
+    await waitFor(() => expect(updates).toHaveLength(1));
+    expect(updates[0]).toMatchObject({ fixar_questionario_primeira_avaliacao: true });
+  });
+
+  it('deve oferecer uma forma por evento: só pareamento ou só código, sem "ambos"', async () => {
+    // Arrange / Act
+    renderizar();
+    const select = await screen.findByLabelText(/formas de vincular o celular/i);
+
+    // Assert
+    const opcoes = Array.from(select.querySelectorAll('option')).map((o) => o.getAttribute('value'));
+    expect(opcoes).toEqual(['pareamento', 'codigo']);
   });
 
   it('deve ter dica em todos os campos da configuração', async () => {
@@ -149,9 +178,10 @@ describe('ModalConfiguracoesEvento - acesso dos avaliadores', () => {
     await screen.findByLabelText(/tamanho dos códigos/i);
     await screen.findByRole('checkbox', { name: /exigir segundo fator/i });
 
-    // Assert: 7 campos do evento + 5 de acesso + 2 de segurança das contas + zona de perigo
+    // Assert: 8 campos do evento (inclui a trava do questionário) + 5 de acesso
+    // + 2 de segurança das contas + zona de perigo
     const dicas = screen.getAllByRole('button', { name: /mais informações/i });
-    expect(dicas).toHaveLength(15);
+    expect(dicas).toHaveLength(16);
     dicas.forEach((d) => expect(d).toHaveAccessibleDescription(/.{30,}/));
   });
 

@@ -23,6 +23,7 @@ import type { Projeto } from '@/types/database';
 import { Botao, CampoArea, Dica, Modal, useAvisos } from '@/components/ui';
 import { ImagemEvento } from '@/components/layout/IdentidadeVisual';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
+import { obterPerfilSessao } from '@/features/auth';
 import { TelaLogin } from '@/features/auth';
 
 export type StatusJanelaAvaliacao =
@@ -250,6 +251,20 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
   // Estados do formulário de avaliação - null por padrão para exigir confirmação de presença
   const [status_presenca, set_status_presenca] = useState<'presente' | 'ausente' | null>(null);
+  /**
+   * O evento trava o questionário no primeiro avaliador? Vem de `fn_meu_perfil` (SECURITY DEFINER),
+   * que lê `eventos.fixar_questionario_primeira_avaliacao`. Desligado, cada avaliador escolhe o
+   * questionário mesmo que o projeto já tenha um fixado de antes. Começa `true`, o padrão do banco.
+   */
+  const [trava_questionario, set_trava_questionario] = useState<boolean>(true);
+  /**
+   * Questionário vinculado a este avaliador no evento (`avaliadores_evento.id_questionario`), e se
+   * ele é de voto popular. Vinculado: o celular abre direto nele, sem lista de escolha, e a nota
+   * corre por fora da média técnica, da cota e da quarentena — quem separa é o banco.
+   */
+  const [questionario_vinculado, set_questionario_vinculado] = useState<string | null>(null);
+  const [sou_votante, set_sou_votante] = useState<boolean>(false);
+  const [perfil_carregado, set_perfil_carregado] = useState<boolean>(false);
   const [horario_inicio_avaliacao, set_horario_inicio_avaliacao] = useState<string | null>(null);
   const [lista_criterios, set_lista_criterios] = useState<CriterioLikert[]>([]);
   const [notas_criterios, set_notas_criterios] = useState<Record<string, number>>({});
@@ -322,11 +337,16 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
     try {
       // Só os questionários do evento: os de eventos anteriores seriam recusados no envio
       const id_evt = await obter_id_evento_ativo();
-      const { data: dados, error } = await supabase
+      let consulta = supabase
         .from('questionarios')
-        .select('id_questionario, titulo, escala_minima, escala_maxima')
-        .eq('id_evento', id_evt)
-        .order('titulo', { ascending: true });
+        .select('id_questionario, titulo, escala_minima, escala_maxima, is_voto_popular')
+        .eq('id_evento', id_evt);
+      // Avaliador vinculado só usa o questionário dele. Os outros não podem nem ver os de voto
+      // popular: a lista viraria duas opções e a auto-seleção de um questionário só se perderia.
+      consulta = questionario_vinculado
+        ? consulta.eq('id_questionario', questionario_vinculado)
+        : consulta.eq('is_voto_popular', false);
+      const { data: dados, error } = await consulta.order('titulo', { ascending: true });
       if (error) throw error;
 
       const formatados: QuestionarioItem[] = (dados || []).map((q: any) => ({
@@ -413,6 +433,13 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
     }
   };
 
+  /**
+   * O questionário que o projeto impõe a esta avaliação. Com a trava desligada, nenhum: o avaliador
+   * escolhe, mesmo que `id_questionario_fixado` tenha ficado gravado de um evento anterior.
+   */
+  const questionario_imposto = (): string | null =>
+    questionario_vinculado || (trava_questionario ? projeto_atual?.id_questionario_fixado || null : null);
+
   // Avaliador escolhe um questionário da lista
   const selecionar_questionario = async (questOuId: QuestionarioItem | string) => {
     const id_quest = typeof questOuId === 'string' ? questOuId : questOuId.id_questionario;
@@ -422,7 +449,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
   // Botão "Trocar Questionário" (visível apenas se não houver questionário fixado no banco)
   const trocar_questionario = () => {
-    if (projeto_atual?.id_questionario_fixado) {
+    if (trava_questionario && projeto_atual?.id_questionario_fixado) {
       console.warn('Não é permitido trocar questionário já fixado no banco.');
       return;
     }
@@ -431,9 +458,31 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
     set_notas_criterios({});
   };
 
-  // Pré-carrega os questionários disponíveis no início
+  // Pré-carrega os questionários disponíveis. Espera o perfil: a lista depende do vínculo do
+  // avaliador (um votante só vê o questionário de voto popular dele, e os outros não o veem).
   useEffect(() => {
+    if (!perfil_carregado) return;
     carregar_questionarios_disponiveis();
+  }, [perfil_carregado, questionario_vinculado]);
+
+  // A trava do questionário é do evento: quem decide é o banco, não esta tela
+  useEffect(() => {
+    let ativo = true;
+    obterPerfilSessao()
+      .then((perfil) => {
+        if (!ativo) return;
+        set_trava_questionario(perfil.fixar_questionario !== false);
+        set_questionario_vinculado(perfil.id_questionario_vinculado || null);
+        set_sou_votante(perfil.voto_popular === true);
+        set_perfil_carregado(true);
+      })
+      .catch(() => {
+        // Sem resposta, mantém o padrão do banco (travado) e segue sem vínculo
+        if (ativo) set_perfil_carregado(true);
+      });
+    return () => {
+      ativo = false;
+    };
   }, []);
 
   // 3. LOGOUT (Limpeza Absoluta):
@@ -717,7 +766,9 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
         // Verifica se todos os projetos ativos já atingiram a cota padrão do evento
         let feiraFinalizada = false;
         try {
-          if (id_evento_ativo) {
+          // fn_feira_concluida mede a cota técnica: para o votante ela diria "concluída"
+          // enquanto ainda há projeto para votar.
+          if (id_evento_ativo && !sou_votante) {
             // Calculado no banco: considera cota customizada e projetos fora da competição
             const { data: concluida } = await supabase.rpc('fn_feira_concluida', { p_id_evento: id_evento_ativo });
             feiraFinalizada = concluida === true;
@@ -728,6 +779,8 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
         if (feiraFinalizada) {
           setMensagemFila("Avaliações da Feira Concluídas! Todos os projetos atingiram a cota necessária.");
+        } else if (sou_votante) {
+          setMensagemFila("Você já votou em todos os projetos.");
         } else {
           setMensagemFila("Todos os projetos disponíveis já foram avaliados ou bloqueados por conflito institucional/modalidade.");
         }
@@ -966,7 +1019,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
       if (!projeto_atual) return;
 
-      const id_fixado = projeto_atual.id_questionario_fixado;
+      const id_fixado = questionario_vinculado || (trava_questionario ? projeto_atual.id_questionario_fixado : null);
       if (id_fixado) {
         await carregarPerguntasQuestionario(id_fixado);
       } else {
@@ -1036,7 +1089,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
       const { error: erro_rpc } = await supabase.rpc('fn_enviar_avaliacao', {
         p_id_usuario: avaliadorId,
         p_id_projeto: id_projeto_alvo,
-        p_id_questionario: idQuestionarioEscolhido || projetoAtual.id_questionario_fixado || null,
+        p_id_questionario: questionario_vinculado || idQuestionarioEscolhido || (trava_questionario ? projetoAtual.id_questionario_fixado : null) || null,
         p_respostas: respostasRpc,
         p_parecer: parecer_avaliador,
         p_tempo_presenca: timestampInicio,
@@ -1555,7 +1608,11 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                   <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex items-center justify-between gap-3">
                     <div className="truncate">
                       <span className="text-legenda font-bold uppercase tracking-wider text-acao-texto block">
-                        {projeto_atual.id_questionario_fixado ? 'Questionário Oficial Vinculado' : 'Questionário Escolhido'}
+                        {sou_votante
+                          ? 'Voto Popular'
+                          : questionario_imposto()
+                          ? 'Questionário Oficial Vinculado'
+                          : 'Questionário Escolhido'}
                       </span>
                       <h3 className="text-apoio font-extrabold text-texto truncate">
                         {questionarios_disponiveis.find((q) => q.id_questionario === id_questionario_selecionado)?.titulo ||
@@ -1563,8 +1620,8 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                       </h3>
                     </div>
 
-                    {/* Botão Trocar Questionário (visível apenas se não houver questionário fixado no banco) */}
-                    {!projeto_atual.id_questionario_fixado && (
+                    {/* Botão Trocar Questionário: só quando o projeto não impõe um questionário */}
+                    {!questionario_imposto() && (
                       <button
                         type="button"
                         onClick={trocar_questionario}
