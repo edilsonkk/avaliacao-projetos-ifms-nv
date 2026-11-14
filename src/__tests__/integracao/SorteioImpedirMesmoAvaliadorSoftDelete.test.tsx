@@ -5,6 +5,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { TelaAvaliador } from '@/features/avaliacao';
 import { AtribuicaoForcada } from '@/features/atribuicoes';
 import { supabase } from '@/lib/supabase';
+import { rpcPaginavel } from '@/test/rpcPaginavel';
 import fs from 'fs';
 import path from 'path';
 
@@ -62,7 +63,7 @@ describe('Auditoria de Regressão: Impedir Reatribuição do Mesmo Projeto ao Me
 
     vi.mocked(supabase.rpc).mockImplementation((nomeFn: string, params: any) => {
       chamadasRpcSorteio.push({ nomeFn, params });
-      return Promise.resolve({ data: null, error: null }) as any;
+      return rpcPaginavel({ data: null, error: null }) as any;
     });
   });
 

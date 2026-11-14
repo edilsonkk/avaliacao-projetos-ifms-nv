@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
  */
 
 export type PapelSessao = 'admin' | 'staff' | 'avaliador';
-export type MetodoVinculo = 'ambos' | 'pareamento' | 'codigo';
+export type MetodoVinculo = 'pareamento' | 'codigo';
 
 export interface PerfilSessao {
   autenticado: boolean;
@@ -17,6 +17,15 @@ export interface PerfilSessao {
   email: string | null;
   id_evento: string | null;
   metodos_vinculo: MetodoVinculo;
+  /**
+   * O evento trava o questionário no primeiro avaliador (`eventos.fixar_questionario_primeira_avaliacao`).
+   * Desligado, cada avaliador escolhe o questionário do projeto.
+   */
+  fixar_questionario?: boolean;
+  /** Questionário vinculado a este avaliador no evento; vazio: usa o questionário do projeto. */
+  id_questionario_vinculado?: string | null;
+  /** O questionário vinculado é de voto popular (o avaliador é um votante). */
+  voto_popular?: boolean;
   /** O navegador está com a conta de Admin/Staff: não serve como sessão do aparelho do avaliador. */
   sessao_equipe?: boolean;
 }

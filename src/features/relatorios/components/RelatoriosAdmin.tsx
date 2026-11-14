@@ -9,6 +9,8 @@ import {
   Users,
   FolderGit2,
   UserX,
+  Undo2,
+  Heart,
   Building2,
   BarChart3,
   ChevronDown,
@@ -27,8 +29,17 @@ import {
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { buscarTodas } from '@/lib/buscarTodas';
 import { baixarCsv } from '@/lib/csv';
+import { formatarDataHora } from '@/lib/formatoData';
+import {
+  agruparImpedimentosPorAvaliador,
+  filtrarImpedimentos,
+  ordenarImpedimentos,
+  type ColunaImpedimento,
+  type ItemImpedimento,
+} from '../impedimentos';
+import { AbaImpedimentos } from './AbaImpedimentos';
 import { formatarAjuste, formatarNota } from '@/lib/formatoNota';
-import { MemorialAvaliacao, buscarMemorialProjeto, type MemorialProjeto } from '@/features/auditoria';
+import { MemorialAvaliacao, MemorialMediaProjeto, buscarMemorialProjeto, type MemorialProjeto } from '@/features/auditoria';
 import { tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { CabecalhoOrdenavel, compararNatural } from '@/components/ui/CabecalhoOrdenavel';
 import { ImagemEvento } from '@/components/layout/IdentidadeVisual';
@@ -75,6 +86,26 @@ export interface RelatorioProjetoItem {
   cota_avaliacoes?: number;
   contagem_ausencia?: number;
   detalhes_avaliacoes?: DetalheAvaliacaoProjeto[];
+  /** Voto popular do projeto: corre fora da média técnica. */
+  total_votos_populares?: number;
+  media_voto_popular?: number | null;
+}
+
+/** Uma linha do voto popular (`fn_relatorio_voto_popular_completo`). */
+export interface RelatorioVotoPopularItem {
+  id_projeto: string;
+  codigo_projeto: string | null;
+  titulo: string;
+  modalidade: string;
+  area_tematica: string;
+  nome_instituicao: string | null;
+  total_votos: number;
+  media_simples: number;
+  media_bayesiana: number;
+  media_evento: number;
+  peso_ancora: number;
+  posicao: number;
+  votos: { id_avaliacao?: string; avaliador_nome?: string; nota_final?: number; data?: string }[];
 }
 
 export interface RelatorioAvaliadorItem {
@@ -130,6 +161,23 @@ export interface RelatorioAusenciaGrupoItem {
   avaliador_email: string;
   total_ausencias: number;
   ausencias: RelatorioAusenciaItem[];
+}
+
+/** Uma devolução: o projeto que o avaliador devolveu à fila por conflito de interesse. */
+export interface RelatorioDevolucaoItem {
+  id_usuario: string;
+  avaliador_nome: string;
+  avaliador_email: string;
+  id_projeto: string;
+  id_evento?: string;
+  codigo_projeto?: string | null;
+  projeto_titulo: string;
+  projeto_estande?: string | null;
+  projeto_modalidade?: string | null;
+  projeto_area?: string | null;
+  projeto_instituicao?: string | null;
+  data_devolucao?: string | null;
+  total_avaliacoes_atuais: number;
 }
 
 export interface RelatorioInstituicaoItem {
@@ -229,21 +277,9 @@ export const formatarHorario = (isoStr?: string | null): string => {
   }
 };
 
-export const formatarDataHora = (isoStr?: string | null): string => {
-  if (!isoStr) return '--';
-  try {
-    const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return isoStr;
-    return d.toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return isoStr;
-  }
-};
+// Mora em src/lib/formatoData.ts para os subcomponentes das abas usarem a mesma formatação
+// sem importar deste arquivo (import circular). Reexportado para não mudar a API do módulo.
+export { formatarDataHora };
 
 export const formatarDataDDMMYYYY = (dataStr?: string | null): string => {
   if (!dataStr) return '--';
@@ -273,13 +309,15 @@ export const RelatoriosAdmin: React.FC<{
   const idEvento = id_evento_ativo || '';
   // Navegação das 5 Abas
   const [aba_ativa, set_aba_ativa] = useState<
-    'projetos' | 'avaliadores' | 'ausencias' | 'instituicoes' | 'indicadores'
+    'projetos' | 'avaliadores' | 'ausencias' | 'devolucoes' | 'votopopular' | 'instituicoes' | 'indicadores'
   >('projetos');
 
   // Estados dos Datasets
   const [dados_projetos, set_dados_projetos] = useState<RelatorioProjetoItem[]>([]);
   const [dados_avaliadores, set_dados_avaliadores] = useState<RelatorioAvaliadorItem[]>([]);
   const [dados_ausencias, set_dados_ausencias] = useState<RelatorioAusenciaItem[]>([]);
+  const [dados_devolucoes, set_dados_devolucoes] = useState<RelatorioDevolucaoItem[]>([]);
+  const [dados_voto_popular, set_dados_voto_popular] = useState<RelatorioVotoPopularItem[]>([]);
   const [carregando, set_carregando] = useState<boolean>(true);
   const [mensagem_erro, set_mensagem_erro] = useState<string | null>(null);
   const [termo_busca, set_termo_busca] = useState<string>('');
@@ -318,6 +356,8 @@ export const RelatoriosAdmin: React.FC<{
 
   // Accordion de Avaliadores e Ausências (id_usuario expandido)
   const [avaliadoresAusenciasExpandidos, setAvaliadoresAusenciasExpandidos] = useState<Set<string>>(new Set());
+  // Accordion de Avaliadores e Devoluções (id_usuario expandido)
+  const [avaliadoresDevolucoesExpandidos, setAvaliadoresDevolucoesExpandidos] = useState<Set<string>>(new Set());
 
   // Accordion de Instituições (id_instituicao expandido)
   const [instituicoesExpandidas, setInstituicoesExpandidas] = useState<Set<string>>(new Set());
@@ -431,6 +471,26 @@ export const RelatoriosAdmin: React.FC<{
     }
   };
 
+  const alternarExpansaoAvaliadorDevolucoes = (idUsuario: string) => {
+    setAvaliadoresDevolucoesExpandidos((prev) => {
+      const novo = new Set(prev);
+      if (novo.has(idUsuario)) {
+        novo.delete(idUsuario);
+      } else {
+        novo.add(idUsuario);
+      }
+      return novo;
+    });
+  };
+
+  const alternarTodosAvaliadoresDevolucoes = (expandir: boolean, todosIds: string[]) => {
+    if (expandir) {
+      setAvaliadoresDevolucoesExpandidos(new Set(todosIds));
+    } else {
+      setAvaliadoresDevolucoesExpandidos(new Set());
+    }
+  };
+
   const alternarExpansaoInstituicao = (idInst: string) => {
     setInstituicoesExpandidas((prev) => {
       const novo = new Set(prev);
@@ -464,6 +524,8 @@ export const RelatoriosAdmin: React.FC<{
       set_dados_projetos([]);
       set_dados_avaliadores([]);
       set_dados_ausencias([]);
+      set_dados_devolucoes([]);
+      set_dados_voto_popular([]);
       setIndicadores(null);
       set_carregando(false);
       return;
@@ -479,10 +541,14 @@ export const RelatoriosAdmin: React.FC<{
         .maybeSingle();
       if (erroEvento) throw erroEvento;
 
-      const [rpcProjs, rpcAvals, rpcAus, avaliadoresEvento, quarentena] = await Promise.all([
+      const [rpcProjs, rpcAvals, rpcAus, rpcDev, rpcVp, avaliadoresEvento, quarentena] = await Promise.all([
         buscarTodas<any>(() => rpc('fn_relatorio_projetos_completo', { p_id_evento: idEvento }).order('id_projeto')),
         buscarTodas<any>(() => rpc('fn_relatorio_avaliadores_completo', { p_id_evento: idEvento }).order('id_usuario')),
         buscarTodas<any>(() => rpc('fn_relatorio_ausencias_completo', { p_id_evento: idEvento }).order('id_usuario')),
+        buscarTodas<any>(() => rpc('fn_relatorio_devolucoes_completo', { p_id_evento: idEvento }).order('id_usuario')),
+        // Ordena por `posicao`: o ORDER BY do PostgREST substitui o da função, e por
+        // id_projeto a classificação sairia em ordem de UUID, com a posição embaralhada.
+        buscarTodas<any>(() => rpc('fn_relatorio_voto_popular_completo', { p_id_evento: idEvento }).order('posicao')),
         buscarTodas<{ is_credenciado: boolean | null; usuarios: { papel: string | null } | { papel: string | null }[] | null }>(() =>
           supabase
             .from('avaliadores_evento')
@@ -514,6 +580,8 @@ export const RelatoriosAdmin: React.FC<{
         is_check_in_realizado: p.is_check_in_realizado === true,
         is_fora_da_competicao: p.is_fora_da_competicao === true,
         cota_avaliacoes: Number(p.cota_avaliacoes) || undefined,
+        total_votos_populares: Number(p.total_votos_populares ?? 0),
+        media_voto_popular: p.media_voto_popular === null || p.media_voto_popular === undefined ? null : Number(p.media_voto_popular),
         detalhes_avaliacoes: (Array.isArray(p.detalhes_avaliacoes) ? p.detalhes_avaliacoes : []).map((d: any) => ({
           ...d,
           nota_final: Number(d.nota_final),
@@ -562,6 +630,27 @@ export const RelatoriosAdmin: React.FC<{
             projeto_area: item.projeto_area || null,
             projeto_instituicao: item.projeto_instituicao || null,
             data_ausencia: item.data_ausencia || null,
+            total_avaliacoes_atuais: Number(item.total_avaliacoes_atuais ?? 0),
+          });
+        });
+      });
+
+      const devolucoesCarregadas: RelatorioDevolucaoItem[] = [];
+      rpcDev.forEach((g: any) => {
+        (Array.isArray(g.devolucoes) ? g.devolucoes : []).forEach((item: any) => {
+          devolucoesCarregadas.push({
+            id_usuario: g.id_usuario,
+            avaliador_nome: g.avaliador_nome || '',
+            avaliador_email: g.avaliador_email || '',
+            id_projeto: item.id_projeto,
+            id_evento: item.id_evento,
+            codigo_projeto: item.codigo_projeto || null,
+            projeto_titulo: item.projeto_titulo || 'Projeto sem título',
+            projeto_estande: item.projeto_estande || null,
+            projeto_modalidade: item.projeto_modalidade || null,
+            projeto_area: item.projeto_area || null,
+            projeto_instituicao: item.projeto_instituicao || null,
+            data_devolucao: item.data_devolucao || null,
             total_avaliacoes_atuais: Number(item.total_avaliacoes_atuais ?? 0),
           });
         });
@@ -749,12 +838,32 @@ export const RelatoriosAdmin: React.FC<{
       set_dados_projetos(projsCarregados);
       set_dados_avaliadores(avalsCarregados);
       set_dados_ausencias(ausenciasCarregadas);
+      set_dados_devolucoes(devolucoesCarregadas);
+      set_dados_voto_popular(
+        (rpcVp || []).map((linha: any) => ({
+          id_projeto: linha.id_projeto,
+          codigo_projeto: linha.codigo_projeto || null,
+          titulo: linha.titulo || 'Projeto sem título',
+          modalidade: linha.modalidade || '',
+          area_tematica: linha.area_tematica || '',
+          nome_instituicao: linha.nome_instituicao || null,
+          total_votos: Number(linha.total_votos ?? 0),
+          media_simples: Number(linha.media_simples ?? 0),
+          media_bayesiana: Number(linha.media_bayesiana ?? 0),
+          media_evento: Number(linha.media_evento ?? 0),
+          peso_ancora: Number(linha.peso_ancora ?? 0),
+          posicao: Number(linha.posicao ?? 0),
+          votos: Array.isArray(linha.votos) ? linha.votos : [],
+        })),
+      );
     } catch (e) {
       console.error('Erro ao buscar relatórios:', e);
       set_mensagem_erro(`Não foi possível carregar os relatórios: ${tratarErroEscritaAdmin(e)}`);
       set_dados_projetos([]);
       set_dados_avaliadores([]);
       set_dados_ausencias([]);
+      set_dados_devolucoes([]);
+      set_dados_voto_popular([]);
       setIndicadores(null);
     } finally {
       set_carregando(false);
@@ -808,8 +917,10 @@ export const RelatoriosAdmin: React.FC<{
         valA = a.total_avaliacoes;
         valB = b.total_avaliacoes;
       } else if (colunaProj === 'media') {
-        valA = a.media_geral;
-        valB = b.media_geral;
+        // A célula exibe a média final (com o ajuste da comissão): ordenar por media_geral
+        // deixava projeto ajustado fora de ordem na própria coluna que a pessoa clicou.
+        valA = a.media_final ?? a.media_geral;
+        valB = b.media_final ?? b.media_geral;
       }
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoProj === 'asc' ? valA - valB : valB - valA;
@@ -837,8 +948,10 @@ export const RelatoriosAdmin: React.FC<{
         valA = a.total_avaliacoes;
         valB = b.total_avaliacoes;
       } else if (colunaProj === 'media') {
-        valA = a.media_geral;
-        valB = b.media_geral;
+        // A célula exibe a média final (com o ajuste da comissão): ordenar por media_geral
+        // deixava projeto ajustado fora de ordem na própria coluna que a pessoa clicou.
+        valA = a.media_final ?? a.media_geral;
+        valB = b.media_final ?? b.media_geral;
       }
       if (typeof valA === 'number' && typeof valB === 'number') {
         return direcaoProj === 'asc' ? valA - valB : valB - valA;
@@ -1072,97 +1185,67 @@ export const RelatoriosAdmin: React.FC<{
     });
   }, [ausencias_filtradas, colunaAus, direcaoAus]);
 
-  const avaliadoresAusenciasAgrupados = useMemo(() => {
-    const mapa = new Map<string, RelatorioAusenciaGrupoItem>();
+  // Voto popular: a ordem vem do banco (média bayesiana); aqui só a busca da tela
+  const votoPopularOrdenado = useMemo(() => {
+    const termo = termo_busca.trim().toLowerCase();
+    if (!termo) return dados_voto_popular;
+    return dados_voto_popular.filter((item) =>
+      [item.codigo_projeto, item.titulo, item.modalidade, item.area_tematica, item.nome_instituicao]
+        .some((campo) => (campo || '').toLowerCase().includes(termo)),
+    );
+  }, [dados_voto_popular, termo_busca]);
 
-    dados_ausencias.forEach((item) => {
-      const chave = item.id_usuario || item.avaliador_email || item.avaliador_nome;
-      if (!mapa.has(chave)) {
-        mapa.set(chave, {
-          id_usuario: item.id_usuario || chave,
-          avaliador_nome: item.avaliador_nome,
-          avaliador_email: item.avaliador_email,
-          total_ausencias: 0,
-          ausencias: [],
-        });
-      }
-      const grupo = mapa.get(chave)!;
-      grupo.ausencias.push(item);
-    });
+  // Ausências e devoluções têm a mesma forma: agrupar, filtrar e ordenar vive em
+  // `../impedimentos` (funções puras), usado pelas duas abas.
+  const colunaImpedimento: ColunaImpedimento = colunaAus === 'avaliador' ? 'avaliador' : 'total';
 
-    return Array.from(mapa.values()).map((g) => ({
-      ...g,
-      total_ausencias: g.ausencias.length,
-    }));
-  }, [dados_ausencias]);
+  const paraItemImpedimento = (
+    item: RelatorioAusenciaItem | RelatorioDevolucaoItem,
+    data?: string | null,
+  ): ItemImpedimento => ({
+    id_usuario: item.id_usuario,
+    avaliador_nome: item.avaliador_nome,
+    avaliador_email: item.avaliador_email,
+    id_projeto: item.id_projeto,
+    codigo_projeto: item.codigo_projeto,
+    projeto_titulo: item.projeto_titulo,
+    projeto_modalidade: item.projeto_modalidade,
+    projeto_area: item.projeto_area,
+    projeto_instituicao: item.projeto_instituicao,
+    data_registro: data ?? null,
+    total_avaliacoes_atuais: item.total_avaliacoes_atuais,
+  });
 
-  const avaliadoresAusencias_filtrados = useMemo(() => {
-    const t = termo_busca.trim().toLowerCase();
-    if (!t) return avaliadoresAusenciasAgrupados;
+  const gruposAusenciasTodos = useMemo(
+    () => agruparImpedimentosPorAvaliador(dados_ausencias.map((a) => paraItemImpedimento(a, a.data_ausencia))),
+    [dados_ausencias],
+  );
 
-    return avaliadoresAusenciasAgrupados
-      .map((g) => {
-        const nomeBate =
-          g.avaliador_nome.toLowerCase().includes(t) ||
-          g.avaliador_email.toLowerCase().includes(t);
-        const ausFiltradas = g.ausencias.filter((aus) => {
-          const cod = (aus.codigo_projeto || '').toLowerCase();
-          const tit = aus.projeto_titulo.toLowerCase();
-          const mod = (aus.projeto_modalidade || '').toLowerCase();
-          const ar = (aus.projeto_area || '').toLowerCase();
-          return cod.includes(t) || tit.includes(t) || mod.includes(t) || ar.includes(t);
-        });
+  const gruposAusencias = useMemo(
+    () => ordenarImpedimentos(filtrarImpedimentos(gruposAusenciasTodos, termo_busca), colunaImpedimento, direcaoAus),
+    [gruposAusenciasTodos, termo_busca, colunaImpedimento, direcaoAus],
+  );
 
-        if (nomeBate) return g;
-        if (ausFiltradas.length > 0) {
-          return {
-            ...g,
-            ausencias: ausFiltradas,
-          };
-        }
-        return null;
-      })
-      .filter((g): g is RelatorioAusenciaGrupoItem => g !== null);
-  }, [avaliadoresAusenciasAgrupados, termo_busca]);
+  // 100% dos registros do evento, para a impressão em PDF (ignora a busca da tela)
+  const gruposAusenciasParaImpressao = useMemo(
+    () => ordenarImpedimentos(gruposAusenciasTodos, colunaImpedimento, direcaoAus),
+    [gruposAusenciasTodos, colunaImpedimento, direcaoAus],
+  );
 
-  const avaliadoresAusencias_ordenados = useMemo(() => {
-    return [...avaliadoresAusencias_filtrados].sort((a, b) => {
-      let valA: any = '';
-      let valB: any = '';
-      if (colunaAus === 'avaliador') {
-        valA = a.avaliador_nome;
-        valB = b.avaliador_nome;
-      } else {
-        valA = a.total_ausencias;
-        valB = b.total_ausencias;
-      }
-      if (typeof valA === 'number' && typeof valB === 'number') {
-        return direcaoAus === 'asc' ? valA - valB : valB - valA;
-      }
-      const comp = compararNatural(String(valA), String(valB));
-      return direcaoAus === 'asc' ? comp : -comp;
-    });
-  }, [avaliadoresAusencias_filtrados, colunaAus, direcaoAus]);
+  const gruposDevolucoesTodos = useMemo(
+    () => agruparImpedimentosPorAvaliador(dados_devolucoes.map((d) => paraItemImpedimento(d, d.data_devolucao))),
+    [dados_devolucoes],
+  );
 
-  // Lista Completa de Avaliadores e Ausências Ordenadas (100% dos dados para Impressão em PDF)
-  const avaliadoresAusencias_todas_ordenadas = useMemo(() => {
-    return [...avaliadoresAusenciasAgrupados].sort((a, b) => {
-      let valA: any = '';
-      let valB: any = '';
-      if (colunaAus === 'avaliador') {
-        valA = a.avaliador_nome;
-        valB = b.avaliador_nome;
-      } else {
-        valA = a.total_ausencias;
-        valB = b.total_ausencias;
-      }
-      if (typeof valA === 'number' && typeof valB === 'number') {
-        return direcaoAus === 'asc' ? valA - valB : valB - valA;
-      }
-      const comp = compararNatural(String(valA), String(valB));
-      return direcaoAus === 'asc' ? comp : -comp;
-    });
-  }, [avaliadoresAusenciasAgrupados, colunaAus, direcaoAus]);
+  const gruposDevolucoes = useMemo(
+    () => ordenarImpedimentos(filtrarImpedimentos(gruposDevolucoesTodos, termo_busca), colunaImpedimento, direcaoAus),
+    [gruposDevolucoesTodos, termo_busca, colunaImpedimento, direcaoAus],
+  );
+
+  const gruposDevolucoesParaImpressao = useMemo(
+    () => ordenarImpedimentos(gruposDevolucoesTodos, colunaImpedimento, direcaoAus),
+    [gruposDevolucoesTodos, colunaImpedimento, direcaoAus],
+  );
 
   // 4. Instituições e Projetos Submetidos (Agrupamento Hierárquico)
   const instituicoesAgrupadas = useMemo(() => {
@@ -1298,7 +1381,7 @@ export const RelatoriosAdmin: React.FC<{
     let nomeArquivo = '';
 
     if (aba_ativa === 'projetos') {
-      linhas = [['Código do Projeto', 'Título do Projeto', 'Instituição', 'Modalidade', 'Área Temática', 'Avaliações', 'Média das Notas', 'Ajuste de Comissão', 'Média Final', 'Notas Individuais']];
+      linhas = [['Código do Projeto', 'Título do Projeto', 'Instituição', 'Modalidade', 'Área Temática', 'Avaliações', 'Média das Notas', 'Ajuste de Comissão', 'Média Final', 'Votos Populares', 'Média do Voto Popular', 'Notas Individuais']];
       projetos_ordenados.forEach((p) => {
         linhas.push([
           p.codigo_projeto || '',
@@ -1310,6 +1393,8 @@ export const RelatoriosAdmin: React.FC<{
           p.media_geral.toFixed(2),
           Number(p.ajuste_media ?? 0).toFixed(2),
           Number(p.media_final ?? p.media_geral).toFixed(2),
+          String(p.total_votos_populares ?? 0),
+          p.media_voto_popular === null || p.media_voto_popular === undefined ? '' : p.media_voto_popular.toFixed(2),
           p.notas.map((n) => n.toFixed(2)).join('; '),
         ]);
       });
@@ -1346,6 +1431,42 @@ export const RelatoriosAdmin: React.FC<{
         ]);
       });
       nomeArquivo = 'relatorio_avaliadores_e_ausencias.csv';
+    } else if (aba_ativa === 'devolucoes') {
+      linhas = [['Avaliador', 'E-mail', 'Código Projeto', 'Título do Projeto', 'Modalidade', 'Área Temática', 'Instituição', 'Data/Hora Devolução', 'Status Projeto']];
+      gruposDevolucoes.forEach((grupo) => {
+        grupo.itens.forEach((item) => {
+          linhas.push([
+            grupo.avaliador_nome,
+            grupo.avaliador_email,
+            item.codigo_projeto || '',
+            item.projeto_titulo,
+            item.projeto_modalidade || '',
+            item.projeto_area || '',
+            item.projeto_instituicao || '',
+            formatarDataHora(item.data_registro),
+            item.total_avaliacoes_atuais > 0 ? `Avaliado (${item.total_avaliacoes_atuais} aval.)` : 'Sem avaliação',
+          ]);
+        });
+      });
+      nomeArquivo = 'relatorio_avaliadores_e_devolucoes.csv';
+    } else if (aba_ativa === 'votopopular') {
+      linhas = [['Posição', 'Código Projeto', 'Título do Projeto', 'Modalidade', 'Área Temática', 'Instituição', 'Votos', 'Média dos Votos', 'Média Bayesiana', 'Média do Evento', 'Peso da Âncora']];
+      votoPopularOrdenado.forEach((item) => {
+        linhas.push([
+          String(item.posicao),
+          item.codigo_projeto || '',
+          item.titulo,
+          item.modalidade,
+          item.area_tematica,
+          item.nome_instituicao || '',
+          String(item.total_votos),
+          item.media_simples.toFixed(2),
+          item.media_bayesiana.toFixed(2),
+          item.media_evento.toFixed(2),
+          item.peso_ancora.toFixed(2),
+        ]);
+      });
+      nomeArquivo = 'relatorio_voto_popular.csv';
     } else if (aba_ativa === 'instituicoes') {
       linhas = [['Instituição', 'Código Projeto', 'Título do Projeto', 'Modalidade', 'Área Temática', 'Status/Média']];
       instituicoes_ordenadas.forEach((inst) => {
@@ -1474,6 +1595,8 @@ export const RelatoriosAdmin: React.FC<{
               {aba_ativa === 'projetos' && 'Relatório de Projetos e Médias'}
               {aba_ativa === 'avaliadores' && 'Relatório de Avaliadores e Notas Atribuídas'}
               {aba_ativa === 'ausencias' && 'Relatório de Avaliadores e Ausências Atribuídas'}
+              {aba_ativa === 'devolucoes' && 'Relatório de Avaliadores e Devoluções Atribuídas'}
+              {aba_ativa === 'votopopular' && 'Relatório de Voto Popular'}
               {aba_ativa === 'instituicoes' && 'Relatório de Instituições e Projetos Submetidos'}
               {aba_ativa === 'indicadores' && `Indicadores do evento: ${indicadores?.nome_evento || 'Evento Ativo'}`}
             </h2>
@@ -1488,7 +1611,9 @@ export const RelatoriosAdmin: React.FC<{
             <p className="text-[10px] font-mono text-slate-500 mt-0.5">
               {aba_ativa === 'projetos' && `Total: ${projetos_todos_ordenados.length} projetos`}
               {aba_ativa === 'avaliadores' && `Total: ${avaliadoresNotas_todos_ordenados.length} avaliadores`}
-              {aba_ativa === 'ausencias' && `Total: ${avaliadoresAusencias_todas_ordenadas.length} avaliadores`}
+              {aba_ativa === 'ausencias' && `Total: ${gruposAusenciasParaImpressao.length} avaliadores`}
+              {aba_ativa === 'devolucoes' && `Total: ${gruposDevolucoesParaImpressao.length} avaliadores`}
+              {aba_ativa === 'votopopular' && `Total: ${dados_voto_popular.length} projetos votados`}
               {aba_ativa === 'instituicoes' && `Total: ${instituicoes_todas_ordenadas.length} instituições`}
             </p>
           </div>
@@ -1611,7 +1736,43 @@ export const RelatoriosAdmin: React.FC<{
               Avaliadores e Ausências Atribuídas
             </span>
             <span className="text-[10px] font-extrabold px-1.5 py-0.2 bg-slate-200 dark:bg-slate-700 rounded-full">
-              {avaliadoresAusenciasAgrupados.length}
+              {gruposAusenciasTodos.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => set_aba_ativa('devolucoes')}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              aba_ativa === 'devolucoes'
+                ? 'bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-400 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Undo2 className="w-3.5 h-3.5 shrink-0" />
+            <span onClick={() => set_aba_ativa('devolucoes')}>
+              Avaliadores e Devoluções Atribuídas
+            </span>
+            <span className="text-[10px] font-extrabold px-1.5 py-0.2 bg-slate-200 dark:bg-slate-700 rounded-full">
+              {gruposDevolucoesTodos.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => set_aba_ativa('votopopular')}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              aba_ativa === 'votopopular'
+                ? 'bg-white dark:bg-slate-800 text-fuchsia-700 dark:text-fuchsia-400 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Heart className="w-3.5 h-3.5 shrink-0" />
+            <span onClick={() => set_aba_ativa('votopopular')}>
+              Voto Popular
+            </span>
+            <span className="text-[10px] font-extrabold px-1.5 py-0.2 bg-slate-200 dark:bg-slate-700 rounded-full">
+              {dados_voto_popular.length}
             </span>
           </button>
 
@@ -1662,8 +1823,10 @@ export const RelatoriosAdmin: React.FC<{
                   ? 'Buscar por código, título, modalidade...'
                   : aba_ativa === 'avaliadores'
                   ? 'Buscar por avaliador, projeto...'
-                  : aba_ativa === 'ausencias'
+                  : aba_ativa === 'ausencias' || aba_ativa === 'devolucoes'
                   ? 'Buscar por avaliador, projeto...'
+                  : aba_ativa === 'votopopular'
+                  ? 'Buscar por código, título, modalidade...'
                   : 'Buscar por escola ou trabalho...'
               }
               className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-white focus:outline-none"
@@ -1710,12 +1873,13 @@ export const RelatoriosAdmin: React.FC<{
                   <CabecalhoOrdenavel coluna="modalidade" rotulo="Modalidade / Área" ativa={colunaProj} direcao={direcaoProj} aoOrdenar={alternarOrdenacaoProj} />
                   <CabecalhoOrdenavel coluna="avaliacoes" rotulo="Avaliações" ativa={colunaProj} direcao={direcaoProj} aoOrdenar={alternarOrdenacaoProj} />
                   <CabecalhoOrdenavel coluna="media" rotulo="Média Geral" ativa={colunaProj} direcao={direcaoProj} aoOrdenar={alternarOrdenacaoProj} />
+                  <th scope="col" className="px-4 py-3 text-right">Voto Popular</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {projetos_ordenados.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-slate-500 font-semibold">
+                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500 font-semibold">
                       Nenhum projeto encontrado no relatório.
                     </td>
                   </tr>
@@ -1786,12 +1950,28 @@ export const RelatoriosAdmin: React.FC<{
                               </span>
                             )}
                           </td>
+                          {/* Voto popular: fora da média técnica, por isso em coluna própria */}
+                          <td className="px-4 py-3 text-right print:hidden">
+                            {(item.total_votos_populares ?? 0) > 0 ? (
+                              <>
+                                <span className="font-mono text-apoio font-bold text-fuchsia-700 dark:text-fuchsia-300">
+                                  {formatarNota(item.media_voto_popular)} pts
+                                </span>
+                                <span className="block text-legenda text-slate-500">
+                                  {item.total_votos_populares}{' '}
+                                  {item.total_votos_populares === 1 ? 'voto' : 'votos'}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-legenda text-slate-400">—</span>
+                            )}
+                          </td>
                         </tr>
 
                         {/* ACCORDION EXPANSÍVEL NA TELA: Todas as notas recebidas com avaliador, data e parecer */}
                         {expandido && (
                           <tr className="bg-slate-50/80 dark:bg-slate-900/60 border-t border-b border-emerald-100 dark:border-emerald-900/40">
-                            <td colSpan={5} className="px-6 py-4">
+                            <td colSpan={6} className="px-6 py-4">
                               <div className="space-y-3">
                                 <div className="flex items-center justify-between">
                                   <h4 className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
@@ -1802,6 +1982,9 @@ export const RelatoriosAdmin: React.FC<{
                                     Média: {formatarNota(item.media_final ?? item.media_geral)} pts
                                   </span>
                                 </div>
+
+                                {/* A conta da média do projeto, aberta: de onde vem o número da coluna Média Geral */}
+                                <MemorialMediaProjeto variante="resumo" projeto={item} />
 
                                 {detalhes.length > 0 && (
                                   <div className="print:hidden">
@@ -1927,6 +2110,13 @@ export const RelatoriosAdmin: React.FC<{
                       {Number(item.ajuste_media ?? 0) !== 0 &&
                         ` (média das notas ${formatarNota(item.media_geral)} ${formatarAjuste(item.ajuste_media)})`}
                     </div>
+                    {item.notas.length > 0 && (
+                      <div className="text-legenda text-slate-700">
+                        {`Conta da média: (${item.notas.map((n) => formatarNota(n)).join(' + ')}) ÷ ${item.notas.length} = ${formatarNota(item.media_geral)}`}
+                        {` | ajuste da comissão: ${formatarAjuste(item.ajuste_media ?? 0)}`}
+                        {` | média final: ${formatarNota(item.media_final ?? item.media_geral)} pts`}
+                      </div>
+                    )}
                     {/* Avaliações recebidas recuadas à direita */}
                     <div className="ml-6 border-l-2 border-slate-400 pl-3 mt-1.5 space-y-1 text-[10px] text-slate-800">
                       <span className="font-bold text-[10px] text-slate-900 uppercase tracking-wider block">
@@ -2216,262 +2406,138 @@ export const RelatoriosAdmin: React.FC<{
     )}
 
       {/* ==================================================================== */}
-      {/* ABA 3: AVALIADORES E AUSÊNCIAS ATRIBUÍDAS (NOVO - Accordion por Avaliador) */}
+      {/* ABA 3: AVALIADORES E AUSÊNCIAS ATRIBUÍDAS (Accordion por Avaliador) */}
       {/* ==================================================================== */}
       {!carregando && aba_ativa === 'ausencias' && (
-        <>
-          <div className="space-y-4 print:hidden">
-          {/* Barra de Ações do Accordion */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-              Total de Avaliadores com Ausências:{' '}
-              <strong className="text-slate-900 dark:text-white">
-                {avaliadoresAusencias_ordenados.length}
-              </strong>
-            </span>
-            <div className="flex items-center gap-2 print:hidden">
-              <button
-                type="button"
-                onClick={() =>
-                  alternarTodosAvaliadoresAusencias(
-                    true,
-                    avaliadoresAusencias_ordenados.map((a) => a.id_usuario)
-                  )
-                }
-                className="px-3 py-1 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Expandir Todos
-              </button>
-              <button
-                type="button"
-                onClick={() => alternarTodosAvaliadoresAusencias(false, [])}
-                className="px-3 py-1 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Recolher Todos
-              </button>
-            </div>
-          </div>
-
-          {avaliadoresAusencias_ordenados.length === 0 ? (
-            <div className="p-12 text-center text-slate-500 font-semibold border border-slate-200 dark:border-slate-700 rounded-2xl">
-              Nenhuma ausência registrada com os filtros informados.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {avaliadoresAusencias_ordenados.map((ausGrupo) => {
-                const expandido = avaliadoresAusenciasExpandidos.has(ausGrupo.id_usuario);
-
-                return (
-                  <div
-                    key={ausGrupo.id_usuario}
-                    className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-2xs transition-all print:border-0 print:border-b print:border-slate-300 print:rounded-none print:shadow-none print-avoid-break print:pb-3 print:mb-3"
-                  >
-                    {/* Linha do Avaliador (Cabeçalho Accordion) */}
-                    <div
-                      onClick={() => alternarExpansaoAvaliadorAusencias(ausGrupo.id_usuario)}
-                      className="p-4 bg-slate-50 dark:bg-slate-900/60 hover:bg-slate-100 dark:hover:bg-slate-800/80 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors select-none print:bg-transparent print:p-0 print:border-none print:cursor-default"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 print:hidden">
-                          <UserX className="w-4 h-4 shrink-0" />
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-black text-slate-900 dark:text-white print:text-black print:text-sm">
-                            {ausGrupo.avaliador_nome}
-                          </h3>
-                          <span className="text-[11px] text-slate-500 dark:text-slate-400 print:text-slate-600">
-                            {ausGrupo.avaliador_email}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3 text-xs font-semibold print:hidden">
-                        <span className="px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-[11px] font-bold">
-                          {ausGrupo.total_ausencias} {ausGrupo.total_ausencias === 1 ? 'ausência atribuída' : 'ausências atribuídas'}
-                        </span>
-                        <div className="p-1 rounded-lg text-slate-400 hover:text-slate-600">
-                          {expandido ? (
-                            <ChevronDown className="w-5 h-5" />
-                          ) : (
-                            <ChevronRight className="w-5 h-5" />
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Resumo textual do avaliador exclusivo para impressão em PDF */}
-                      <div className="hidden print:block text-right text-xs font-semibold text-slate-800">
-                        <span>{ausGrupo.total_ausencias} {ausGrupo.total_ausencias === 1 ? 'ausência atribuída' : 'ausências atribuídas'}</span>
-                      </div>
-                    </div>
-
-                    {/* Projetos Marcados como Ausente */}
-                    <div className={`${expandido ? 'block' : 'hidden'} print:block overflow-x-auto border-t border-slate-200 dark:border-slate-700 print:border-none print:mt-1`}>
-                      {/* Tabela interativa para tela */}
-                      <table className="w-full text-left text-xs bg-white dark:bg-slate-800 print:hidden">
-                        <thead className="bg-slate-100/60 dark:bg-slate-900/40 text-slate-500 uppercase font-extrabold text-[10px]">
-                          <tr>
-                            <th className="px-4 py-2.5">Código</th>
-                            <th className="px-4 py-2.5">Projeto Marcado como Ausente</th>
-                            <th className="px-4 py-2.5">Modalidade / Área</th>
-                            <th className="px-4 py-2.5 text-center">Data / Hora Ausência</th>
-                            <th className="px-4 py-2.5 text-center">Status Atual do Projeto</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
-                          {ausGrupo.ausencias.map((item, idx) => (
-                            <tr key={`${item.id_projeto}_${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                              <td className="px-4 py-3 font-mono">
-                                <span className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-[11px] font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
-                                  {item.codigo_projeto || 'N/I'}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="font-bold text-slate-900 dark:text-white block">
-                                  {item.projeto_titulo}
-                                </span>
-                                {item.projeto_instituicao && (
-                                  <span className="text-[10px] text-slate-500 block truncate">
-                                    {item.projeto_instituicao}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="font-semibold text-slate-800 dark:text-slate-200 block">
-                                  {item.projeto_modalidade || 'Sem modalidade'}
-                                </span>
-                                <span className="text-[10px] text-slate-500">
-                                  {item.projeto_area || 'Sem área temática'}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-center font-mono text-[11px] text-slate-600 dark:text-slate-300">
-                                {formatarDataHora(item.data_ausencia)}
-                              </td>
-                              <td className="px-4 py-3 text-center">
-                                {item.total_avaliacoes_atuais > 0 ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                    <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                                    Avaliado ({item.total_avaliacoes_atuais} {item.total_avaliacoes_atuais === 1 ? 'aval.' : 'aval.'})
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                                    <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                                    Permanece sem avaliação
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-
-                      {/* Lista textual recuada exclusiva para impressão em PDF */}
-                      <div className="hidden print:block ml-6 pl-3 border-l-2 border-slate-400 space-y-1.5 pt-1 text-xs text-slate-800">
-                        <span className="font-bold text-[10px] text-slate-900 uppercase tracking-wider block">
-                          Projetos Marcados como Ausente ({ausGrupo.ausencias.length}):
-                        </span>
-                        {ausGrupo.ausencias.map((item, idx) => {
-                          const statusTexto = item.total_avaliacoes_atuais > 0
-                            ? `Avaliado (${item.total_avaliacoes_atuais} ${item.total_avaliacoes_atuais === 1 ? 'avaliação' : 'avaliações'})`
-                            : 'Permanece sem avaliação';
-
-                          return (
-                            <div key={`${item.id_projeto}_${idx}`} className="space-y-0.5">
-                              <div className="flex flex-wrap items-baseline gap-x-2">
-                                <span className="font-bold text-slate-900">
-                                  • [{item.codigo_projeto || 'N/I'}] {item.projeto_titulo}
-                                </span>
-                                {(item.projeto_modalidade || item.projeto_area) && (
-                                  <span className="text-[10px] text-slate-600">
-                                    ({[item.projeto_modalidade, item.projeto_area].filter(Boolean).join(' • ')})
-                                  </span>
-                                )}
-                                {item.projeto_instituicao && (
-                                  <span className="text-[10px] text-slate-600">
-                                    — {item.projeto_instituicao}
-                                  </span>
-                                )}
-                                <span className="text-[10px] text-slate-600 font-mono">
-                                  [Registro: {formatarDataHora(item.data_ausencia)}]
-                                </span>
-                                <span className="text-[10px] font-semibold text-slate-900">
-                                  — Status: {statusTexto}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* LISTA PURAMENTE TEXTUAL EXCLUSIVA PARA IMPRESSÃO EM PDF (100% DOS DADOS) */}
-        <div className="hidden print:block space-y-3">
-          {avaliadoresAusencias_todas_ordenadas.length === 0 ? (
-            <p className="text-xs text-slate-500 italic py-4">Nenhuma ausência registrada no evento.</p>
-          ) : (
-            avaliadoresAusencias_todas_ordenadas.map((ausGrupo) => (
-              <div key={ausGrupo.id_usuario} className="border-b border-slate-300 pb-2 mb-2 print-avoid-break text-xs">
-                <div className="font-bold text-slate-900 text-sm">
-                  {ausGrupo.avaliador_nome} ({ausGrupo.avaliador_email})
-                </div>
-                <div className="text-[11px] text-slate-700 font-medium">
-                  Total de Ausências Atribuídas: {ausGrupo.total_ausencias}
-                </div>
-                {/* Projetos marcados como ausente recuados à direita */}
-                <div className="ml-6 border-l-2 border-slate-400 pl-3 mt-1.5 space-y-1 text-[10px] text-slate-800">
-                  <span className="font-bold text-[10px] text-slate-900 uppercase tracking-wider block">
-                    Projetos Marcados como Ausente ({ausGrupo.ausencias.length}):
-                  </span>
-                  {ausGrupo.ausencias.length === 0 ? (
-                    <p className="italic text-slate-500">Nenhuma ausência registrada.</p>
-                  ) : (
-                    ausGrupo.ausencias.map((item, idx) => {
-                      const statusTexto = item.total_avaliacoes_atuais > 0
-                        ? `Avaliado (${item.total_avaliacoes_atuais} ${item.total_avaliacoes_atuais === 1 ? 'avaliação' : 'avaliações'})`
-                        : 'Permanece sem avaliação';
-
-                      return (
-                        <div key={`${item.id_projeto}_${idx}`} className="space-y-0.5">
-                          <div className="flex flex-wrap items-baseline gap-x-2">
-                            <span className="font-bold text-slate-900">
-                              • [{item.codigo_projeto || 'N/I'}] {item.projeto_titulo}
-                            </span>
-                            {(item.projeto_modalidade || item.projeto_area) && (
-                              <span className="text-[10px] text-slate-600">
-                                ({[item.projeto_modalidade, item.projeto_area].filter(Boolean).join(' • ')})
-                              </span>
-                            )}
-                            {item.projeto_instituicao && (
-                              <span className="text-[10px] text-slate-600">
-                                — {item.projeto_instituicao}
-                              </span>
-                            )}
-                            <span className="text-[10px] text-slate-600 font-mono">
-                              [Registro: {formatarDataHora(item.data_ausencia)}]
-                            </span>
-                            <span className="text-[10px] font-semibold text-slate-900">
-                              — Status: {statusTexto}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </>
-    )}
+        <AbaImpedimentos
+          grupos={gruposAusencias}
+          gruposParaImpressao={gruposAusenciasParaImpressao}
+          expandidos={avaliadoresAusenciasExpandidos}
+          aoAlternar={alternarExpansaoAvaliadorAusencias}
+          aoAlternarTodos={alternarTodosAvaliadoresAusencias}
+          icone={<UserX className="w-4 h-4 shrink-0" />}
+          rotulos={{
+            totalAvaliadores: 'Total de Avaliadores com Ausências:',
+            unidadeSingular: 'ausência atribuída',
+            unidadePlural: 'ausências atribuídas',
+            vazioComFiltro: 'Nenhuma ausência registrada com os filtros informados.',
+            vazioNoEvento: 'Nenhuma ausência registrada no evento.',
+            colunaProjeto: 'Projeto Marcado como Ausente',
+            colunaData: 'Data / Hora Ausência',
+            tituloLista: 'Projetos Marcados como Ausente',
+            totalPorAvaliador: 'Total de Ausências Atribuídas',
+          }}
+        />
+      )}
 
       {/* ==================================================================== */}
-      {/* ABA 4: INSTITUIÇÕES E PROJETOS SUBMETIDOS (Accordion por Escola) */}
+      {/* ABA 4: AVALIADORES E DEVOLUÇÕES ATRIBUÍDAS (Accordion por Avaliador) */}
+      {/* Devolução = botão "Devolver (Conflito de Interesse)" na tela do avaliador */}
+      {/* ==================================================================== */}
+      {!carregando && aba_ativa === 'devolucoes' && (
+        <AbaImpedimentos
+          grupos={gruposDevolucoes}
+          gruposParaImpressao={gruposDevolucoesParaImpressao}
+          expandidos={avaliadoresDevolucoesExpandidos}
+          aoAlternar={alternarExpansaoAvaliadorDevolucoes}
+          aoAlternarTodos={alternarTodosAvaliadoresDevolucoes}
+          icone={<Undo2 className="w-4 h-4 shrink-0" />}
+          rotulos={{
+            totalAvaliadores: 'Total de Avaliadores com Devoluções:',
+            unidadeSingular: 'devolução atribuída',
+            unidadePlural: 'devoluções atribuídas',
+            vazioComFiltro: 'Nenhuma devolução registrada com os filtros informados.',
+            vazioNoEvento: 'Nenhuma devolução registrada no evento.',
+            colunaProjeto: 'Projeto Devolvido à Fila',
+            colunaData: 'Data / Hora Devolução',
+            tituloLista: 'Projetos Devolvidos à Fila',
+            totalPorAvaliador: 'Total de Devoluções Atribuídas',
+          }}
+        />
+      )}
+
+      {/* ==================================================================== */}
+      {/* ABA 5: VOTO POPULAR (média bayesiana, calculada no banco) */}
+      {/* ==================================================================== */}
+      {!carregando && aba_ativa === 'votopopular' && (
+        <div className="space-y-4">
+          {dados_voto_popular.length === 0 ? (
+            <div className="p-12 text-center text-slate-500 font-semibold border border-slate-200 dark:border-slate-700 rounded-2xl">
+              Nenhum voto popular registrado no evento.
+            </div>
+          ) : (
+            <>
+              {/* A conta da média bayesiana, aberta: de onde vem a ordem da lista */}
+              <div className="p-3 rounded-2xl border border-fuchsia-200 dark:border-fuchsia-900/60 bg-fuchsia-50/60 dark:bg-fuchsia-950/30 space-y-1">
+                <h4 className="text-xs font-extrabold text-slate-900 dark:text-white">Como esta lista é ordenada</h4>
+                <p className="text-xs text-slate-700 dark:text-slate-300">
+                  Média bayesiana ={' '}
+                  <span className="font-mono">
+                    (votos ÷ (votos + {formatarNota(dados_voto_popular[0].peso_ancora)})) × média do projeto
+                    + ({formatarNota(dados_voto_popular[0].peso_ancora)} ÷ (votos +{' '}
+                    {formatarNota(dados_voto_popular[0].peso_ancora)})) × {formatarNota(dados_voto_popular[0].media_evento)}
+                  </span>
+                  . A âncora {formatarNota(dados_voto_popular[0].media_evento)} é a média de todos os votos do evento, e
+                  o peso {formatarNota(dados_voto_popular[0].peso_ancora)} é a média de votos por projeto votado. Quanto
+                  menos votos um projeto tem, mais a nota dele é puxada para a âncora — e o peso cresce conforme a
+                  votação avança, então as posições mudam durante a feira.
+                </p>
+              </div>
+
+              <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-2xl print:border-0">
+                <table className="w-full text-left text-xs">
+                  <caption className="sr-only">Voto popular por projeto, ordenado pela média bayesiana</caption>
+                  <thead className="bg-slate-100/60 dark:bg-slate-900/40 text-slate-500 uppercase font-extrabold text-[10px]">
+                    <tr>
+                      <th className="px-4 py-2.5 text-center">Posição</th>
+                      <th className="px-4 py-2.5">Código</th>
+                      <th className="px-4 py-2.5">Projeto</th>
+                      <th className="px-4 py-2.5">Modalidade / Área</th>
+                      <th className="px-4 py-2.5 text-center">Votos</th>
+                      <th className="px-4 py-2.5 text-right">Média dos Votos</th>
+                      <th className="px-4 py-2.5 text-right">Média Bayesiana</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                    {votoPopularOrdenado.map((item) => (
+                      <tr key={item.id_projeto} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors print-avoid-break">
+                        <td className="px-4 py-3 text-center font-black text-slate-900 dark:text-white">{item.posicao}º</td>
+                        <td className="px-4 py-3 font-mono">
+                          <span className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-[11px] font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
+                            {item.codigo_projeto || 'N/I'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="font-bold text-slate-900 dark:text-white block">{item.titulo}</span>
+                          {item.nome_instituicao && (
+                            <span className="text-[10px] text-slate-500 block truncate">{item.nome_instituicao}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="font-semibold text-slate-800 dark:text-slate-200 block">{item.modalidade}</span>
+                          <span className="text-[10px] text-slate-500">{item.area_tematica}</span>
+                        </td>
+                        <td className="px-4 py-3 text-center font-mono font-bold text-slate-700 dark:text-slate-200">
+                          {item.total_votos}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-slate-600 dark:text-slate-300">
+                          {formatarNota(item.media_simples)} pts
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-base font-black text-fuchsia-700 dark:text-fuchsia-300">
+                          {formatarNota(item.media_bayesiana)} pts
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* ABA 6: INSTITUIÇÕES E PROJETOS SUBMETIDOS (Accordion por Escola) */}
       {/* ==================================================================== */}
       {!carregando && aba_ativa === 'instituicoes' && (
         <>
@@ -2750,7 +2816,7 @@ export const RelatoriosAdmin: React.FC<{
     )}
 
       {/* ==================================================================== */}
-      {/* ABA 5: INDICADORES GERENCIAIS (DASHBOARD EXECUTIVO) */}
+      {/* ABA 6: INDICADORES GERENCIAIS (DASHBOARD EXECUTIVO) */}
       {/* ==================================================================== */}
       {!carregando && aba_ativa === 'indicadores' && indicadores && (
         <div className="space-y-6">

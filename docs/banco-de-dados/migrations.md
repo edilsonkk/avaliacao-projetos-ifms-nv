@@ -168,3 +168,18 @@ de dados, restaure o backup gerado antes do `db push` ([restaurar backup](../ope
 | `20261031060000_crud_modelos_questionario.sql` | CRUD dos questionários prontos: editar (atualiza a cópia ainda não usada do evento ativo), criar, salvar questionário como modelo, excluir e restaurar os 7 originais |
 | `20261101190000_sessao_do_aparelho_do_avaliador.sql` | O celular só é vinculado numa sessão só do aparelho: pareamento e código de acesso recusam a sessão de Admin/Staff (antes de consumir o código) e `fn_meu_perfil` devolve `sessao_equipe` |
 | `20261101200000_identidade_visual_evento.sql` | `eventos.url_icone` e `eventos.url_imagem_evento`, bucket público `identidade-visual` (o primeiro do projeto) com escrita só para o Admin, e `fn_identidade_visual()` pública |
+| `20261106010000_log_auditoria.sql` | `log_auditoria`: trilha append-only (quem, quando, de onde, antes e depois); ninguém edita nem apaga |
+| `20261106020000_verificacao_de_notas.sql` | `fn_auditar_notas()`: recalcula tudo e aponta o que não fecha (C1 a C8) |
+| `20261106030000_memorial_de_calculo.sql` | `fn_memorial_avaliacao()`/`fn_memorial_projeto()`: a conta aberta de cada nota, critério a critério |
+| `20261106040000_integridade_das_notas.sql` | Fecha os caminhos em que uma nota mudava sem rastro (`admin_reset_global` sem filtro de evento, entre outros) e põe motivo opcional nas ações do Admin |
+| `20261106050000_ajuste_manual_de_notas.sql` | Ajuste manual do Admin como caminho oficial e sempre marcado (`ajuste_tipo`, `ajuste_motivo`, `projetos.ajuste_media`) |
+| `20261106060000_memorial_do_evento.sql` | `fn_memorial_evento()`: folha de conferência consolidada do evento |
+| `20261111010000_relatorio_devolucoes.sql` | `fn_relatorio_devolucoes_completo`: devoluções por conflito de interesse em relatório |
+| `20261111020000_pareamento_padrao.sql` | Pareamento pelo Staff vira o padrão de `eventos.metodos_vinculo`; "ambos" sai de circulação |
+| `20261111030000_trava_questionario_opcional.sql` | Travar o questionário no primeiro avaliador passa a ser opção do evento |
+| `20261111040000_voto_popular_estrutura.sql` | Estrutura do voto popular: `questionarios.is_voto_popular`, cópia em `avaliacoes`/`locks_ativos`, vínculo do avaliador e RPCs de marca e vínculo |
+| `20261111050000_voto_popular_caminho_da_nota.sql` | Caminho da nota: envio e sorteio do votante (ignora cota e travas técnicas, e não fixa o questionário do projeto) |
+| `20261111060000_voto_popular_leitura.sql` | Leitura: relatórios, ranking, telão e quarentena só com nota técnica; `fn_relatorio_voto_popular_completo` com média bayesiana |
+| `20261111070000_voto_popular_conferencia.sql` | Voto popular no memorial e na conferência (`fn_auditar_voto_popular`) |
+| `20261111080000_voto_popular_perfil_da_sessao.sql` | `fn_meu_perfil` informa o questionário vinculado ao avaliador (e se é de voto popular) |
+| `20261112010000_situacao_do_projeto_no_banco.sql` | `fn_projetos_situacao`: cota, vagas, média e quarentena de cada projeto do evento numa consulta só, para o Mapa de Estandes e a Atribuição Forçada não recontarem no navegador |

@@ -37,3 +37,4 @@ Correções de bug e ajustes visuais não precisam de ADR: o commit e a doc do d
 | [0013](0013-design-system-e-acessibilidade.md) | Base de design própria com acessibilidade verificada | Aceito |
 | [0014](0014-trilha-de-auditoria-append-only.md) | Trilha de auditoria append-only, gravada por trigger | Aceito |
 | [0015](0015-ajuste-manual-de-notas.md) | Ajuste manual de notas como RPC marcada | Aceito |
+| [0016](0016-voto-popular-separado-e-media-bayesiana.md) | Voto popular em pista separada, ordenado por média bayesiana | Aceito |

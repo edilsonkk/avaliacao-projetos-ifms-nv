@@ -27,6 +27,8 @@ export interface AvaliacaoDetalhada {
   status_avaliacao?: string;
   parecer_final?: string | null;
   is_quarentena?: boolean;
+  /** Voto popular: não ocupa vaga nem entra na média técnica (ADR 0016). */
+  is_voto_popular?: boolean;
   created_at?: string;
   tempo_presenca?: string;
   /** Rastro do soft delete (ADR 0004): existia no banco e não aparecia em tela nenhuma. */
@@ -91,7 +93,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
   const [avaliacoes, setAvaliacoes] = useState<AvaliacaoDetalhada[]>([]);
   const [carregando, setCarregando] = useState<boolean>(true);
   const [termoBusca, setTermoBusca] = useState<string>('');
-  const [filtroStatus, setFiltroStatus] = useState<'todas' | 'concluidas' | 'canceladas'>('todas');
+  const [filtroStatus, setFiltroStatus] = useState<'todas' | 'concluidas' | 'canceladas' | 'voto_popular'>('todas');
   const [idExpandido, setIdExpandido] = useState<string | null>(null);
 
   // Mapeamentos de Áreas Temáticas
@@ -212,6 +214,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
             status_avaliacao,
             parecer_final,
             is_quarentena,
+            is_voto_popular,
             created_at,
             cancelada_em,
             cancelada_por,
@@ -326,6 +329,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
     av.status?.toUpperCase() === 'CANCELADA' || av.status_avaliacao?.toUpperCase() === 'CANCELADA';
   const totalCanceladas = avaliacoes.filter(estaCancelada).length;
   const totalConcluidas = avaliacoes.length - totalCanceladas;
+  const totalVotoPopular = avaliacoes.filter((av) => av.is_voto_popular === true).length;
 
   // Filtragem
   const avaliacoesFiltradas = avaliacoes.filter((item) => {
@@ -335,6 +339,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
 
     if (filtroStatus === 'concluidas' && isCancelada) return false;
     if (filtroStatus === 'canceladas' && !isCancelada) return false;
+    if (filtroStatus === 'voto_popular' && item.is_voto_popular !== true) return false;
 
     if (!termoBusca.trim()) return true;
     const termo = termoBusca.toLowerCase().trim();
@@ -480,6 +485,20 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
               >
                 Canceladas ({totalCanceladas})
               </button>
+              {totalVotoPopular > 0 && (
+                <button
+                  type="button"
+                  aria-pressed={filtroStatus === 'voto_popular'}
+                  onClick={() => setFiltroStatus('voto_popular')}
+                  className={`px-3 py-1.5 rounded-lg transition-all ${
+                    filtroStatus === 'voto_popular'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  }`}
+                >
+                  Voto popular ({totalVotoPopular})
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -564,6 +583,14 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
                               {estande !== 'N/A' && (
                                 <span className="inline-block px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 w-fit">
                                   Estande {estande}
+                                </span>
+                              )}
+                              {av.is_voto_popular && (
+                                <span
+                                  title="Voto popular: não ocupa vaga de avaliação técnica nem entra na média do ranking"
+                                  className="inline-block px-1.5 py-0.2 rounded text-[9px] font-bold bg-fuchsia-100 dark:bg-fuchsia-950/60 text-fuchsia-700 dark:text-fuchsia-300 w-fit"
+                                >
+                                  Voto popular
                                 </span>
                               )}
                             </div>
@@ -858,7 +885,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
                     <span className="text-[10px] font-bold text-slate-500 uppercase block">Nota Final:</span>
                     <span className="font-black text-rose-700 dark:text-rose-400 text-sm">
                       {avaliacaoParaExcluir.nota_final != null
-                        ? Number(avaliacaoParaExcluir.nota_final).toFixed(1)
+                        ? formatarNota(avaliacaoParaExcluir.nota_final)
                         : '-'}
                     </span>
                   </div>
@@ -906,9 +933,18 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
               </div>
 
               <p id="texto-confirmar-exclusao" className="text-xs text-slate-500 dark:text-slate-400">
-                A nota deixa de contar no resultado e no ranking, e a vaga fica livre para outro avaliador. Se o projeto estava em
-                quarentena por causa desta nota, ele sai da quarentena. Você pode desfazer logo em seguida; depois, restaure pela lista
-                enquanto a vaga não for ocupada.
+                {avaliacaoParaExcluir.is_voto_popular ? (
+                  <>
+                    Este é um <strong>voto popular</strong>: ele sai da média e do ranking do voto popular, mas não libera vaga de
+                    avaliação técnica nem mexe na quarentena. Você pode desfazer logo em seguida.
+                  </>
+                ) : (
+                  <>
+                    A nota deixa de contar no resultado e no ranking, e a vaga fica livre para outro avaliador. Se o projeto estava em
+                    quarentena por causa desta nota, ele sai da quarentena. Você pode desfazer logo em seguida; depois, restaure pela
+                    lista enquanto a vaga não for ocupada.
+                  </>
+                )}
               </p>
 
               <div className="flex justify-end gap-2 pt-2">

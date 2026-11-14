@@ -43,18 +43,22 @@ Card no Bloco 3. Visão do pavilhão para acompanhamento em tempo real.
 | Faltando Avaliações | Âmbar | `0 < avaliações < cota` |
 | Avaliado / Cota Completa | Verde | `avaliações >= cota` |
 
-A **cota** é a do projeto (`cota_avaliacoes_customizada`) ou, se vazia, a padrão do evento. Contam só avaliações não
-canceladas dos projetos do evento (paginadas, sem o limite de 1000 linhas).
+Cota, avaliações, travas, média e quarentena **não são recontadas no navegador**: vêm prontas de
+`fn_projetos_situacao` ([funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#administração)), com a mesma regra do
+sorteio. A **cota** é a do projeto (`cota_avaliacoes_customizada`) ou, se vazia, a padrão do evento; contam só
+avaliações ativas (não canceladas) e **de nota técnica** — voto popular não ocupa cota nem muda a cor do estande.
 
-Indicadores extras: ícone pulsante de **trava ativa** (só travas não vencidas: as vencidas só são apagadas no próximo
-sorteio), **quarentena** (a mesma lista pendente da tela Quarentena, `view_projetos_quarentena`: projeto resolvido
-deixa de aparecer) e etiqueta **Fora da competição**.
+Indicadores extras: ícone pulsante de **trava ativa** (só travas técnicas não vencidas: as vencidas só são apagadas
+no próximo sorteio, e a trava de um votante não trava o estande), **quarentena** (a mesma lista pendente da tela
+Quarentena, `view_projetos_quarentena`: projeto resolvido deixa de aparecer) e etiqueta **Fora da competição**.
 
-**Notas**: cada card mostra `Média Geral: 9.45 pts` (ou `-`) e as notas individuais em badges
-(`[ 9.5 ] [ 8.5 ] [ 9.0 ]`), para ver a dispersão de relance.
+**Notas**: cada card mostra `Média Geral: 9,45 pts` (ou `-`) e as notas individuais em badges
+(`[ 9.5 ] [ 8.5 ] [ 9.0 ]`), para ver a dispersão de relance. Havendo voto popular, o painel do projeto mostra
+`Voto popular: 2 voto(s) • 9,50 pts` à parte, sem misturar com a média técnica
+([voto popular](avaliacao-e-quarentena.md)).
 
-**Auditoria**: clicar num card abre o histórico de avaliações não canceladas (notas, pareceres, dados do projeto)
-com botão "Editar Dados do Projeto".
+**Auditoria**: clicar num card abre o histórico de avaliações técnicas não canceladas (notas, pareceres, dados do
+projeto) com botão "Editar Dados do Projeto".
 
 **Consulta**: usa os relacionamentos do PostgREST (`modalidades(...)`, `areas_tematicas(...)`, `instituicoes(...)`).
 Se alguma leitura falhar, a tela mostra o erro (não um mapa incompleto com cores erradas).

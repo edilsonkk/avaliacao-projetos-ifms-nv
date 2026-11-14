@@ -67,17 +67,17 @@ describe('Validação da TelaStaff e Autocadastro de Avaliador', () => {
       expect(tabAvaliadores.className).toContain('lg:text-xl');
     });
 
-    it('deve ocultar o botão de Telão no Cabecalho quando o perfil ou tela for Staff', () => {
+    it('deve ocultar o Telão no Cabecalho quando o perfil ou tela for Staff', () => {
       const aoMudarTelaMock = vi.fn();
 
       // Cenário 1: Na tela do Staff com perfil staff
       const { unmount } = render(<ProvedorAvisos><Cabecalho tela_atual="staff" papel="staff" ao_mudar_tela={aoMudarTelaMock} /></ProvedorAvisos>);
-      expect(screen.queryByRole('button', { name: /Telão/i })).toBeNull();
+      expect(screen.queryByRole('link', { name: /Telão/i })).toBeNull();
       unmount();
 
-      // Cenário 2: Admin logado acessando o painel de admin
+      // Cenário 2: Admin logado acessando o painel de admin (o Telão é um link, abre em aba nova)
       render(<ProvedorAvisos><Cabecalho tela_atual="admin" papel="admin" ao_mudar_tela={aoMudarTelaMock} /></ProvedorAvisos>);
-      expect(screen.getByRole('button', { name: /Telão/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Telão/i })).toHaveAttribute('target', '_blank');
     });
   });
 

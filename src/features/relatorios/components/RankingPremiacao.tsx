@@ -8,6 +8,7 @@ import {
   Building,
   FileSpreadsheet,
   AlertTriangle,
+  Heart,
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { buscarTodas } from '@/lib/buscarTodas';
@@ -72,6 +73,26 @@ const MEDALHAS: Record<number, { icone: string; classe: string }> = {
   },
 };
 
+/** Uma linha da classificação do voto popular (`fn_relatorio_voto_popular_completo`). */
+export interface ItemVotoPopular {
+  id_projeto: string;
+  codigo_projeto: string | null;
+  titulo: string;
+  modalidade: string;
+  area_tematica: string;
+  nome_instituicao: string | null;
+  total_votos: number;
+  /** Média simples dos votos recebidos. */
+  media_simples: number;
+  /** Média bayesiana: é por ela que a classificação ordena. */
+  media_bayesiana: number;
+  /** Âncora C: média de todos os votos do evento. */
+  media_evento: number;
+  /** Peso m da âncora, em votos (automático: votos por projeto votado). */
+  peso_ancora: number;
+  posicao: number;
+}
+
 export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_evento_ativo }) => {
   const idEvento = id_evento_ativo || '';
   const [projetos_ranking, set_projetos_ranking] = useState<ItemRankingTop3[]>([]);
@@ -83,6 +104,9 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
   // Achados graves da conferência de notas: homologar com nota que não fecha é o erro que
   // esta tela pode evitar (ver docs/regras-de-negocio/auditoria-de-notas.md).
   const [achados_graves, set_achados_graves] = useState<number>(0);
+
+  // Classificação do voto popular: lista própria, que não interfere no ranking técnico
+  const [voto_popular, set_voto_popular] = useState<ItemVotoPopular[]>([]);
 
   const conexao_banco_configurada = verificar_conexao_configurada();
 
@@ -126,6 +150,33 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
       } catch (erroConferencia) {
         console.warn('Conferência de notas indisponível:', erroConferencia);
         set_achados_graves(0);
+      }
+
+      // Voto popular: lista própria, ordenada pela média bayesiana no banco
+      try {
+        const { data: vp, error: erroVp } = await supabase.rpc('fn_relatorio_voto_popular_completo', {
+          p_id_evento: idEvento,
+        });
+        if (erroVp) throw erroVp;
+        set_voto_popular(
+          ((vp as Record<string, unknown>[]) || []).map((linha) => ({
+            id_projeto: String(linha.id_projeto),
+            codigo_projeto: (linha.codigo_projeto as string) || null,
+            titulo: String(linha.titulo || ''),
+            modalidade: String(linha.modalidade || ''),
+            area_tematica: String(linha.area_tematica || ''),
+            nome_instituicao: (linha.nome_instituicao as string) || null,
+            total_votos: Number(linha.total_votos ?? 0),
+            media_simples: Number(linha.media_simples ?? 0),
+            media_bayesiana: Number(linha.media_bayesiana ?? 0),
+            media_evento: Number(linha.media_evento ?? 0),
+            peso_ancora: Number(linha.peso_ancora ?? 0),
+            posicao: Number(linha.posicao ?? 0),
+          })),
+        );
+      } catch (erroVotoPopular) {
+        console.warn('Classificação do voto popular indisponível:', erroVotoPopular);
+        set_voto_popular([]);
       }
     } catch (e) {
       console.error('Erro ao consultar view_ranking_top3:', e);
@@ -465,6 +516,61 @@ export const RankingPremiacao: React.FC<{ id_evento_ativo?: string }> = ({ id_ev
             ))
           )}
         </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* CLASSIFICAÇÃO DO VOTO POPULAR (lista própria, não mexe no pódio técnico) */}
+      {/* ------------------------------------------------------------------ */}
+      {voto_popular.length > 0 && (
+        <section className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-700">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <Heart className="w-4 h-4 text-fuchsia-600 dark:text-fuchsia-400" aria-hidden="true" />
+              Voto Popular
+            </h3>
+            <p className="text-legenda text-slate-600 dark:text-slate-300 max-w-xl">
+              Ordenado pela <strong>média bayesiana</strong>: a média do projeto é puxada para a média de
+              todos os votos do evento ({formatarNota(voto_popular[0].media_evento)}) com o peso de{' '}
+              {formatarNota(voto_popular[0].peso_ancora)} voto(s), que é a média de votos por projeto votado.
+              Assim um projeto com pouquíssimos votos não lidera por um voto alto isolado. O peso acompanha o
+              volume de votos, então as posições mudam enquanto a votação corre.
+            </p>
+          </div>
+
+          <ol className="space-y-2">
+            {voto_popular.map((item) => {
+              const medalha = MEDALHAS[item.posicao];
+              return (
+                <li
+                  key={item.id_projeto}
+                  className={`p-3 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                    medalha ? medalha.classe : 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <span className="text-xs font-black text-slate-900 dark:text-white">
+                      {medalha ? `${medalha.icone} ` : `${item.posicao}º `}
+                      <span className="font-mono">{item.codigo_projeto || 'N/I'}</span> — {item.titulo}
+                    </span>
+                    <span className="block text-legenda text-slate-600 dark:text-slate-300">
+                      {item.modalidade} · {item.area_tematica}
+                      {item.nome_instituicao && ` · ${item.nome_instituicao}`}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="block font-mono text-sm font-black text-fuchsia-700 dark:text-fuchsia-300">
+                      {formatarNota(item.media_bayesiana)} pts
+                    </span>
+                    <span className="block text-legenda text-slate-600 dark:text-slate-300 font-mono">
+                      média dos votos {formatarNota(item.media_simples)} · {item.total_votos}{' '}
+                      {item.total_votos === 1 ? 'voto' : 'votos'}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
       )}
     </div>
   );

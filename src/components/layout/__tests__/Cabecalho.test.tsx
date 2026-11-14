@@ -76,7 +76,6 @@ describe('Cabecalho - navegação', () => {
     // Assert
     expect(screen.getByRole('navigation', { name: 'Telas do sistema' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^admin$/i })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: /^telão$/i })).not.toHaveAttribute('aria-current');
   });
 
   it('deve manter o rótulo de cada tela visível, sem depender de ícone', () => {
@@ -86,6 +85,33 @@ describe('Cabecalho - navegação', () => {
     // Assert
     expect(screen.getByRole('button', { name: 'Staff' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Admin' })).toBeVisible();
+  });
+
+  it('deve abrir o Telão em uma aba nova, para não perder a tela em uso', () => {
+    // Arrange / Act
+    renderizar({ tela_atual: 'admin' });
+
+    // Assert
+    const telao = screen.getByRole('link', { name: /telão/i });
+    expect(telao).toHaveAttribute('href', '/telao');
+    expect(telao).toHaveAttribute('target', '_blank');
+    expect(telao).toHaveAttribute('rel', expect.stringContaining('noopener'));
+    expect(telao).toHaveAccessibleName(/abre em nova aba/i);
+  });
+
+  it('não deve oferecer o Telão dentro do próprio Telão nem para o Staff', () => {
+    // Arrange / Act
+    const { unmount } = renderizar({ tela_atual: 'telao', papel: 'admin' });
+
+    // Assert
+    expect(screen.queryByRole('link', { name: /telão/i })).not.toBeInTheDocument();
+
+    // Arrange / Act
+    unmount();
+    renderizar({ tela_atual: 'staff', papel: 'staff' });
+
+    // Assert
+    expect(screen.queryByRole('link', { name: /telão/i })).not.toBeInTheDocument();
   });
 });
 

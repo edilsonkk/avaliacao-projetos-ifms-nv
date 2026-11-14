@@ -126,6 +126,7 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({ aoFechar
       .from('avaliacoes')
       .select('id_avaliacao, nota_final, created_at, status, usuarios ( nome )')
       .eq('id_projeto', projeto.id_projeto)
+      .eq('is_voto_popular', false) // mesma regra da view: a divergência é só entre notas técnicas
       .or('status.is.null,status.neq.CANCELADA') // mesma regra da view: só avaliações ativas
       .order('nota_final', { ascending: false });
     if (error) {

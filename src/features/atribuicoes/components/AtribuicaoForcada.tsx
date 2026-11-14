@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
+import { buscarTodas } from '@/lib/buscarTodas';
 
 interface AtribuicaoForcadaProps {
   isOpen: boolean;
@@ -45,6 +46,17 @@ export interface ProjetoItem {
   total_avaliacoes_feitas?: number;
   locks_ativos_count?: number;
   cota_avaliacoes_customizada?: number;
+  /** Vagas que o banco diz restarem (cota − avaliações técnicas ativas − travas técnicas). */
+  vagas_restantes?: number;
+}
+
+/** Uma linha de `fn_projetos_situacao`: cota e vagas contadas no banco, pela regra do sorteio. */
+interface SituacaoProjeto {
+  id_projeto: string;
+  cota: number;
+  avaliacoes_tecnicas: number;
+  travas_tecnicas: number;
+  vagas_restantes: number;
 }
 
 export interface UsuarioAvaliadorItem {
@@ -167,7 +179,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
 
       let queryAvaliadoresEvento = supabase
         .from('avaliadores_evento')
-        .select('id_usuario, id_evento, id_instituicao, is_credenciado, instituicoes(nome_exibicao), usuarios(nome, email, papel)')
+        .select('id_usuario, id_evento, id_instituicao, is_credenciado, id_questionario, instituicoes(nome_exibicao), usuarios(nome, email, papel)')
         .eq('is_credenciado', true);
 
       if (eventoIdResolvido) {
@@ -217,16 +229,40 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
         resAvaliacoes,
         resBloqueiosModalidade,
         resConflitosDeclarados,
+        resSituacao,
+        resQuestionarios,
       ] = await Promise.all([
-        // Travas vencidas não ocupam vaga nem deixam o avaliador ocupado
+        // Travas vencidas não deixam o avaliador ocupado. A conta de vaga por projeto
+        // não sai daqui: vem de fn_projetos_situacao, que ignora a trava do votante.
         doEvento(supabase.from('locks_ativos').select('id_projeto, id_usuario, projetos!inner(id_evento)').gt('expira_em', new Date().toISOString())),
         queryAvaliadoresEvento,
         doEvento(supabase.from('avaliacoes').select('id_projeto, id_usuario, status, projetos!inner(id_evento)')),
         queryBloqueios,
         doEvento(supabase.from('historico_impedimentos').select('id_projeto, id_usuario, projetos!inner(id_evento)').eq('tipo', 'conflito')),
+        // Cota, avaliações técnicas e travas técnicas pela mesma regra do sorteio.
+        // Paginada: uma linha por projeto do evento, e o PostgREST corta em 1000 —
+        // projeto sem situação na lista seria oferecido como se tivesse vaga.
+        buscarTodas<SituacaoProjeto>(() =>
+          supabase.rpc('fn_projetos_situacao', { p_id_evento: eventoIdResolvido }).order('id_projeto')
+        ),
+        // Questionários de voto popular do evento: quem está vinculado a um deles é votante
+        supabase.from('questionarios').select('id_questionario, is_voto_popular').eq('id_evento', eventoIdResolvido),
       ]);
-      const primeiroErro = [resLocksAtivos, resAvaliadoresEvento, resAvaliacoes, resBloqueiosModalidade, resConflitosDeclarados].find((r: any) => r?.error)?.error;
+      // Qualquer leitura que falhe vira erro na tela: lista incompleta aqui vira vaga
+      // oferecida a quem não pode avaliar.
+      // resSituacao vem de buscarTodas, que já lança o erro da leitura paginada.
+      const primeiroErro = [resLocksAtivos, resAvaliadoresEvento, resAvaliacoes, resBloqueiosModalidade, resConflitosDeclarados, resQuestionarios].find((r: any) => r?.error)?.error;
       if (primeiroErro) throw primeiroErro;
+
+      const situacaoPorProjeto = new Map<string, SituacaoProjeto>(
+        resSituacao.map((s) => [s.id_projeto, s])
+      );
+
+      const questionariosVotoPopular = new Set<string>(
+        ((resQuestionarios?.data || []) as Array<{ id_questionario: string; is_voto_popular?: boolean }>)
+          .filter((q) => q.is_voto_popular)
+          .map((q) => q.id_questionario)
+      );
 
       const conflitosDeclarados = new Set<string>(
         (resConflitosDeclarados.data || []).map((c: any) => `${c.id_projeto}:${c.id_usuario}`)
@@ -243,40 +279,20 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
         }
       });
 
-      // Mapeamento de travas ativas
-      const locksPorProjeto = new Map<string, number>();
+      // Quem está com uma avaliação em andamento (para marcar o avaliador como ocupado)
       const idsUsuariosComLock = new Set<string>();
-
       (resLocksAtivos.data || []).forEach((lock: any) => {
-        if (lock.id_projeto) {
-          const c = locksPorProjeto.get(lock.id_projeto) || 0;
-          locksPorProjeto.set(lock.id_projeto, c + 1);
-        }
-        if (lock.id_usuario) {
-          idsUsuariosComLock.add(lock.id_usuario);
-        }
+        if (lock.id_usuario) idsUsuariosComLock.add(lock.id_usuario);
       });
 
       setTotalAvaliadoresOcupados(idsUsuariosComLock.size);
 
-      // Contagem de avaliações ativas por projeto
-      const contagemAvaliacoes = new Map<string, number>();
+      // Pares projeto × avaliador: QUALQUER avaliação (inclusive cancelada) impede o mesmo
+      // avaliador de voltar ao projeto (constraint UNIQUE). A cota em si vem do banco.
       const avaliacoesPares: Array<{ id_projeto: string; id_usuario: string }> = [];
-
       (resAvaliacoes.data || []).forEach((av: any) => {
-        if (av.id_projeto) {
-          const isCancelada = av.status === 'CANCELADA';
-
-          // Apenas avaliações válidas contam para a cota do projeto
-          if (!isCancelada) {
-            const total = contagemAvaliacoes.get(av.id_projeto) || 0;
-            contagemAvaliacoes.set(av.id_projeto, total + 1);
-          }
-
-          // Mas QUALQUER avaliação (inclusive cancelada) impede o mesmo avaliador
-          if (av.id_usuario) {
-            avaliacoesPares.push({ id_projeto: av.id_projeto, id_usuario: av.id_usuario });
-          }
+        if (av.id_projeto && av.id_usuario) {
+          avaliacoesPares.push({ id_projeto: av.id_projeto, id_usuario: av.id_usuario });
         }
       });
 
@@ -297,12 +313,10 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
 
         if (p.is_fora_da_competicao === true) return false;
 
-        const cota = p.cota_avaliacoes_customizada || cotaCalculada;
-        const feitas = contagemAvaliacoes.get(idProj) || 0;
-        const locks = locksPorProjeto.get(idProj) || 0;
-
-        // Se a cota já foi atingida em avaliações concluídas ou por travas ativas em andamento
-        if ((feitas + locks) >= cota) {
+        // Vaga é conta do banco (fn_projetos_situacao): avaliações técnicas ativas + travas
+        // técnicas contra a cota do projeto. Sem situação (projeto recém-criado), não bloqueia.
+        const situacao = situacaoPorProjeto.get(idProj);
+        if (situacao && situacao.vagas_restantes <= 0) {
           countProjetosBloqueados++;
           return false;
         }
@@ -321,8 +335,9 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
           : (p.modalidades as any)?.nome_modalidade || p.modalidade;
 
         const idProj = p.id_projeto || p.id;
-        const feitas = contagemAvaliacoes.get(idProj) || 0;
-        const locks = locksPorProjeto.get(idProj) || 0;
+        const situacao = situacaoPorProjeto.get(idProj);
+        const feitas = situacao?.avaliacoes_tecnicas ?? 0;
+        const locks = situacao?.travas_tecnicas ?? 0;
 
         return {
           id_projeto: idProj,
@@ -340,7 +355,8 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
           is_check_in_realizado: true,
           total_avaliacoes_feitas: feitas,
           locks_ativos_count: locks,
-          cota_avaliacoes_customizada: p.cota_avaliacoes_customizada || cotaCalculada,
+          cota_avaliacoes_customizada: situacao?.cota ?? (p.cota_avaliacoes_customizada || cotaCalculada),
+          vagas_restantes: situacao?.vagas_restantes,
         };
       });
 
@@ -366,6 +382,9 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
       const avaliadoresNormalizados: UsuarioAvaliadorItem[] = (resAvaliadoresEvento.data || [])
         .filter((ae: any) => {
           const usuario = Array.isArray(ae.usuarios) ? ae.usuarios[0] : ae.usuarios;
+          // Votante do voto popular não recebe atribuição técnica: a nota dele sairia como
+          // voto popular (o questionário do vínculo manda), sem entrar na cota do projeto.
+          if (ae.id_questionario && questionariosVotoPopular.has(ae.id_questionario)) return false;
           return ae.id_usuario && ae.is_credenciado === true && String(usuario?.papel || '').toUpperCase() === 'AVALIADOR';
         })
         .map((ae: any) => {
@@ -411,6 +430,7 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
   // Vagas restantes estritas para o projeto selecionado
   const vagasRestantesBanca = useMemo(() => {
     if (!projetoBancaObj) return 0;
+    if (projetoBancaObj.vagas_restantes !== undefined) return projetoBancaObj.vagas_restantes;
     const cota = projetoBancaObj.cota_avaliacoes_customizada || cotaEventoResolvida || 3;
     const concluidas = projetoBancaObj.total_avaliacoes_feitas || 0;
     const locks = projetoBancaObj.locks_ativos_count || 0;
@@ -514,8 +534,11 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
           motivoInelegivel = 'Avaliador declarou conflito';
         }
 
-        // Sem vaga: avaliações ativas + travas já ocupam a cota
-        const vagasProjeto = (proj.cota_avaliacoes_customizada || cotaEventoResolvida || 3) - ((proj.total_avaliacoes_feitas || 0) + (proj.locks_ativos_count || 0));
+        // Sem vaga: avaliações técnicas ativas + travas técnicas já ocupam a cota (conta do banco)
+        const vagasProjeto =
+          proj.vagas_restantes !== undefined
+            ? proj.vagas_restantes
+            : (proj.cota_avaliacoes_customizada || cotaEventoResolvida || 3) - ((proj.total_avaliacoes_feitas || 0) + (proj.locks_ativos_count || 0));
         if (!motivoInelegivel && vagasProjeto <= 0) {
           motivoInelegivel = 'Cota atingida';
         }

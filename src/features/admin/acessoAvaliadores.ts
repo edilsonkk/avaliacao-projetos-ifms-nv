@@ -4,7 +4,12 @@
  * o banco recusa valores fora deles mesmo que a tela seja contornada.
  */
 
-export type MetodoVinculo = 'ambos' | 'pareamento' | 'codigo';
+/**
+ * Uma forma por evento: ou o Staff pareia o celular, ou entrega um código de acesso. O valor
+ * legado `'ambos'` (que oferecia as duas no mesmo evento) não é mais oferecido; evento antigo que
+ * ainda o tenha gravado é lido como `'pareamento'` por `lerParametrosAcesso`.
+ */
+export type MetodoVinculo = 'pareamento' | 'codigo';
 
 export interface ParametrosAcesso {
   minutos_validade_pareamento: number;
@@ -19,7 +24,7 @@ export const PARAMETROS_ACESSO_PADRAO: ParametrosAcesso = {
   minutos_validade_codigo_acesso: 15,
   tamanho_codigo: 6,
   max_tentativas_codigo: 5,
-  metodos_vinculo: 'ambos',
+  metodos_vinculo: 'pareamento',
 };
 
 type CampoNumerico = Exclude<keyof ParametrosAcesso, 'metodos_vinculo'>;
@@ -44,13 +49,11 @@ export const LIMITES_ACESSO: Record<CampoNumerico, { min: number; max: number; r
 };
 
 export const METODOS_VINCULO: { valor: MetodoVinculo; rotulo: string }[] = [
-  { valor: 'ambos', rotulo: 'Ambos (pareamento e código)' },
   { valor: 'pareamento', rotulo: 'Só pareamento pelo Staff' },
   { valor: 'codigo', rotulo: 'Só código de acesso' },
 ];
 
-const isMetodo = (valor: unknown): valor is MetodoVinculo =>
-  valor === 'ambos' || valor === 'pareamento' || valor === 'codigo';
+const isMetodo = (valor: unknown): valor is MetodoVinculo => valor === 'pareamento' || valor === 'codigo';
 
 export const lerParametrosAcesso = (evento: Partial<Record<keyof ParametrosAcesso, unknown>>): ParametrosAcesso => {
   const numero = (campo: CampoNumerico) => {

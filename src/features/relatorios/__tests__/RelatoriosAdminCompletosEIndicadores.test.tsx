@@ -33,6 +33,8 @@ vi.stubGlobal('URL', {
 import { RelatoriosAdmin } from '@/features/relatorios';
 
 describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial de Indicadores', () => {
+  let ordenacoesRpc: Array<{ funcao: string; coluna: string }> = [];
+
   const criarQueryChain = (resultado: any) => {
     const chain: any = {
       select: vi.fn(() => chain),
@@ -148,6 +150,39 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
     },
   ];
 
+  const dadosMockDevolucoes = [
+    {
+      id_usuario: 'usr-1',
+      id_projeto: 'proj-1',
+      id_evento: 'evt-2026',
+      avaliador_nome: 'Dra. Amanda Silva',
+      avaliador_email: 'amanda.silva@ifms.edu.br',
+      codigo_projeto: 'FETEC-001',
+      projeto_titulo: 'Robô Pantaneiro Autônomo',
+      projeto_estande: 'EST-A01',
+      projeto_modalidade: 'Iniciação Científica',
+      projeto_area: 'Engenharias',
+      projeto_instituicao: 'IFMS Câmpus Campo Grande',
+      data_devolucao: '2026-10-25T16:00:00Z',
+      total_avaliacoes_atuais: 2,
+    },
+    {
+      id_usuario: 'usr-1',
+      id_projeto: 'proj-2',
+      id_evento: 'evt-2026',
+      avaliador_nome: 'Dra. Amanda Silva',
+      avaliador_email: 'amanda.silva@ifms.edu.br',
+      codigo_projeto: 'FETEC-002',
+      projeto_titulo: 'Extratos Botânicos Medicinais',
+      projeto_estande: 'EST-B02',
+      projeto_modalidade: 'Pesquisa Aplicada',
+      projeto_area: 'Biológicas',
+      projeto_instituicao: 'Escola Estadual Pantanal',
+      data_devolucao: '2026-10-25T17:00:00Z',
+      total_avaliacoes_atuais: 0,
+    },
+  ];
+
   // Formato devolvido pelas funções fn_relatorio_*_completo (agrupadas por avaliador)
   const agruparPorAvaliador = (itens: any[], campo: string) => {
     const grupos = new Map<string, any>();
@@ -174,13 +209,56 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
       'avaliacoes'
     ),
     fn_relatorio_ausencias_completo: agruparPorAvaliador(dadosMockAusencias, 'ausencias'),
+    fn_relatorio_devolucoes_completo: agruparPorAvaliador(dadosMockDevolucoes, 'devolucoes'),
+    // fn_relatorio_voto_popular_completo: já vem ordenada pela bayesiana, calculada no banco
+    fn_relatorio_voto_popular_completo: [
+      {
+        id_projeto: 'proj-1',
+        codigo_projeto: 'FETEC-001',
+        titulo: 'Robô Pantaneiro Autônomo',
+        modalidade: 'Iniciação Científica',
+        area_tematica: 'Engenharias',
+        nome_instituicao: 'IFMS Câmpus Campo Grande',
+        total_votos: 1,
+        media_simples: 10,
+        media_bayesiana: 9.5,
+        media_evento: 9.25,
+        peso_ancora: 2,
+        posicao: 1,
+        votos: [{ id_avaliacao: 'vp-1', avaliador_nome: 'Visitante', nota_final: 10, data: '2026-10-25T18:00:00Z' }],
+      },
+      {
+        id_projeto: 'proj-2',
+        codigo_projeto: 'FETEC-002',
+        titulo: 'Extratos Botânicos Medicinais',
+        modalidade: 'Pesquisa Aplicada',
+        area_tematica: 'Biológicas',
+        nome_instituicao: 'Escola Estadual Pantanal',
+        total_votos: 3,
+        media_simples: 9,
+        media_bayesiana: 9.1,
+        media_evento: 9.25,
+        peso_ancora: 2,
+        posicao: 2,
+        votos: [],
+      },
+    ],
   });
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockFromCalls.length = 0;
 
-    mockRpc.mockImplementation((funcao: string) => criarQueryChain({ data: respostasRpc()[funcao] ?? [], error: null }));
+    ordenacoesRpc = [];
+    mockRpc.mockImplementation((funcao: string) => {
+      const chain = criarQueryChain({ data: respostasRpc()[funcao] ?? [], error: null });
+      // Registra a coluna de ordenação: o ORDER BY do PostgREST substitui o da função
+      chain.order = vi.fn((coluna: string) => {
+        ordenacoesRpc.push({ funcao, coluna });
+        return chain;
+      });
+      return chain;
+    });
 
     mockFrom.mockImplementation((tabela: string) => {
       mockFromCalls.push(tabela);
@@ -275,6 +353,24 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
     });
   });
 
+  it('1b. ABA PROJETOS E MÉDIAS: abre a conta da média geral do projeto, com soma, divisor, ajuste e média final', async () => {
+    // Arrange
+    render(<RelatoriosAdmin id_evento_ativo="evt-2026" />);
+    await waitFor(() => expect(screen.getByText('Robô Pantaneiro Autônomo')).toBeDefined());
+
+    // Act
+    fireEvent.click(screen.getAllByTitle('Clique para ver todas as notas deste projeto')[0]);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /média geral do projeto/i })).toBeDefined();
+      // A conta aberta: (9,00 + 10,00) ÷ 2 = 9,50 — na tela e na lista textual da impressão
+      expect(screen.getAllByText(/\(9,00 \+ 10,00\) ÷ 2 =/).length).toBe(2);
+      expect(screen.getAllByText(/ajuste da comissão:/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText(/média final:/i).length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
   it('2. ABA AVALIADORES E NOTAS ATRIBUÍDAS: agrupa por avaliador em accordion, exibe contadores e permite expandir para ver notas, horários e duração precisa', async () => {
     render(<RelatoriosAdmin id_evento_ativo="evt-2026" />);
 
@@ -355,6 +451,90 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
     await waitFor(() => {
       const itemAusente = screen.getByText('Extratos Botânicos Medicinais');
       expect(itemAusente.closest('.hidden')).not.toBeNull();
+    });
+  });
+
+  it('3b. ABA AVALIADORES E DEVOLUÇÕES ATRIBUÍDAS: agrupa as devoluções por conflito de interesse por avaliador, sem estande', async () => {
+    // Arrange
+    render(<RelatoriosAdmin id_evento_ativo="evt-2026" />);
+    await waitFor(() => expect(screen.getByText('Robô Pantaneiro Autônomo')).toBeDefined());
+
+    // Act
+    fireEvent.click(screen.getByText('Avaliadores e Devoluções Atribuídas'));
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText(/Total de Avaliadores com Devoluções:/i)).toBeDefined();
+      expect(screen.getAllByText('Dra. Amanda Silva').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('2 devoluções atribuídas').length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Act: expande o avaliador
+    fireEvent.click(screen.getAllByText('Dra. Amanda Silva')[0]);
+
+    // Assert: colunas da devolução, com código do projeto e sem estande
+    await waitFor(() => {
+      expect(screen.getAllByText('Projeto Devolvido à Fila').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('Data / Hora Devolução').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('FETEC-001').length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByText('EST-A01')).toBeNull();
+      expect(screen.getAllByText(/Permanece sem avaliação/i).length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('3c. ABA DEVOLUÇÕES: a ausência não entra na contagem de devoluções (são relatórios separados)', async () => {
+    // Arrange
+    render(<RelatoriosAdmin id_evento_ativo="evt-2026" />);
+    await waitFor(() => expect(screen.getByText('Robô Pantaneiro Autônomo')).toBeDefined());
+
+    // Act
+    fireEvent.click(screen.getByText('Avaliadores e Devoluções Atribuídas'));
+
+    // Assert: Roberto só tem ausência, então não aparece entre as devoluções
+    await waitFor(() => expect(screen.getByText(/Total de Avaliadores com Devoluções:/i)).toBeDefined());
+    expect(screen.queryByText('Dr. Roberto Santos')).toBeNull();
+  });
+
+  it('3d. ABA VOTO POPULAR: lista por média bayesiana e abre a conta da âncora', async () => {
+    // Arrange
+    render(<RelatoriosAdmin id_evento_ativo="evt-2026" />);
+    await waitFor(() => expect(screen.getByText('Robô Pantaneiro Autônomo')).toBeDefined());
+
+    // Act
+    fireEvent.click(screen.getAllByText('Voto Popular')[0]);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /como esta lista é ordenada/i })).toBeDefined();
+      // A conta aberta cita a âncora (média do evento) e o peso
+      expect(screen.getByText(/média de todos os votos do evento/i)).toBeDefined();
+      expect(screen.getAllByText('9,50 pts').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('9,10 pts').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText('1º')).toBeDefined();
+    });
+  });
+
+  it('3d-bis. ABA VOTO POPULAR: pede a lista ordenada por posição, não por id_projeto', async () => {
+    // Arrange / Act: o ORDER BY do PostgREST substitui o da função, então ordenar por
+    // id_projeto devolveria a classificação em ordem de UUID, com a posição embaralhada.
+    render(<RelatoriosAdmin id_evento_ativo="evt-2026" />);
+    await waitFor(() => expect(screen.getByText('Robô Pantaneiro Autônomo')).toBeDefined());
+
+    // Assert
+    const doVotoPopular = ordenacoesRpc.filter((o) => o.funcao === 'fn_relatorio_voto_popular_completo');
+    expect(doVotoPopular).not.toHaveLength(0);
+    expect(doVotoPopular.every((o) => o.coluna === 'posicao')).toBe(true);
+  });
+
+  it('3e. ABA PROJETOS E MÉDIAS: o voto popular aparece em coluna própria, fora da média técnica', async () => {
+    // Arrange / Act
+    render(<RelatoriosAdmin id_evento_ativo="evt-2026" />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByRole('columnheader', { name: /voto popular/i })).toBeDefined();
+      // A média técnica do projeto não é contaminada pelo voto 10
+      expect(screen.getByText('9,50 pts')).toBeDefined();
     });
   });
 

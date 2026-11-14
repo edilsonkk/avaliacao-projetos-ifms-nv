@@ -3,12 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MapaEstandes } from '@/features/projetos';
 import { supabase } from '@/lib/supabase';
+import { rpcPaginavel } from '@/test/rpcPaginavel';
 
 vi.mock('@/lib/supabase', () => {
   const mockFrom = vi.fn();
   return {
     supabase: {
-      from: mockFrom
+      from: mockFrom,
+      rpc: vi.fn()
     },
     verificar_conexao_configurada: vi.fn(() => true)
   };
@@ -66,17 +68,41 @@ describe('MapaEstandes: Visualização Expandida, Cores e Badges de Notas', () =
     }
   ];
 
-  const mockAvaliacoes = [
-    // p-01 tem 3 avaliações (cota atingida = avaliado)
-    { id_avaliacao: 'av-1', id_projeto: 'p-01', nota_final: 9.5, is_quarentena: false, status: 'CONCLUIDA' },
-    { id_avaliacao: 'av-2', id_projeto: 'p-01', nota_final: 8.5, is_quarentena: false, status: 'CONCLUIDA' },
-    { id_avaliacao: 'av-3', id_projeto: 'p-01', nota_final: 9.0, is_quarentena: false, status: 'CONCLUIDA' },
-    // p-03 tem 1 avaliação (faltando)
-    { id_avaliacao: 'av-4', id_projeto: 'p-03', nota_final: 10.0, is_quarentena: false, status: 'CONCLUIDA' }
-  ];
+  // Situação devolvida por fn_projetos_situacao: a conta de cota, vagas, média e
+  // quarentena é feita no banco (o voto popular fica de fora da parte técnica).
+  const linhaSituacao = (over: Record<string, unknown>) => ({
+    cota: 3,
+    avaliacoes_tecnicas: 0,
+    travas_tecnicas: 0,
+    vagas_restantes: 3,
+    media_tecnica: null,
+    notas_tecnicas: [],
+    votos_populares: 0,
+    media_voto_popular: null,
+    em_quarentena: false,
+    ...over,
+  });
 
-  const mockLocks = [
-    { id_projeto: 'p-03' } // p-03 tem lock ativo
+  const mockSituacao = [
+    // p-01 com a cota cheia (3/3) = avaliado
+    linhaSituacao({
+      id_projeto: 'p-01',
+      avaliacoes_tecnicas: 3,
+      vagas_restantes: 0,
+      media_tecnica: 9,
+      notas_tecnicas: [9.5, 8.5, 9.0],
+    }),
+    linhaSituacao({ id_projeto: 'p-02' }),
+    // p-03 com 1 de 3 (faltando) e uma trava técnica ativa
+    linhaSituacao({
+      id_projeto: 'p-03',
+      avaliacoes_tecnicas: 1,
+      travas_tecnicas: 1,
+      vagas_restantes: 1,
+      media_tecnica: 10,
+      notas_tecnicas: [10.0],
+    }),
+    linhaSituacao({ id_projeto: 'p-04' }),
   ];
 
   // Cadeia do supabase-js: filtros encadeáveis; range/maybeSingle/await resolvem o resultado
@@ -99,6 +125,10 @@ describe('MapaEstandes: Visualização Expandida, Cores e Badges de Notas', () =
     }
   ];
 
+  const mockarSituacao = (resultado: { data: unknown; error: unknown }) => {
+    (supabase.rpc as any).mockImplementation(() => rpcPaginavel(resultado as any));
+  };
+
   const mockarTabelas = (respostas: Record<string, { data: unknown; error: unknown }>) => {
     (supabase.from as any).mockImplementation((tabela: string) => {
       const chain = cadeia(respostas[tabela] ?? { data: [], error: null });
@@ -118,10 +148,9 @@ describe('MapaEstandes: Visualização Expandida, Cores e Badges de Notas', () =
     vi.clearAllMocks();
     mockarTabelas({
       projetos: { data: mockProjetos, error: null },
-      avaliacoes: { data: mockAvaliacoes, error: null },
-      locks_ativos: { data: mockLocks, error: null },
       eventos: { data: { cota_avaliacoes_padrao: 3 }, error: null },
     });
+    mockarSituacao({ data: mockSituacao, error: null });
   });
 
   it('1. RENDERIZAÇÃO INICIAL: agrupa projetos por corredores e projeta projetos sem estande em seção separada', async () => {
@@ -185,16 +214,16 @@ describe('MapaEstandes: Visualização Expandida, Cores e Badges de Notas', () =
       expect(screen.getByText('Robô Pantaneiro Autônomo')).toBeDefined();
     });
 
-    // Média de p-01: (9.5 + 8.5 + 9.0) / 3 = 9.00 pts
-    expect(screen.getByText('9.00 pts')).toBeDefined();
+    // Média de p-01, já calculada no banco: 9,00 pts
+    expect(screen.getByText('9,00 pts')).toBeDefined();
 
     // Badges das notas individuais de p-01
     expect(screen.getByText('9.5')).toBeDefined();
     expect(screen.getByText('8.5')).toBeDefined();
     expect(screen.getByText('9.0')).toBeDefined();
 
-    // Média de p-03: 10.00 pts
-    expect(screen.getByText('10.00 pts')).toBeDefined();
+    // Média de p-03: 10,00 pts
+    expect(screen.getByText('10,00 pts')).toBeDefined();
     expect(screen.getByText('10.0')).toBeDefined();
 
     // p-02 e p-04 não possuem notas
@@ -328,9 +357,9 @@ describe('MapaEstandes: Visualização Expandida, Cores e Badges de Notas', () =
   it('9. ERRO DE LEITURA: mostra o erro em vez de um mapa vazio ou incompleto', async () => {
     mockarTabelas({
       projetos: { data: mockProjetos, error: null },
-      avaliacoes: { data: null, error: { code: 'XX000', message: 'banco fora do ar' } },
       eventos: { data: { cota_avaliacoes_padrao: 3 }, error: null },
     });
+    mockarSituacao({ data: null, error: { code: 'XX000', message: 'banco fora do ar' } });
 
     render(<MapaEstandes id_evento_ativo="evt-2026" cota_padrao_evento={3} />);
 

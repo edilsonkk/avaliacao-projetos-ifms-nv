@@ -42,6 +42,8 @@ interface QuestionarioSalvo {
   escala_maxima: number;
   total_perguntas: number;
   id_origem: string | null;
+  /** Questionário de voto popular: as notas dele correm fora da média técnica. */
+  is_voto_popular: boolean;
 }
 
 let contadorTemp = 0;
@@ -84,6 +86,7 @@ export const GestorQuestionarios: React.FC<{
   const [titulo_questionario, set_titulo_questionario] = useState<string>('');
   const [escala_minima, set_escala_minima] = useState<number>(0);
   const [escala_maxima, set_escala_maxima] = useState<number>(10);
+  const [is_voto_popular, set_is_voto_popular] = useState<boolean>(false);
   const [perguntas_lista, set_perguntas_lista] = useState<ItemPerguntaForm[]>([novaPergunta()]);
   const [idQuestionarioEdicao, setIdQuestionarioEdicao] = useState<string | null>(null);
   const [usos_em_edicao, set_usos_em_edicao] = useState<number>(0);
@@ -127,6 +130,7 @@ export const GestorQuestionarios: React.FC<{
     set_titulo_questionario('');
     set_escala_minima(0);
     set_escala_maxima(10);
+    set_is_voto_popular(false);
     set_perguntas_lista([novaPergunta()]);
   };
 
@@ -140,7 +144,7 @@ export const GestorQuestionarios: React.FC<{
     try {
       const { data, error } = await supabase
         .from('questionarios')
-        .select('id_questionario, titulo, escala_minima, escala_maxima, id_origem, perguntas_questionario(count)')
+        .select('id_questionario, titulo, escala_minima, escala_maxima, id_origem, is_voto_popular, perguntas_questionario(count)')
         .eq('id_evento', idEvento)
         .order('titulo', { ascending: true });
       if (error) throw error;
@@ -152,6 +156,7 @@ export const GestorQuestionarios: React.FC<{
           escala_maxima: Number(q.escala_maxima ?? 10),
           total_perguntas: q.perguntas_questionario?.[0]?.count ?? 0,
           id_origem: q.id_origem ?? null,
+          is_voto_popular: q.is_voto_popular === true,
         }))
       );
     } catch (err) {
@@ -285,6 +290,7 @@ export const GestorQuestionarios: React.FC<{
     set_titulo_questionario(quest.titulo);
     set_escala_minima(quest.escala_minima);
     set_escala_maxima(quest.escala_maxima);
+    set_is_voto_popular(quest.is_voto_popular);
     set_perguntas_lista(
       (pergs || []).length > 0
         ? (pergs || []).map((p: any) =>
@@ -369,7 +375,7 @@ export const GestorQuestionarios: React.FC<{
 
     set_salvando(true);
     try {
-      const { error } = await supabase.rpc('admin_salvar_questionario', {
+      const { data: dadosSalvos, error } = await supabase.rpc('admin_salvar_questionario', {
         p_id_questionario: idQuestionarioEdicao,
         p_id_evento: idEvento || null,
         p_titulo: titulo_questionario.trim(),
@@ -387,6 +393,22 @@ export const GestorQuestionarios: React.FC<{
         setErroQuest(`Não foi possível salvar o questionário: ${tratarErroEscritaAdmin(error)}`);
         return;
       }
+      // A marca de voto popular vai por RPC própria: admin_salvar_questionario não muda de
+      // assinatura, para não quebrar a versão anterior do front-end entre o db push e o deploy.
+      if (usos_em_edicao === 0) {
+        const alvo = idQuestionarioEdicao || (dadosSalvos as string | null);
+        if (alvo) {
+          const { error: erroMarca } = await supabase.rpc('admin_marcar_questionario_voto_popular', {
+            p_id_questionario: alvo,
+            p_is_voto_popular: is_voto_popular,
+          });
+          if (erroMarca) {
+            setErroQuest(`Questionário salvo, mas a marca de voto popular não foi gravada: ${tratarErroEscritaAdmin(erroMarca)}`);
+            return;
+          }
+        }
+      }
+
       exibir_notificacao(
         idQuestionarioEdicao
           ? `Questionário "${titulo_questionario.trim()}" atualizado.`
@@ -717,6 +739,31 @@ export const GestorQuestionarios: React.FC<{
               />
             </div>
           </div>
+
+          {/* Marca de voto popular: define se as notas deste questionário correm por fora da
+              avaliação técnica. Não pode mudar depois do primeiro uso, senão notas já lançadas
+              trocariam de categoria e médias publicadas mudariam. */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1.5">
+            <div className="flex items-start gap-2">
+              <input
+                id="quest-voto-popular"
+                type="checkbox"
+                checked={is_voto_popular}
+                disabled={somenteTitulo || usos_em_edicao > 0}
+                onChange={(e) => set_is_voto_popular(e.target.checked)}
+                className="mt-0.5 w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer shrink-0 disabled:cursor-not-allowed"
+              />
+              <label htmlFor="quest-voto-popular" className="text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer">
+                Questionário de voto popular
+              </label>
+            </div>
+            <p className="text-xs text-slate-500">
+              As notas dele não entram na média técnica do projeto, não ocupam a cota de avaliações, não
+              acionam quarentena e não entram no ranking técnico: têm média, classificação e relatório
+              próprios.
+              {usos_em_edicao > 0 && ' Este questionário já foi usado, então a marca não pode mais mudar.'}
+            </p>
+          </div>
         </fieldset>
 
         <fieldset className="space-y-4">
@@ -889,6 +936,7 @@ export const GestorQuestionarios: React.FC<{
                 <h4 className="font-extrabold text-slate-900 dark:text-white leading-snug">{quest.titulo}</h4>
                 <p className="text-slate-500 text-[11px]">
                   Notas de {quest.escala_minima} a {quest.escala_maxima} · {quest.total_perguntas} pergunta(s)
+                  {quest.is_voto_popular && ' · voto popular'}
                 </p>
                 <div className="flex gap-2 pt-1 flex-wrap">
                   <button

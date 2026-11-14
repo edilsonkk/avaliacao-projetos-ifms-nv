@@ -5,9 +5,27 @@ import { RankingPremiacao } from '@/features/relatorios';
 import { supabase } from '@/lib/supabase';
 
 vi.mock('@/lib/supabase', () => ({
-  supabase: { from: vi.fn(), auth: { getSession: vi.fn() } },
+  supabase: { from: vi.fn(), rpc: vi.fn(), auth: { getSession: vi.fn() } },
   verificar_conexao_configurada: vi.fn(() => true),
 }));
+
+// Voto popular: lista própria, vinda já ordenada pela bayesiana do banco
+const VOTO_POPULAR = [
+  {
+    id_projeto: 'id-VP-9',
+    codigo_projeto: 'VP-9',
+    titulo: 'Projeto Mais Votado',
+    modalidade: 'Iniciação Científica',
+    area_tematica: 'Engenharias',
+    nome_instituicao: 'IFMS',
+    total_votos: 18,
+    media_simples: 9.4,
+    media_bayesiana: 9.23,
+    media_evento: 8.6,
+    peso_ancora: 5,
+    posicao: 1,
+  },
+];
 
 const ID_EVENTO = 'evt-1';
 
@@ -57,6 +75,37 @@ describe('RankingPremiacao', () => {
       linha({ codigo_projeto: 'R-009', media_geral: 5, posicao: 4 }),
     ];
     mockarBanco();
+  });
+
+  it('deve mostrar a classificação do voto popular à parte, com a conta da âncora', async () => {
+    // Arrange
+    vi.mocked(supabase.rpc).mockImplementation(((nome: string) =>
+      Promise.resolve(
+        nome === 'fn_relatorio_voto_popular_completo'
+          ? { data: VOTO_POPULAR, error: null }
+          : { data: [], error: null },
+      )) as never);
+
+    // Act
+    render(<RankingPremiacao id_evento_ativo={ID_EVENTO} />);
+
+    // Assert
+    expect(await screen.findByRole('heading', { name: /^voto popular$/i })).toBeInTheDocument();
+    expect(screen.getByText(/média bayesiana/i)).toBeInTheDocument();
+    expect(screen.getByText(/9,23 pts/)).toBeInTheDocument();
+    expect(screen.getByText(/média dos votos 9,40 · 18 votos/)).toBeInTheDocument();
+  });
+
+  it('não deve mostrar a seção de voto popular quando não há voto', async () => {
+    // Arrange
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: [], error: null } as never);
+
+    // Act
+    render(<RankingPremiacao id_evento_ativo={ID_EVENTO} />);
+
+    // Assert
+    await screen.findByText(/ranking de premiação/i);
+    expect(screen.queryByRole('heading', { name: /^voto popular$/i })).not.toBeInTheDocument();
   });
 
   it('deve ler só a classificação do evento ativo', async () => {

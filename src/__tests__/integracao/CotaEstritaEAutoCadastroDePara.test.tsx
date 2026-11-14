@@ -6,6 +6,7 @@ import { AtribuicaoForcada } from '@/features/atribuicoes';
 import { TelaAvaliador } from '@/features/avaliacao';
 import { GestorProjetos } from '@/features/projetos';
 import { supabase } from '@/lib/supabase';
+import { rpcPaginavel } from '@/test/rpcPaginavel';
 
 // Mock do Supabase
 vi.mock('@/lib/supabase', () => {
@@ -122,6 +123,21 @@ describe('Regras de Negócio: Cota Estrita, Sorteio, Auto-cadastro e De-Para', (
       return criarQueryChain({ data: [], error: null });
     });
 
+    // Cota e vagas são contadas no banco (fn_projetos_situacao), não no navegador
+    mockRpc.mockImplementation((nome: string) =>
+      rpcPaginavel(
+        nome === 'fn_projetos_situacao'
+          ? {
+              data: [
+                { id_projeto: 'proj-cheio', cota: 3, avaliacoes_tecnicas: 3, travas_tecnicas: 0, vagas_restantes: 0 },
+                { id_projeto: 'proj-disponivel', cota: 3, avaliacoes_tecnicas: 1, travas_tecnicas: 0, vagas_restantes: 2 },
+              ],
+              error: null,
+            }
+          : { data: null, error: null }
+      )
+    );
+
     render(
       <AtribuicaoForcada
         isOpen={true}
@@ -187,7 +203,7 @@ describe('Regras de Negócio: Cota Estrita, Sorteio, Auto-cadastro e De-Para', (
     it('sem item válido na fila, segue para o sorteio sem gravar trava ou fila direto', async () => {
       // Arrange
       mockRpc.mockImplementation((nome: string) =>
-        Promise.resolve(nome === 'fn_assumir_item_fila' ? { data: null, error: null } : { data: 'proj-sorteado-novo', error: null })
+        rpcPaginavel(nome === 'fn_assumir_item_fila' ? { data: null, error: null } : { data: 'proj-sorteado-novo', error: null } as any)
       );
 
       // Act
@@ -206,7 +222,7 @@ describe('Regras de Negócio: Cota Estrita, Sorteio, Auto-cadastro e De-Para', (
     it('com item válido na fila, carrega o projeto entregue pelo banco e não sorteia', async () => {
       // Arrange
       mockRpc.mockImplementation((nome: string) =>
-        Promise.resolve(nome === 'fn_assumir_item_fila' ? { data: PROJETO_FILA, error: null } : { data: 'proj-sorteado-novo', error: null })
+        rpcPaginavel(nome === 'fn_assumir_item_fila' ? { data: PROJETO_FILA, error: null } : { data: 'proj-sorteado-novo', error: null } as any)
       );
 
       // Act

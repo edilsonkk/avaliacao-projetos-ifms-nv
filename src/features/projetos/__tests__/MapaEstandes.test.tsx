@@ -3,9 +3,10 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MapaEstandes } from '@/features/projetos';
 import { supabase } from '@/lib/supabase';
+import { rpcPaginavel } from '@/test/rpcPaginavel';
 
 vi.mock('@/lib/supabase', () => ({
-  supabase: { from: vi.fn(), auth: { getSession: vi.fn() } },
+  supabase: { from: vi.fn(), rpc: vi.fn(), auth: { getSession: vi.fn() } },
   verificar_conexao_configurada: vi.fn(() => true),
 }));
 
@@ -13,6 +14,21 @@ const ID_EVENTO = 'evt-1';
 type Chamada = { tabela: string; metodo: string; args: unknown[] };
 let chamadas: Chamada[] = [];
 let respostas: Record<string, unknown[]> = {};
+/** Uma linha de fn_projetos_situacao: a conta de cota, vagas, média e quarentena feita no banco. */
+let situacao: unknown[] = [];
+
+const linhaSituacao = (over: Record<string, unknown>) => ({
+  cota: 3,
+  avaliacoes_tecnicas: 0,
+  travas_tecnicas: 0,
+  vagas_restantes: 3,
+  media_tecnica: null,
+  notas_tecnicas: [],
+  votos_populares: 0,
+  media_voto_popular: null,
+  em_quarentena: false,
+  ...over,
+});
 
 const mockarBanco = () => {
   vi.mocked(supabase.from).mockImplementation(((tabela: string) => {
@@ -28,6 +44,10 @@ const mockarBanco = () => {
     chain.maybeSingle = vi.fn(() => Promise.resolve(resultado));
     chain.then = (ok: any, erro: any) => Promise.resolve(resultado).then(ok, erro);
     return chain;
+  }) as never);
+  vi.mocked(supabase.rpc).mockImplementation(((nome: string, args: unknown) => {
+    chamadas.push({ tabela: `rpc:${nome}`, metodo: 'rpc', args: [args] });
+    return rpcPaginavel({ data: situacao, error: null }) as never;
   }) as never);
 };
 
@@ -55,28 +75,72 @@ describe('MapaEstandes', () => {
         projeto({ codigo_projeto: 'P-2', estande: 'EST-12' }),
         projeto({ codigo_projeto: 'P-3', estande: 'B-03', is_check_in_realizado: null }),
       ],
-      avaliacoes: [
-        { id_projeto: 'id-P-1', nota_final: 9 },
-        { id_projeto: 'id-P-1', nota_final: 8 },
-      ],
-      view_projetos_quarentena: [{ id_projeto: 'id-P-2' }],
-      locks_ativos: [],
+      avaliacoes: [],
     };
+    situacao = [
+      linhaSituacao({
+        id_projeto: 'id-P-1',
+        cota: 2,
+        avaliacoes_tecnicas: 2,
+        vagas_restantes: 0,
+        media_tecnica: 8.5,
+        notas_tecnicas: [9, 8],
+      }),
+      linhaSituacao({ id_projeto: 'id-P-2', em_quarentena: true }),
+      linhaSituacao({ id_projeto: 'id-P-3' }),
+    ];
     mockarBanco();
   });
 
-  it('deve ler avaliações, travas e quarentena só do evento ativo, sem canceladas e sem travas vencidas', async () => {
+  it('deve pedir cota, vagas, média e quarentena ao banco, só do evento ativo', async () => {
     // Arrange / Act
     render(<MapaEstandes id_evento_ativo={ID_EVENTO} />);
     await screen.findByText('Projeto P-1');
 
     // Assert
     expect(chamadasDe('projetos', 'eq')).toContainEqual(['id_evento', ID_EVENTO]);
-    expect(chamadasDe('avaliacoes', 'eq')).toContainEqual(['projetos.id_evento', ID_EVENTO]);
-    expect(chamadasDe('avaliacoes', 'or')).toContainEqual(['status.is.null,status.neq.CANCELADA']);
-    expect(chamadasDe('locks_ativos', 'eq')).toContainEqual(['projetos.id_evento', ID_EVENTO]);
-    expect(String(chamadasDe('locks_ativos', 'or')[0][0])).toMatch(/^expira_em\.is\.null,expira_em\.gt\./);
-    expect(chamadasDe('view_projetos_quarentena', 'eq')).toContainEqual(['id_evento', ID_EVENTO]);
+    expect(chamadasDe('rpc:fn_projetos_situacao', 'rpc')).toContainEqual([{ p_id_evento: ID_EVENTO }]);
+    // A conta não é mais refeita no navegador: nada de ler avaliações nem travas cruas
+    expect(chamadas.some((c) => c.tabela === 'locks_ativos')).toBe(false);
+    expect(chamadas.some((c) => c.tabela === 'view_projetos_quarentena')).toBe(false);
+    expect(chamadas.some((c) => c.tabela === 'avaliacoes')).toBe(false);
+  });
+
+  it('deve paginar fn_projetos_situacao: projeto além da primeira página também recebe a situação do banco', async () => {
+    // Arrange: o PostgREST corta em 1000 linhas. P-2 é a linha 1001, então só chega
+    // na segunda página — sem paginar, o estande ficaria com o padrão do navegador.
+    const encheLinhas = Array.from({ length: 1000 }, (_, i) => linhaSituacao({ id_projeto: `id-enche-${i}` }));
+    const todas = [...encheLinhas, linhaSituacao({ id_projeto: 'id-P-2', media_tecnica: 7.5, notas_tecnicas: [7, 8] })];
+    const faixas: Array<[number, number]> = [];
+    vi.mocked(supabase.rpc).mockImplementation(((nome: string, args: unknown) => {
+      chamadas.push({ tabela: `rpc:${nome}`, metodo: 'rpc', args: [args] });
+      return {
+        order: () => ({
+          range: (inicio: number, fim: number) => {
+            faixas.push([inicio, fim]);
+            return Promise.resolve({ data: todas.slice(inicio, fim + 1), error: null });
+          },
+        }),
+      } as never;
+    }) as never);
+
+    // Act
+    render(<MapaEstandes id_evento_ativo={ID_EVENTO} />);
+    await screen.findByText('Projeto P-2');
+
+    // Assert: buscou a segunda página e usou a média que veio dela
+    expect(faixas).toEqual([[0, 999], [1000, 1999]]);
+    expect(within(cardDe('P-2')).getByText('7,50 pts')).toBeInTheDocument();
+  });
+
+  it('deve mostrar a média e as notas técnicas que vieram do banco', async () => {
+    // Arrange / Act
+    render(<MapaEstandes id_evento_ativo={ID_EVENTO} />);
+    await screen.findByText('Projeto P-1');
+
+    // Assert
+    expect(within(cardDe('P-1')).getByText('8,50 pts')).toBeInTheDocument();
+    expect(within(cardDe('P-1')).getByText('9.0')).toBeInTheDocument();
   });
 
   it('deve usar a cota customizada do projeto para a cor e o contador', async () => {
@@ -117,6 +181,7 @@ describe('MapaEstandes', () => {
     // Assert
     expect(await screen.findByText(/não há evento ativo/i)).toBeInTheDocument();
     expect(supabase.from).not.toHaveBeenCalled();
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
   it('deve abrir a auditoria sem avaliações canceladas', async () => {
@@ -131,6 +196,7 @@ describe('MapaEstandes', () => {
 
     // Assert
     expect(chamadasDe('avaliacoes', 'eq')).toContainEqual(['id_projeto', 'id-P-1']);
+    expect(chamadasDe('avaliacoes', 'eq')).toContainEqual(['is_voto_popular', false]);
     expect(chamadasDe('avaliacoes', 'or')).toContainEqual(['status.is.null,status.neq.CANCELADA']);
   });
 });

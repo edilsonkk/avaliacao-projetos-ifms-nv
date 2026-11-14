@@ -45,6 +45,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
   const [data_evento, set_data_evento] = useState<string>(new Date().toISOString().split('T')[0]);
   const [minutos_timeout_lock, set_minutos_timeout_lock] = useState<number>(15);
   const [cota_avaliacoes_padrao, set_cota_avaliacoes_padrao] = useState<number>(3);
+  const [fixar_questionario, set_fixar_questionario] = useState<boolean>(true);
   const [sistema_liberado, set_sistema_liberado] = useState<boolean>(true);
   const [horario_inicio, set_horario_inicio] = useState<string>('08:00');
   const [horario_fim, set_horario_fim] = useState<string>('18:00');
@@ -88,6 +89,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
           set_data_evento(dados_evento.data_evento || new Date().toISOString().split('T')[0]);
           set_minutos_timeout_lock(dados_evento.minutos_timeout_lock || 15);
           set_cota_avaliacoes_padrao(dados_evento.cota_avaliacoes_padrao || 3);
+          set_fixar_questionario(dados_evento.fixar_questionario_primeira_avaliacao !== false);
           set_sistema_liberado(dados_evento.sistema_liberado !== false);
           set_horario_inicio(dados_evento.horario_inicio || '08:00');
           set_horario_fim(dados_evento.horario_fim || '18:00');
@@ -127,6 +129,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
       data_evento: dataFormatada,
       minutos_timeout_lock: Number(minutos_timeout_lock),
       cota_avaliacoes_padrao: Number(cota_avaliacoes_padrao),
+      fixar_questionario_primeira_avaliacao: fixar_questionario,
       sistema_liberado: Boolean(sistema_liberado),
       horario_inicio: horario_inicio || '08:00',
       horario_fim: horario_fim || '18:00',
@@ -164,6 +167,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
           tamanho_codigo: _tc,
           max_tentativas_codigo: _mt,
           metodos_vinculo: _mv,
+          fixar_questionario_primeira_avaliacao: _fq,
           ...dadosSemData
         } = dados_atualizacao;
         const resFallback = await supabase
@@ -378,6 +382,28 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
                 <div className="p-3 bg-white dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <span className="flex items-center gap-1 text-xs font-bold text-slate-800 dark:text-slate-200">
+                      <label htmlFor="cfg-fixar-questionario" className="cursor-pointer">Travar o questionário no primeiro avaliador</label>
+                      <Dica alinhar="inicio">
+                        Ligado, o questionário escolhido na primeira avaliação do projeto vale para todos os
+                        avaliadores dele: os seguintes não escolhem nada e outro questionário é recusado. Desligado,
+                        cada avaliador escolhe o questionário que vai usar — útil quando o mesmo projeto é avaliado
+                        por bancas com critérios diferentes.
+                      </Dica>
+                    </span>
+                    <span className="text-[11px] text-slate-500">Os demais avaliadores usam o mesmo questionário.</span>
+                  </div>
+                  <input
+                    id="cfg-fixar-questionario"
+                    type="checkbox"
+                    checked={fixar_questionario}
+                    onChange={(e) => set_fixar_questionario(e.target.checked)}
+                    className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer shrink-0"
+                  />
+                </div>
+
+                <div className="p-3 bg-white dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="flex items-center gap-1 text-xs font-bold text-slate-800 dark:text-slate-200">
                       <label htmlFor="cfg-sistema-liberado" className="cursor-pointer">Sistema liberado para avaliadores</label>
                       <Dica alinhar="inicio">
                         Desligado, nenhum avaliador sorteia projetos nem envia notas novas: use para pausar ou encerrar a feira. Admin e Staff continuam funcionando normalmente.
@@ -405,7 +431,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
                       <span className="block space-y-1.5">
                         <span className="block"><strong>Pareamento pelo Staff:</strong> o celular do avaliador mostra um código e o Staff o digita no balcão de credenciamento. Exige a presença do avaliador, por isso é o mais seguro.</span>
                         <span className="block"><strong>Código de acesso:</strong> o Staff gera um código e o entrega ao avaliador, que digita o e-mail e o código no próprio celular. Útil quando ele não pode passar no balcão.</span>
-                        <span className="block"><strong>Ambos:</strong> o celular oferece as duas formas.</span>
+                        <span className="block">Vale uma forma por evento: o celular do avaliador oferece só a escolhida aqui.</span>
                       </span>
                     }
                     alinhar="inicio"

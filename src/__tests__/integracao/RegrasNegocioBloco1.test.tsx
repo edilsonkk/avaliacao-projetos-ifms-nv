@@ -8,7 +8,12 @@ vi.stubGlobal('confirm', vi.fn(() => true));
 
 const { mockFrom, mockRpc, mockInsert } = vi.hoisted(() => {
   const mockInsert = vi.fn().mockResolvedValue({ error: null });
-  const mockRpc = vi.fn().mockResolvedValue({ error: null });
+  // A leitura de fn_projetos_situacao é paginada (buscarTodas monta .order().range())
+  const mockRpc = vi.fn(() => {
+    const resultado = { data: [], error: null };
+    const entregar = () => Promise.resolve(resultado);
+    return { then: (ok: any, err: any) => entregar().then(ok, err), order: () => ({ range: entregar }), range: entregar };
+  });
   const mockFrom = vi.fn();
   return { mockFrom, mockRpc, mockInsert };
 });

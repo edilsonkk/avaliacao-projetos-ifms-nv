@@ -15,7 +15,7 @@ describe('parâmetros de acesso dos avaliadores', () => {
       minutos_validade_codigo_acesso: 15,
       tamanho_codigo: 6,
       max_tentativas_codigo: 5,
-      metodos_vinculo: 'ambos',
+      metodos_vinculo: 'pareamento',
     });
   });
 
@@ -50,7 +50,7 @@ describe('parâmetros de acesso dos avaliadores', () => {
       minutos_validade_codigo_acesso: 121,
       tamanho_codigo: 5,
       max_tentativas_codigo: 11,
-      metodos_vinculo: 'ambos',
+      metodos_vinculo: 'pareamento',
     });
 
     // Assert

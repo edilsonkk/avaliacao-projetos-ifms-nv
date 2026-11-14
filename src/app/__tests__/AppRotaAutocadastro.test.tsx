@@ -56,7 +56,7 @@ describe('App - rota do autocadastro pelo QR Code', () => {
       nome: null,
       email: null,
       id_evento: null,
-      metodos_vinculo: 'ambos' as const,
+      metodos_vinculo: 'pareamento' as const,
     });
   });
 

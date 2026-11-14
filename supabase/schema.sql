@@ -807,6 +807,8 @@ CREATE OR REPLACE FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uui
 DECLARE
   v_id_evento     uuid;
   v_cota          integer;
+  v_fixar_quest   boolean;
+  v_voto_popular  boolean;
   v_quest_fixado  uuid;
   v_codigo        text;
   v_ativas        integer;
@@ -822,8 +824,9 @@ BEGIN
   END IF;
 
   SELECT p.id_evento, coalesce(p.cota_avaliacoes_customizada, e.cota_avaliacoes_padrao, 3),
-         p.id_questionario_fixado, coalesce(p.codigo_projeto, p.titulo)
-    INTO v_id_evento, v_cota, v_quest_fixado, v_codigo
+         p.id_questionario_fixado, coalesce(p.codigo_projeto, p.titulo),
+         coalesce(e.fixar_questionario_primeira_avaliacao, true)
+    INTO v_id_evento, v_cota, v_quest_fixado, v_codigo, v_fixar_quest
   FROM public.projetos p
   LEFT JOIN public.eventos e ON e.id_evento = p.id_evento
   WHERE p.id_projeto = p_id_projeto
@@ -847,7 +850,15 @@ BEGIN
                   WHERE q.id_questionario = p_id_questionario AND q.id_evento = v_id_evento) THEN
     RAISE EXCEPTION 'Questionário de outro evento.' USING ERRCODE = '22023';
   END IF;
-  IF v_quest_fixado IS NOT NULL AND v_quest_fixado IS DISTINCT FROM p_id_questionario THEN
+  SELECT coalesce(q.is_voto_popular, false) INTO v_voto_popular
+  FROM public.questionarios q WHERE q.id_questionario = p_id_questionario;
+  v_voto_popular := coalesce(v_voto_popular, false);
+
+  -- Mesma regra de fn_enviar_avaliacao: só recusa quando o evento trava o
+  -- questionário no primeiro avaliador, e o voto popular nunca bate na trava
+  -- (o questionário dele é, por desenho, diferente do fixado no projeto).
+  IF v_fixar_quest AND NOT v_voto_popular
+     AND v_quest_fixado IS NOT NULL AND v_quest_fixado IS DISTINCT FROM p_id_questionario THEN
     RAISE EXCEPTION 'O projeto % já está fixado em outro questionário: use o mesmo das demais avaliações.', v_codigo
       USING ERRCODE = '22023';
   END IF;
@@ -863,10 +874,12 @@ BEGIN
     RAISE EXCEPTION 'Este avaliador já avaliou o projeto %.', v_codigo USING ERRCODE = '22023';
   END IF;
 
+  -- Cota é de nota técnica: lançar voto popular não consome vaga nem pede confirmação
   SELECT count(*) INTO v_ativas FROM public.avaliacoes a
-  WHERE a.id_projeto = p_id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA');
+  WHERE a.id_projeto = p_id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')
+    AND NOT a.is_voto_popular;
 
-  IF v_ativas >= v_cota AND NOT p_confirmar_acima_da_cota THEN
+  IF NOT v_voto_popular AND v_ativas >= v_cota AND NOT p_confirmar_acima_da_cota THEN
     RAISE EXCEPTION 'O projeto % já tem % de % avaliações da cota. Confirme para lançar acima da cota.',
       v_codigo, v_ativas, v_cota USING ERRCODE = '22023';
   END IF;
@@ -893,7 +906,8 @@ BEGIN
 
   UPDATE public.projetos
   SET id_questionario_fixado = p_id_questionario
-  WHERE id_projeto = p_id_projeto AND id_questionario_fixado IS NULL;
+  WHERE id_projeto = p_id_projeto AND id_questionario_fixado IS NULL
+    AND NOT v_voto_popular;
 
   v_quarentena := public.fn_recalcular_quarentena(p_id_projeto);
 
@@ -914,7 +928,7 @@ COMMENT ON FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_
 
 
 
-CREATE OR REPLACE FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_id_evento" "uuid") RETURNS TABLE("id_questionario" "uuid", "titulo" "text", "nome_evento" "text", "data_evento" "date", "total_perguntas" integer, "total_avaliacoes" integer, "ja_no_evento" boolean)
+CREATE OR REPLACE FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_id_evento" "uuid") RETURNS TABLE("id_questionario" "uuid", "titulo" "text", "nome_evento" "text", "data_evento" "date", "total_perguntas" integer, "total_avaliacoes" integer, "ja_no_evento" boolean, "is_voto_popular" boolean)
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -934,6 +948,7 @@ BEGIN
            WHERE c.id_evento = p_id_evento
              AND c.id_origem IN (q.id_questionario, q.id_origem)
          )
+    , coalesce(q.is_voto_popular, false)
   FROM public.questionarios q
   JOIN public.eventos e ON e.id_evento = q.id_evento
   WHERE q.id_evento IS DISTINCT FROM p_id_evento
@@ -943,6 +958,43 @@ $$;
 
 
 ALTER FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_marcar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_atual boolean;
+  v_usos  integer;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT is_voto_popular INTO v_atual
+  FROM public.questionarios WHERE id_questionario = p_id_questionario FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Questionário não encontrado.';
+  END IF;
+
+  IF v_atual IS DISTINCT FROM coalesce(p_is_voto_popular, false) THEN
+    v_usos := public.fn_avaliacoes_do_questionario(p_id_questionario);
+    IF v_usos > 0 THEN
+      RAISE EXCEPTION 'Este questionário já foi usado em % avaliação(ões): mudar a marca de voto popular agora reclassificaria notas já lançadas e alteraria médias publicadas.', v_usos
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
+  PERFORM public.auditoria_marcar_origem('admin_marcar_questionario_voto_popular', NULL);
+  UPDATE public.questionarios
+     SET is_voto_popular = coalesce(p_is_voto_popular, false)
+   WHERE id_questionario = p_id_questionario;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_marcar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_remover_avaliador_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") RETURNS "jsonb"
@@ -1939,6 +1991,43 @@ $_$;
 ALTER FUNCTION "public"."admin_salvar_staff"("p_id_evento" "uuid", "p_itens" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_vincular_questionario_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid", "p_id_questionario" "uuid" DEFAULT NULL::"uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  IF p_id_evento IS NULL THEN
+    RAISE EXCEPTION 'Informe o evento do vínculo.' USING ERRCODE = '22023';
+  END IF;
+
+  IF p_id_questionario IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.questionarios q
+    WHERE q.id_questionario = p_id_questionario AND q.id_evento = p_id_evento
+  ) THEN
+    RAISE EXCEPTION 'O questionário precisa ser do mesmo evento do avaliador.' USING ERRCODE = '42501';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.avaliadores_evento ae
+    WHERE ae.id_usuario = p_id_usuario AND ae.id_evento = p_id_evento
+  ) THEN
+    RAISE EXCEPTION 'Avaliador não está no evento.' USING ERRCODE = '42501';
+  END IF;
+
+  PERFORM public.auditoria_marcar_origem('admin_vincular_questionario_avaliador', NULL);
+  UPDATE public.avaliadores_evento
+     SET id_questionario = p_id_questionario
+   WHERE id_usuario = p_id_usuario AND id_evento = p_id_evento;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_vincular_questionario_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid", "p_id_questionario" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."auditoria_ator"() RETURNS TABLE("id_usuario" "uuid", "papel" "text")
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -2018,6 +2107,23 @@ END $$;
 ALTER FUNCTION "public"."auditoria_registrar"("p_acao" "text", "p_tabela" "text", "p_id_evento" "uuid", "p_dados" "jsonb", "p_motivo" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."avaliacao_classificar_voto_popular"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  -- Sem questionário (linha legada), continua sendo nota técnica.
+  NEW.is_voto_popular := coalesce(
+    (SELECT q.is_voto_popular FROM public.questionarios q WHERE q.id_questionario = NEW.id_questionario),
+    false);
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."avaliacao_classificar_voto_popular"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."avaliador_atual"() RETURNS "uuid"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -2039,6 +2145,26 @@ $$;
 
 
 ALTER FUNCTION "public"."avaliador_atual"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."avaliador_e_voto_popular"("p_id_usuario" "uuid", "p_id_evento" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT coalesce((
+    SELECT q.is_voto_popular
+    FROM public.avaliadores_evento ae
+    JOIN public.questionarios q ON q.id_questionario = ae.id_questionario
+    WHERE ae.id_usuario = p_id_usuario AND ae.id_evento = p_id_evento
+  ), false);
+$$;
+
+
+ALTER FUNCTION "public"."avaliador_e_voto_popular"("p_id_usuario" "uuid", "p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."avaliador_e_voto_popular"("p_id_usuario" "uuid", "p_id_evento" "uuid") IS 'true quando o avaliador está vinculado a um questionário de voto popular no evento (é um votante).';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."conta_da_equipe"("p_auth_uid" "uuid") RETURNS boolean
@@ -2396,7 +2522,11 @@ BEGIN
     SELECT a.id_avaliacao, a.id_projeto, a.nota_final, a.id_usuario, a.created_at,
            a.ajuste_tipo, a.ajustada_em, a.ajustada_por, a.ajuste_motivo,
            pr.codigo_projeto, pr.id_questionario_fixado,
-           coalesce(a.id_questionario, pr.id_questionario_fixado) AS id_quest
+           coalesce(a.is_voto_popular, false) AS is_voto_popular,
+           -- O fallback para o questionário fixado é da nota técnica. Num voto popular ele
+           -- apontaria para o questionário técnico e C3a, C3c, C4 e C5 acusariam todas as notas.
+           CASE WHEN a.is_voto_popular THEN a.id_questionario
+                ELSE coalesce(a.id_questionario, pr.id_questionario_fixado) END AS id_quest
     FROM public.avaliacoes a
     JOIN proj pr ON pr.id_projeto = a.id_projeto
     WHERE a.status IS NULL OR a.status <> 'CANCELADA'
@@ -2514,7 +2644,8 @@ BEGIN
          pr.cota::text || ' avaliações', c.qtd::text || ' avaliações',
          'Avaliação além da cota entra na média e desequilibra a comparação com os outros projetos.'
   FROM proj pr
-  JOIN LATERAL (SELECT count(*) AS qtd FROM av WHERE av.id_projeto = pr.id_projeto) c ON true
+  JOIN LATERAL (SELECT count(*) AS qtd FROM av
+                WHERE av.id_projeto = pr.id_projeto AND NOT av.is_voto_popular) c ON true
   WHERE c.qtd > pr.cota
 
   UNION ALL
@@ -2524,7 +2655,8 @@ BEGIN
          'nenhuma avaliação', c.qtd::text || ' avaliações',
          'O projeto não entra no ranking, mas as notas continuam gravadas.'
   FROM proj pr
-  JOIN LATERAL (SELECT count(*) AS qtd FROM av WHERE av.id_projeto = pr.id_projeto) c ON true
+  JOIN LATERAL (SELECT count(*) AS qtd FROM av
+                WHERE av.id_projeto = pr.id_projeto AND NOT av.is_voto_popular) c ON true
   WHERE pr.is_fora_da_competicao AND c.qtd > 0
 
   UNION ALL
@@ -2534,7 +2666,8 @@ BEGIN
          'check-in feito antes da avaliação', 'sem check-in',
          'fn_enviar_avaliacao exige check-in: uma avaliação assim entrou por outro caminho.'
   FROM proj pr
-  JOIN LATERAL (SELECT count(*) AS qtd FROM av WHERE av.id_projeto = pr.id_projeto) c ON true
+  JOIN LATERAL (SELECT count(*) AS qtd FROM av
+                WHERE av.id_projeto = pr.id_projeto AND NOT av.is_voto_popular) c ON true
   WHERE NOT coalesce(pr.is_check_in_realizado, false) AND c.qtd > 0
 
   UNION ALL
@@ -2548,7 +2681,12 @@ BEGIN
   LEFT JOIN public.questionarios qf ON qf.id_questionario = av.id_questionario_fixado
   LEFT JOIN public.questionarios qa ON qa.id_questionario = av.id_quest
   WHERE av.id_questionario_fixado IS NOT NULL
+    AND NOT av.is_voto_popular
     AND av.id_quest IS DISTINCT FROM av.id_questionario_fixado
+    -- Só é achado quando o evento trava o questionário no primeiro avaliador: com a trava
+    -- desligada, questionário diferente é a regra do evento, não um erro.
+    AND coalesce((SELECT e.fixar_questionario_primeira_avaliacao FROM public.eventos e
+                   WHERE e.id_evento = v_id_evento), true)
 
   UNION ALL
   -- C9: a mesma média com números diferentes em telas diferentes
@@ -2561,7 +2699,7 @@ BEGIN
          'As telas calculam a média em lugares diferentes: divergência aqui é erro de uma das fontes.'
   FROM proj pr
   JOIN LATERAL (SELECT round(avg(av.nota_final), 2) + pr.ajuste_media AS media, count(*) AS qtd
-                FROM av WHERE av.id_projeto = pr.id_projeto) direto ON true
+                FROM av WHERE av.id_projeto = pr.id_projeto AND NOT av.is_voto_popular) direto ON true
   LEFT JOIN public.view_ranking_top3 rk ON rk.id_projeto = pr.id_projeto
   LEFT JOIN public.fn_relatorio_projetos_completo(v_id_evento) rel ON rel.id_projeto = pr.id_projeto
   WHERE direto.qtd > 0
@@ -2639,8 +2777,16 @@ BEGIN
   JOIN LATERAL (SELECT coalesce(round(avg(a.nota_final), 2), 0) AS valor
                 FROM public.avaliacoes a
                 WHERE a.id_projeto = p.id_projeto
-                  AND (a.status IS NULL OR a.status <> 'CANCELADA')) media ON true
-  WHERE p.id_evento = v_id_evento AND p.ajuste_media <> 0;
+                  AND (a.status IS NULL OR a.status <> 'CANCELADA')
+                  AND NOT a.is_voto_popular) media ON true
+  WHERE p.id_evento = v_id_evento AND p.ajuste_media <> 0
+
+  UNION ALL
+  -- C13 e C14: achados próprios do voto popular. Ficam aqui porque o Painel de
+  -- Auditoria e o memorial do projeto leem só fn_auditar_notas.
+  SELECT vp.severidade, vp.codigo, vp.titulo, vp.id_projeto, vp.codigo_projeto,
+         vp.id_avaliacao, vp.esperado, vp.encontrado, vp.detalhe
+  FROM public.fn_auditar_voto_popular(v_id_evento) vp;
 END $$;
 
 
@@ -2648,6 +2794,43 @@ ALTER FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") OWNER TO "postg
 
 
 COMMENT ON FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") IS 'Conferência de notas do evento: recalcula a nota final a partir das respostas e lista o que não fecha. Só Admin.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_auditar_voto_popular"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("severidade" "text", "codigo" "text", "titulo" "text", "id_projeto" "uuid", "codigo_projeto" "text", "id_avaliacao" "uuid", "esperado" "text", "encontrado" "text", "detalhe" "text")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  WITH ev AS (SELECT coalesce(p_id_evento, public.evento_ativo_id()) AS id_evento)
+  SELECT 'grave'::text, 'C13'::text, 'Classificação de voto popular divergente do questionário'::text,
+         p.id_projeto, p.codigo_projeto::text, a.id_avaliacao,
+         CASE WHEN q.is_voto_popular THEN 'voto popular' ELSE 'nota técnica' END::text,
+         CASE WHEN a.is_voto_popular THEN 'voto popular' ELSE 'nota técnica' END::text,
+         'avaliacoes.is_voto_popular é cópia da marca do questionário, mantida por trigger. Divergência significa escrita que não passou pelo trigger.'::text
+  FROM public.avaliacoes a
+  JOIN public.projetos p ON p.id_projeto = a.id_projeto
+  JOIN ev ON ev.id_evento = p.id_evento
+  JOIN public.questionarios q ON q.id_questionario = a.id_questionario
+  WHERE coalesce(a.is_voto_popular, false) IS DISTINCT FROM coalesce(q.is_voto_popular, false)
+
+  UNION ALL
+  SELECT 'atencao'::text, 'C14'::text, 'Avaliador de voto popular com nota técnica'::text,
+         p.id_projeto, p.codigo_projeto::text, a.id_avaliacao,
+         'nota pelo questionário vinculado'::text, 'nota técnica'::text,
+         'O avaliador está vinculado a um questionário de voto popular, mas esta nota entrou na média técnica do projeto.'::text
+  FROM public.avaliacoes a
+  JOIN public.projetos p ON p.id_projeto = a.id_projeto
+  JOIN ev ON ev.id_evento = p.id_evento
+  WHERE (a.status IS NULL OR a.status <> 'CANCELADA')
+    AND NOT coalesce(a.is_voto_popular, false)
+    AND public.avaliador_e_voto_popular(a.id_usuario, p.id_evento);
+$$;
+
+
+ALTER FUNCTION "public"."fn_auditar_voto_popular"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_auditar_voto_popular"("p_id_evento" "uuid") IS 'Achados próprios do voto popular (C13 e C14): a classificação gravada na avaliação divergir da marca do questionário, e votante com nota na média técnica.';
 
 
 
@@ -2740,7 +2923,8 @@ CREATE OR REPLACE FUNCTION "public"."fn_avaliacoes_ativas_do_projeto"("p_id_proj
     AS $$
   SELECT CASE WHEN public.avaliador_atual() IS NULL AND NOT public.is_staff() AND NOT public.is_admin() THEN NULL
          ELSE (SELECT count(*)::integer FROM public.avaliacoes
-               WHERE id_projeto = p_id_projeto AND (status IS NULL OR status <> 'CANCELADA')) END;
+               WHERE id_projeto = p_id_projeto AND (status IS NULL OR status <> 'CANCELADA')
+                 AND NOT is_voto_popular) END;
 $$;
 
 
@@ -2783,6 +2967,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_chave_desempate"("p_id_projeto" "uuid") 
     JOIN public.perguntas_questionario pq ON pq.id_pergunta = r.id_pergunta
     WHERE a.id_projeto = p_id_projeto
       AND (a.status IS NULL OR a.status <> 'CANCELADA')
+      AND NOT a.is_voto_popular
       AND pq.peso_desempate > 0
     GROUP BY pq.id_pergunta, pq.peso_desempate, pq.ordem
   ) x;
@@ -2853,6 +3038,9 @@ DECLARE
   v_alheias               integer;
   v_nulas                 integer;
   v_sistema_liberado      boolean;
+  v_fixar_questionario    boolean;
+  v_voto_popular          boolean;
+  v_quest_vinculado       uuid;
   v_escala_min            numeric(5,2);
   v_escala_max            numeric(5,2);
   v_qtd_respostas         integer;
@@ -2937,15 +3125,29 @@ BEGIN
   --    não tenham atingido a cota. O excesso de travas simultâneas é barrado no
   --    sorteio; aqui o avaliador já detém a sua e está concluindo.
   SELECT COALESCE(e.cota_avaliacoes_padrao, 3),
-         COALESCE(e.sistema_liberado, true)
-    INTO v_cota_padrao, v_sistema_liberado
+         COALESCE(e.sistema_liberado, true),
+         COALESCE(e.fixar_questionario_primeira_avaliacao, true)
+    INTO v_cota_padrao, v_sistema_liberado, v_fixar_questionario
   FROM public.eventos e WHERE e.id_evento = v_id_evento;
 
+  -- Esta avaliação é de voto popular? Quem decide é a marca do questionário.
+  SELECT coalesce(q.is_voto_popular, false) INTO v_voto_popular
+  FROM public.questionarios q WHERE q.id_questionario = p_id_questionario;
+  v_voto_popular := coalesce(v_voto_popular, false);
+
+  -- Avaliador vinculado a um questionário só usa aquele (é assim que o votante existe)
+  v_quest_vinculado := public.questionario_do_avaliador(p_id_usuario, v_id_evento);
+  IF v_quest_vinculado IS NOT NULL AND v_quest_vinculado IS DISTINCT FROM p_id_questionario THEN
+    RAISE EXCEPTION 'Este avaliador está vinculado a outro questionário neste evento.' USING ERRCODE = '42501';
+  END IF;
+
+  -- COTA: só vale para nota técnica, e conta só nota técnica. O voto popular corre à parte.
   SELECT COUNT(*) INTO v_avaliacoes_ativas
   FROM public.avaliacoes a
-  WHERE a.id_projeto = p_id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA');
+  WHERE a.id_projeto = p_id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')
+    AND NOT a.is_voto_popular;
 
-  IF v_avaliacoes_ativas >= COALESCE(v_cota_projeto, v_cota_padrao) THEN
+  IF NOT v_voto_popular AND v_avaliacoes_ativas >= COALESCE(v_cota_projeto, v_cota_padrao) THEN
     RAISE EXCEPTION 'Cota de avaliações do projeto já atingida.' USING ERRCODE = '42501';
   END IF;
 
@@ -2966,7 +3168,8 @@ BEGIN
   IF NOT FOUND OR v_quest_evento IS DISTINCT FROM v_id_evento THEN
     RAISE EXCEPTION 'Questionário não pertence ao evento do projeto.' USING ERRCODE = '42501';
   END IF;
-  IF v_quest_fixado IS NOT NULL AND v_quest_fixado <> p_id_questionario THEN
+  -- Só recusa quando o evento trava o questionário no primeiro avaliador
+  IF v_fixar_questionario AND NOT v_voto_popular AND v_quest_fixado IS NOT NULL AND v_quest_fixado <> p_id_questionario THEN
     RAISE EXCEPTION 'Este projeto já é avaliado com outro questionário.' USING ERRCODE = '42501';
   END IF;
   IF length(coalesce(p_parecer, '')) > 5000 THEN
@@ -3034,11 +3237,13 @@ BEGIN
   SELECT v_id_avaliacao, (r->>'id_pergunta')::uuid, (r->>'nota')::numeric
   FROM jsonb_array_elements(p_respostas) AS r;
 
-  -- Fixa o questionário do projeto se ainda não houver.
+  -- Fixa o questionário do projeto se ainda não houver, e só se o evento travar no primeiro avaliador.
   UPDATE public.projetos
   SET id_questionario_fixado = p_id_questionario
   WHERE id_projeto = p_id_projeto AND id_questionario_fixado IS NULL
-    AND p_id_questionario IS NOT NULL;
+    AND p_id_questionario IS NOT NULL
+    AND v_fixar_questionario
+    AND NOT v_voto_popular;
 
   -- Quarentena: a MESMA função usada por excluir/restaurar e pela view.
   -- Antes este bloco duplicava a regra sem exigir 2 avaliações nem respeitar
@@ -3099,7 +3304,8 @@ CREATE OR REPLACE FUNCTION "public"."fn_feira_concluida"("p_id_evento" "uuid") R
   ), proj AS (
     SELECT p.id_projeto, coalesce(p.cota_avaliacoes_customizada, (SELECT cota FROM ev)) AS cota,
            (SELECT count(*) FROM public.avaliacoes a
-            WHERE a.id_projeto = p.id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')) AS feitas
+            WHERE a.id_projeto = p.id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')
+              AND NOT a.is_voto_popular) AS feitas
     FROM public.projetos p
     WHERE p.id_evento = coalesce(p_id_evento, public.evento_ativo_id())
       AND coalesce(p.is_fora_da_competicao, false) = false
@@ -3119,6 +3325,8 @@ CREATE OR REPLACE FUNCTION "public"."fn_fixar_questionario"("p_id_projeto" "uuid
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
+DECLARE
+  v_fixar boolean;
 BEGIN
   IF public.avaliador_atual() IS NULL THEN
     RAISE EXCEPTION 'Aparelho não vinculado a um avaliador.' USING ERRCODE = '42501';
@@ -3129,6 +3337,16 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'É preciso estar com o projeto em avaliação.' USING ERRCODE = '42501';
   END IF;
+
+  SELECT coalesce(e.fixar_questionario_primeira_avaliacao, true) INTO v_fixar
+  FROM public.eventos e
+  JOIN public.projetos p ON p.id_evento = e.id_evento
+  WHERE p.id_projeto = p_id_projeto;
+
+  IF NOT coalesce(v_fixar, true) THEN
+    RAISE EXCEPTION 'Este evento não trava o questionário no primeiro avaliador.' USING ERRCODE = '42501';
+  END IF;
+
   UPDATE public.projetos SET id_questionario_fixado = p_id_questionario
   WHERE id_projeto = p_id_projeto AND id_questionario_fixado IS NULL;
 END;
@@ -3254,6 +3472,7 @@ BEGIN
     'presenca_em',     a.tempo_presenca,
     'criada_em',       a.created_at,
     'parecer',         a.parecer_final,
+    'is_voto_popular',  coalesce(a.is_voto_popular, false),
     'is_quarentena',   coalesce(a.is_quarentena, false),
     'cancelada_em',    a.cancelada_em,
     'cancelada_por',   (SELECT jsonb_build_object('id_usuario', c.id_usuario, 'nome', c.nome)
@@ -3289,7 +3508,10 @@ BEGIN
   JOIN public.projetos p  ON p.id_projeto = a.id_projeto
   LEFT JOIN public.usuarios u ON u.id_usuario = a.id_usuario
   LEFT JOIN public.questionarios q
-    ON q.id_questionario = coalesce(a.id_questionario, p.id_questionario_fixado)
+    -- O fallback para o questionário fixado no projeto só vale para nota técnica: num voto
+    -- popular ele apontaria para o questionário técnico e daria a escala errada.
+    ON q.id_questionario = CASE WHEN a.is_voto_popular THEN a.id_questionario
+                                ELSE coalesce(a.id_questionario, p.id_questionario_fixado) END
   LEFT JOIN LATERAL (
     SELECT
       jsonb_agg(jsonb_build_object(
@@ -3451,7 +3673,17 @@ BEGIN
       SELECT jsonb_agg(public.fn_memorial_avaliacao(a.id_avaliacao) ORDER BY a.created_at)
       FROM public.avaliacoes a
       WHERE a.id_projeto = p.id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')
+        AND NOT a.is_voto_popular
     ), '[]'::jsonb),
+    -- Voto popular em lista própria: não entra na média técnica nem na quarentena
+    'avaliacoes_voto_popular', coalesce((
+      SELECT jsonb_agg(public.fn_memorial_avaliacao(a.id_avaliacao) ORDER BY a.created_at)
+      FROM public.avaliacoes a
+      WHERE a.id_projeto = p.id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')
+        AND a.is_voto_popular
+    ), '[]'::jsonb),
+    'total_votos_populares', coalesce(votos.qtd, 0),
+    'media_voto_popular', votos.media,
     'avaliacoes_canceladas', coalesce((
       SELECT jsonb_agg(public.fn_memorial_avaliacao(a.id_avaliacao) ORDER BY a.created_at)
       FROM public.avaliacoes a
@@ -3487,6 +3719,7 @@ BEGIN
           JOIN public.perguntas_questionario pq ON pq.id_pergunta = r.id_pergunta
           WHERE a.id_projeto = p.id_projeto
             AND (a.status IS NULL OR a.status <> 'CANCELADA')
+            AND NOT a.is_voto_popular
             AND pq.peso_desempate > 0
           GROUP BY pq.id_pergunta, pq.peso_desempate, pq.ordem, pq.texto_pergunta
         ) d
@@ -3547,7 +3780,14 @@ BEGIN
            jsonb_agg(a.nota_final ORDER BY a.created_at) AS notas
     FROM public.avaliacoes a
     WHERE a.id_projeto = p.id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')
+      AND NOT a.is_voto_popular
   ) ativas ON true
+  LEFT JOIN LATERAL (
+    SELECT count(*) AS qtd, round(avg(a.nota_final), 2) AS media
+    FROM public.avaliacoes a
+    WHERE a.id_projeto = p.id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')
+      AND a.is_voto_popular
+  ) votos ON true
   WHERE p.id_projeto = p_id_projeto;
 
   RETURN v_resultado;
@@ -3569,6 +3809,7 @@ DECLARE
   v_evento  public.eventos;
   v_usuario public.usuarios;
   v_papel   text;
+  v_quest   uuid;
 BEGIN
   v_evento := public.parametros_acesso(NULL);
 
@@ -3580,6 +3821,7 @@ BEGIN
     ELSIF public.avaliador_atual() IS NOT NULL THEN
       SELECT * INTO v_usuario FROM public.usuarios WHERE id_usuario = public.avaliador_atual();
       v_papel := 'avaliador';
+      v_quest := public.questionario_do_avaliador(v_usuario.id_usuario, v_evento.id_evento);
     END IF;
   END IF;
 
@@ -3590,7 +3832,14 @@ BEGIN
     'nome',            v_usuario.nome,
     'email',           v_usuario.email,
     'id_evento',       v_evento.id_evento,
-    'metodos_vinculo', coalesce(v_evento.metodos_vinculo, 'ambos'),
+    'metodos_vinculo', coalesce(v_evento.metodos_vinculo, 'pareamento'),
+    -- Trava do questionário no primeiro avaliador: decide se o celular oferece a escolha
+    'fixar_questionario', coalesce(v_evento.fixar_questionario_primeira_avaliacao, true),
+    -- Questionário vinculado a este avaliador no evento (NULL: usa o do projeto)
+    'id_questionario_vinculado', v_quest,
+    'voto_popular', CASE WHEN v_quest IS NULL THEN false
+                         ELSE coalesce((SELECT q.is_voto_popular FROM public.questionarios q
+                                        WHERE q.id_questionario = v_quest), false) END,
     -- Sessão de Admin/Staff neste navegador: a tela do avaliador precisa de uma sessão só do aparelho
     'sessao_equipe',   public.sessao_de_conta_da_equipe()
   );
@@ -3627,6 +3876,10 @@ BEGIN
   FROM public.avaliadores_evento ae
   WHERE ae.id_usuario = p_id_usuario AND ae.id_evento = v_projeto.id_evento AND ae.is_credenciado;
   IF NOT FOUND THEN RETURN 'Avaliador não credenciado no evento'; END IF;
+
+  IF public.avaliador_e_voto_popular(p_id_usuario, v_projeto.id_evento) THEN
+    RETURN 'Avaliador de voto popular (a banca e a fila são de avaliação técnica)';
+  END IF;
 
   IF v_inst_avaliador IS NOT NULL AND v_projeto.id_instituicao IS NOT DISTINCT FROM v_inst_avaliador THEN
     RETURN 'Conflito: mesma instituição';
@@ -3732,6 +3985,79 @@ $$;
 ALTER FUNCTION "public"."fn_politica_seguranca"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_projetos_situacao"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id_projeto" "uuid", "cota" integer, "avaliacoes_tecnicas" integer, "travas_tecnicas" integer, "vagas_restantes" integer, "media_tecnica" numeric, "notas_tecnicas" numeric[], "votos_populares" integer, "media_voto_popular" numeric, "em_quarentena" boolean)
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cota_padrao integer;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+  IF p_id_evento IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT coalesce(e.cota_avaliacoes_padrao, 3) INTO v_cota_padrao
+  FROM public.eventos e WHERE e.id_evento = p_id_evento;
+  v_cota_padrao := coalesce(v_cota_padrao, 3);
+
+  RETURN QUERY
+  WITH notas AS (
+    SELECT a.id_projeto,
+      count(*) FILTER (WHERE NOT a.is_voto_popular)::int AS tecnicas,
+      round(avg(a.nota_final) FILTER (WHERE NOT a.is_voto_popular), 2) AS media_tec,
+      array_agg(round(a.nota_final, 2) ORDER BY coalesce(a.tempo_submissao, a.created_at) DESC)
+        FILTER (WHERE NOT a.is_voto_popular AND a.nota_final IS NOT NULL) AS notas_tec,
+      count(*) FILTER (WHERE a.is_voto_popular)::int AS populares,
+      round(avg(a.nota_final) FILTER (WHERE a.is_voto_popular), 2) AS media_pop
+    FROM public.avaliacoes a
+    JOIN public.projetos p ON p.id_projeto = a.id_projeto
+    WHERE p.id_evento = p_id_evento
+      AND (a.status IS NULL OR a.status <> 'CANCELADA')
+    GROUP BY a.id_projeto
+  ),
+  -- Travas vencidas não ocupam vaga (o sorteio as apaga antes de contar). Mesma
+  -- condição de fn_vagas_projeto, que é a conta oficial de vaga de um projeto só.
+  travas AS (
+    SELECT l.id_projeto, count(*) FILTER (WHERE NOT l.is_voto_popular)::int AS tecnicas
+    FROM public.locks_ativos l
+    JOIN public.projetos p ON p.id_projeto = l.id_projeto
+    WHERE p.id_evento = p_id_evento
+      AND l.expira_em > now()
+    GROUP BY l.id_projeto
+  ),
+  quarentena AS (
+    SELECT q.id_projeto FROM public.view_projetos_quarentena q WHERE q.id_evento = p_id_evento
+  )
+  SELECT p.id_projeto,
+    coalesce(p.cota_avaliacoes_customizada, v_cota_padrao)::int,
+    coalesce(n.tecnicas, 0),
+    coalesce(t.tecnicas, 0),
+    greatest(coalesce(p.cota_avaliacoes_customizada, v_cota_padrao) - (coalesce(n.tecnicas, 0) + coalesce(t.tecnicas, 0)), 0)::int,
+    n.media_tec,
+    coalesce(n.notas_tec, '{}'::numeric[]),
+    coalesce(n.populares, 0),
+    n.media_pop,
+    (q.id_projeto IS NOT NULL)
+  FROM public.projetos p
+  LEFT JOIN notas n ON n.id_projeto = p.id_projeto
+  LEFT JOIN travas t ON t.id_projeto = p.id_projeto
+  LEFT JOIN quarentena q ON q.id_projeto = p.id_projeto
+  WHERE p.id_evento = p_id_evento
+  ORDER BY p.codigo_projeto, p.id_projeto;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_projetos_situacao"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_projetos_situacao"("p_id_evento" "uuid") IS 'Situação de cada projeto do evento pela regra do sorteio: cota, avaliações técnicas ativas, travas técnicas não vencidas, vagas restantes, média e notas técnicas, voto popular e quarentena. Fonte única do Mapa de Estandes e da Atribuição Forçada — o voto popular não ocupa vaga nem entra na média técnica. Restrita ao Admin.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") RETURNS boolean
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3745,6 +4071,7 @@ BEGIN
     INTO v_em_quarentena
   FROM public.projetos p
   JOIN public.avaliacoes a ON a.id_projeto = p.id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')
+    AND NOT a.is_voto_popular
   WHERE p.id_projeto = p_id_projeto
   GROUP BY p.quarentena_resolvida_em;
 
@@ -3753,6 +4080,7 @@ BEGIN
   UPDATE public.avaliacoes
   SET is_quarentena = (v_em_quarentena AND (status IS NULL OR status <> 'CANCELADA'))
   WHERE id_projeto = p_id_projeto
+    AND NOT is_voto_popular
     AND is_quarentena IS DISTINCT FROM (v_em_quarentena AND (status IS NULL OR status <> 'CANCELADA'));
 
   RETURN v_em_quarentena;
@@ -3805,7 +4133,8 @@ CREATE OR REPLACE FUNCTION "public"."fn_relatorio_ausencias_completo"("p_id_even
       coalesce(inst.nome_exibicao, 'Não informada') AS projeto_instituicao,
       hi.created_at AS data_ausencia,
       (SELECT count(*)::int FROM public.avaliacoes av
-        WHERE av.id_projeto = p.id_projeto AND (av.status IS NULL OR av.status <> 'CANCELADA')) AS total_avaliacoes_atuais
+        WHERE av.id_projeto = p.id_projeto AND (av.status IS NULL OR av.status <> 'CANCELADA')
+          AND NOT av.is_voto_popular) AS total_avaliacoes_atuais
     FROM public.historico_impedimentos hi
     JOIN public.usuarios u ON u.id_usuario = hi.id_usuario
     JOIN public.projetos p ON p.id_projeto = hi.id_projeto
@@ -3860,6 +4189,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_relatorio_avaliadores_completo"("p_id_ev
     LEFT JOIN public.modalidades m ON m.id_modalidade = p.id_modalidade
     LEFT JOIN public.areas_tematicas ar ON ar.id_area = p.id_area
     WHERE (a.status IS NULL OR a.status <> 'CANCELADA')
+      AND NOT a.is_voto_popular
       AND p.id_evento = p_id_evento
   )
   SELECT ae.id_usuario, ae.avaliador_nome::text, ae.avaliador_email::text,
@@ -3880,6 +4210,51 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_relatorio_avaliadores_completo"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_relatorio_devolucoes_completo"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id_usuario" "uuid", "avaliador_nome" "text", "avaliador_email" "text", "total_devolucoes" integer, "devolucoes" "jsonb")
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  WITH devolucoes_enriquecidas AS (
+    SELECT hi.id_usuario, u.nome AS avaliador_nome, u.email AS avaliador_email,
+      p.id_projeto, p.id_evento, p.codigo_projeto, p.titulo AS projeto_titulo, p.estande AS projeto_estande,
+      coalesce(m.nome_modalidade, 'Sem modalidade') AS projeto_modalidade,
+      coalesce(ar.nome_area, 'Sem área temática') AS projeto_area,
+      coalesce(inst.nome_exibicao, 'Não informada') AS projeto_instituicao,
+      hi.created_at AS data_devolucao,
+      (SELECT count(*)::int FROM public.avaliacoes av
+        WHERE av.id_projeto = p.id_projeto AND (av.status IS NULL OR av.status <> 'CANCELADA')
+          AND NOT av.is_voto_popular) AS total_avaliacoes_atuais
+    FROM public.historico_impedimentos hi
+    JOIN public.usuarios u ON u.id_usuario = hi.id_usuario
+    JOIN public.projetos p ON p.id_projeto = hi.id_projeto
+    LEFT JOIN public.modalidades m ON m.id_modalidade = p.id_modalidade
+    LEFT JOIN public.areas_tematicas ar ON ar.id_area = p.id_area
+    LEFT JOIN public.instituicoes inst ON inst.id_instituicao = p.id_instituicao
+    WHERE hi.tipo = 'conflito'
+      AND p.id_evento = p_id_evento
+  )
+  SELECT de.id_usuario, de.avaliador_nome::text, de.avaliador_email::text,
+    count(de.id_projeto)::int,
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id_projeto', de.id_projeto, 'id_evento', de.id_evento, 'codigo_projeto', de.codigo_projeto,
+      'projeto_titulo', de.projeto_titulo, 'projeto_estande', de.projeto_estande,
+      'projeto_modalidade', de.projeto_modalidade, 'projeto_area', de.projeto_area,
+      'projeto_instituicao', de.projeto_instituicao, 'data_devolucao', de.data_devolucao,
+      'total_avaliacoes_atuais', de.total_avaliacoes_atuais
+    ) ORDER BY de.data_devolucao DESC), '[]'::jsonb)
+  FROM devolucoes_enriquecidas de
+  GROUP BY de.id_usuario, de.avaliador_nome, de.avaliador_email
+  ORDER BY de.avaliador_nome, de.id_usuario;
+$$;
+
+
+ALTER FUNCTION "public"."fn_relatorio_devolucoes_completo"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_relatorio_devolucoes_completo"("p_id_evento" "uuid") IS 'Devoluções por conflito de interesse (historico_impedimentos.tipo = ''conflito'') agrupadas por avaliador, no evento informado.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_relatorio_indicadores_gerenciais"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
@@ -4003,12 +4378,14 @@ BEGIN
         FROM public.avaliacoes av
         WHERE av.id_projeto = p.id_projeto
           AND (av.status IS NULL OR av.status != 'CANCELADA')
+          AND NOT av.is_voto_popular
       ) AS total_avaliacoes,
       (
         SELECT COALESCE(ROUND(AVG(av.nota_final)::numeric, 2) + coalesce(p.ajuste_media, 0), 0.00)
         FROM public.avaliacoes av
         WHERE av.id_projeto = p.id_projeto
           AND (av.status IS NULL OR av.status != 'CANCELADA')
+          AND NOT av.is_voto_popular
       ) AS media_geral,
       EXISTS(
         SELECT 1 FROM public.historico_impedimentos hi
@@ -4056,7 +4433,7 @@ $$;
 ALTER FUNCTION "public"."fn_relatorio_instituicoes_completo"("p_id_evento" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id_projeto" "uuid", "id_evento" "uuid", "codigo_projeto" "text", "titulo" "text", "estande" "text", "corredor" "text", "modalidade" "text", "area_conhecimento" "text", "nome_instituicao" "text", "id_instituicao" "uuid", "is_check_in_realizado" boolean, "is_fora_da_competicao" boolean, "total_avaliacoes" integer, "media_geral" numeric, "notas" numeric[], "detalhes_avaliacoes" "jsonb", "cota_avaliacoes" integer, "ajuste_media" numeric, "media_final" numeric, "tem_ajuste_manual" boolean)
+CREATE OR REPLACE FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id_projeto" "uuid", "id_evento" "uuid", "codigo_projeto" "text", "titulo" "text", "estande" "text", "corredor" "text", "modalidade" "text", "area_conhecimento" "text", "nome_instituicao" "text", "id_instituicao" "uuid", "is_check_in_realizado" boolean, "is_fora_da_competicao" boolean, "total_avaliacoes" integer, "media_geral" numeric, "notas" numeric[], "detalhes_avaliacoes" "jsonb", "cota_avaliacoes" integer, "ajuste_media" numeric, "media_final" numeric, "tem_ajuste_manual" boolean, "total_votos_populares" integer, "media_voto_popular" numeric, "votos_populares" "jsonb")
     LANGUAGE "sql" STABLE
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -4065,7 +4442,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_event
       round(a.nota_final::numeric, 2) AS nota_final,
       coalesce(a.parecer_final, '') AS parecer,
       coalesce(a.tempo_submissao, a.created_at) AS data,
-      a.ajuste_tipo, a.ajuste_motivo
+      a.ajuste_tipo, a.ajuste_motivo, a.is_voto_popular
     FROM public.avaliacoes a
     JOIN public.usuarios u ON u.id_usuario = a.id_usuario
     WHERE a.status IS NULL OR a.status <> 'CANCELADA'
@@ -4077,18 +4454,24 @@ CREATE OR REPLACE FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_event
     p.id_instituicao,
     coalesce(p.is_check_in_realizado, false),
     coalesce(p.is_fora_da_competicao, false),
-    count(av.id_avaliacao)::int,
-    coalesce(round(avg(av.nota_final), 2), 0.00),
-    coalesce(array_agg(av.nota_final ORDER BY av.data DESC) FILTER (WHERE av.nota_final IS NOT NULL), '{}'::numeric[]),
+    count(av.id_avaliacao) FILTER (WHERE NOT av.is_voto_popular)::int,
+    coalesce(round(avg(av.nota_final) FILTER (WHERE NOT av.is_voto_popular), 2), 0.00),
+    coalesce(array_agg(av.nota_final ORDER BY av.data DESC) FILTER (WHERE av.nota_final IS NOT NULL AND NOT av.is_voto_popular), '{}'::numeric[]),
     coalesce(jsonb_agg(jsonb_build_object(
       'id_avaliacao', av.id_avaliacao, 'id_usuario', av.id_usuario, 'avaliador_nome', av.avaliador_nome,
       'nota_final', av.nota_final, 'parecer', av.parecer, 'data', av.data,
       'ajuste_tipo', av.ajuste_tipo, 'ajuste_motivo', av.ajuste_motivo
-    ) ORDER BY av.data DESC) FILTER (WHERE av.id_avaliacao IS NOT NULL), '[]'::jsonb),
+    ) ORDER BY av.data DESC) FILTER (WHERE av.id_avaliacao IS NOT NULL AND NOT av.is_voto_popular), '[]'::jsonb),
     coalesce(p.cota_avaliacoes_customizada, ev.cota_avaliacoes_padrao, 3)::int,
     coalesce(p.ajuste_media, 0),
-    coalesce(round(avg(av.nota_final), 2), 0.00) + coalesce(p.ajuste_media, 0),
-    coalesce(p.ajuste_media, 0) <> 0 OR bool_or(av.ajuste_tipo IS NOT NULL)
+    coalesce(round(avg(av.nota_final) FILTER (WHERE NOT av.is_voto_popular), 2), 0.00) + coalesce(p.ajuste_media, 0),
+    coalesce(p.ajuste_media, 0) <> 0 OR coalesce(bool_or(av.ajuste_tipo IS NOT NULL) FILTER (WHERE NOT av.is_voto_popular), false),
+    count(av.id_avaliacao) FILTER (WHERE av.is_voto_popular)::int,
+    round(avg(av.nota_final) FILTER (WHERE av.is_voto_popular), 2),
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id_avaliacao', av.id_avaliacao, 'id_usuario', av.id_usuario, 'avaliador_nome', av.avaliador_nome,
+      'nota_final', av.nota_final, 'parecer', av.parecer, 'data', av.data
+    ) ORDER BY av.data DESC) FILTER (WHERE av.id_avaliacao IS NOT NULL AND av.is_voto_popular), '[]'::jsonb)
   FROM public.projetos p
   JOIN public.eventos ev ON ev.id_evento = p.id_evento
   LEFT JOIN public.modalidades m ON m.id_modalidade = p.id_modalidade
@@ -4102,6 +4485,70 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_relatorio_voto_popular_completo"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id_projeto" "uuid", "codigo_projeto" "text", "titulo" "text", "modalidade" "text", "area_tematica" "text", "nome_instituicao" "text", "total_votos" integer, "media_simples" numeric, "media_bayesiana" numeric, "media_evento" numeric, "peso_ancora" numeric, "posicao" integer, "votos" "jsonb")
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  WITH votos_validos AS (
+    SELECT a.id_avaliacao, a.id_projeto, a.id_usuario, u.nome AS avaliador_nome,
+      round(a.nota_final::numeric, 2) AS nota,
+      coalesce(a.tempo_submissao, a.created_at) AS data
+    FROM public.avaliacoes a
+    JOIN public.projetos p ON p.id_projeto = a.id_projeto
+    JOIN public.usuarios u ON u.id_usuario = a.id_usuario
+    WHERE p.id_evento = p_id_evento
+      AND a.is_voto_popular
+      AND (a.status IS NULL OR a.status <> 'CANCELADA')
+      AND a.nota_final IS NOT NULL
+  ),
+  por_projeto AS (
+    SELECT v.id_projeto, count(*)::int AS total_votos, round(avg(v.nota), 2) AS media_simples,
+      jsonb_agg(jsonb_build_object(
+        'id_avaliacao', v.id_avaliacao, 'id_usuario', v.id_usuario,
+        'avaliador_nome', v.avaliador_nome, 'nota_final', v.nota, 'data', v.data
+      ) ORDER BY v.data DESC) AS votos
+    FROM votos_validos v
+    GROUP BY v.id_projeto
+  ),
+  -- Âncora da média bayesiana: C = média de todos os votos do evento;
+  -- m = votos por projeto votado (automático, acompanha o volume real da feira).
+  ancora AS (
+    SELECT round(avg(v.nota), 4) AS media_evento,
+      round(count(*)::numeric / nullif((SELECT count(*) FROM por_projeto), 0), 4) AS peso
+    FROM votos_validos v
+  ),
+  calculo AS (
+    SELECT pp.id_projeto, pp.total_votos, pp.media_simples, pp.votos,
+      an.media_evento, an.peso,
+      round(
+        (pp.total_votos::numeric / nullif(pp.total_votos + an.peso, 0)) * pp.media_simples
+        + (an.peso / nullif(pp.total_votos + an.peso, 0)) * an.media_evento
+      , 2) AS media_bayesiana
+    FROM por_projeto pp CROSS JOIN ancora an
+  )
+  SELECT c.id_projeto, p.codigo_projeto::text, p.titulo::text,
+    coalesce(m.nome_modalidade, 'Sem modalidade')::text,
+    coalesce(ar.nome_area, 'Sem área temática')::text,
+    coalesce(inst.nome_exibicao, 'Não informada')::text,
+    c.total_votos, c.media_simples, c.media_bayesiana, c.media_evento, c.peso,
+    rank() OVER (ORDER BY c.media_bayesiana DESC, c.total_votos DESC, p.codigo_projeto)::int,
+    c.votos
+  FROM calculo c
+  JOIN public.projetos p ON p.id_projeto = c.id_projeto
+  LEFT JOIN public.modalidades m ON m.id_modalidade = p.id_modalidade
+  LEFT JOIN public.areas_tematicas ar ON ar.id_area = p.id_area
+  LEFT JOIN public.instituicoes inst ON inst.id_instituicao = p.id_instituicao
+  ORDER BY c.media_bayesiana DESC, c.total_votos DESC, p.codigo_projeto;
+$$;
+
+
+ALTER FUNCTION "public"."fn_relatorio_voto_popular_completo"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_relatorio_voto_popular_completo"("p_id_evento" "uuid") IS 'Voto popular por projeto no evento: votos, média simples e média bayesiana, com a âncora (media_evento) e o peso (peso_ancora) para a conta aberta na tela. Ordena pela bayesiana. Alimenta o relatório e a classificação do voto popular — um lugar só, para os dois não divergirem.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_situacao_vinculos"("p_id_evento" "uuid") RETURNS TABLE("id_usuario" "uuid", "aparelho_vinculado" boolean, "vinculado_em" timestamp with time zone, "metodo" "text")
@@ -4183,6 +4630,16 @@ CREATE OR REPLACE FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid" DEFAU
     JOIN public.projetos p ON p.id_projeto = a.id_projeto
     JOIN ev ON ev.id_evento = p.id_evento
     WHERE (a.status IS NULL OR a.status <> 'CANCELADA') AND a.nota_final IS NOT NULL
+      AND NOT a.is_voto_popular
+    GROUP BY a.id_projeto
+  ),
+  votos AS (
+    SELECT a.id_projeto, count(*) AS qtd
+    FROM public.avaliacoes a
+    JOIN public.projetos p ON p.id_projeto = a.id_projeto
+    JOIN ev ON ev.id_evento = p.id_evento
+    WHERE (a.status IS NULL OR a.status <> 'CANCELADA') AND a.nota_final IS NOT NULL
+      AND a.is_voto_popular
     GROUP BY a.id_projeto
   ),
   travas AS (
@@ -4191,6 +4648,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid" DEFAU
     JOIN public.projetos p ON p.id_projeto = l.id_projeto
     JOIN ev ON ev.id_evento = p.id_evento
     WHERE l.expira_em > now()
+      AND NOT l.is_voto_popular
     GROUP BY l.id_projeto
   ),
   presentes AS (
@@ -4221,7 +4679,13 @@ CREATE OR REPLACE FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid" DEFAU
     'avaliacoes_na_meta', (SELECT coalesce(sum(least(qtd, cota)), 0) FROM presentes),
     'projetos_quarentena', (SELECT count(*) FROM public.view_projetos_quarentena q JOIN ev ON ev.id_evento = q.id_evento),
     'cota_padrao', (SELECT cota FROM ev),
-    'avaliacao_finalizada', (SELECT count(*) > 0 AND bool_and(qtd >= cota) FROM presentes)
+    'avaliacao_finalizada', (SELECT count(*) > 0 AND bool_and(qtd >= cota) FROM presentes),
+    'votos_populares', (SELECT coalesce(sum(qtd), 0) FROM votos),
+    'projetos_votados', (SELECT count(*) FROM votos),
+    'votantes_credenciados', (SELECT count(*) FROM public.avaliadores_evento ae
+                              JOIN ev ON ev.id_evento = ae.id_evento
+                              JOIN public.questionarios q ON q.id_questionario = ae.id_questionario
+                              WHERE ae.is_credenciado AND q.is_voto_popular)
   );
 $$;
 
@@ -4235,9 +4699,11 @@ CREATE OR REPLACE FUNCTION "public"."fn_vagas_projeto"("p_id_projeto" "uuid") RE
     AS $$
   SELECT coalesce(p.cota_avaliacoes_customizada, e.cota_avaliacoes_padrao, 3)
          - (SELECT count(*) FROM public.avaliacoes a
-            WHERE a.id_projeto = p.id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA'))::int
+            WHERE a.id_projeto = p.id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')
+              AND NOT a.is_voto_popular)::int
          - (SELECT count(*) FROM public.locks_ativos l
-            WHERE l.id_projeto = p.id_projeto AND l.expira_em > now())::int
+            WHERE l.id_projeto = p.id_projeto AND l.expira_em > now()
+              AND NOT l.is_voto_popular)::int
   FROM public.projetos p
   LEFT JOIN public.eventos e ON e.id_evento = p.id_evento
   WHERE p.id_projeto = p_id_projeto
@@ -4553,9 +5019,10 @@ CREATE TABLE IF NOT EXISTS "public"."eventos" (
     "minutos_validade_codigo_acesso" integer DEFAULT 15 NOT NULL,
     "tamanho_codigo" integer DEFAULT 6 NOT NULL,
     "max_tentativas_codigo" integer DEFAULT 5 NOT NULL,
-    "metodos_vinculo" "text" DEFAULT 'ambos'::"text" NOT NULL,
+    "metodos_vinculo" "text" DEFAULT 'pareamento'::"text" NOT NULL,
     "url_icone" "text",
     "url_imagem_evento" "text",
+    "fixar_questionario_primeira_avaliacao" boolean DEFAULT true NOT NULL,
     CONSTRAINT "ck_eventos_max_tentativas_codigo" CHECK ((("max_tentativas_codigo" >= 1) AND ("max_tentativas_codigo" <= 10))),
     CONSTRAINT "ck_eventos_metodos_vinculo" CHECK (("metodos_vinculo" = ANY (ARRAY['ambos'::"text", 'pareamento'::"text", 'codigo'::"text"]))),
     CONSTRAINT "ck_eventos_minutos_validade_codigo_acesso" CHECK ((("minutos_validade_codigo_acesso" >= 1) AND ("minutos_validade_codigo_acesso" <= 120))),
@@ -4583,11 +5050,19 @@ COMMENT ON COLUMN "public"."eventos"."data_evento" IS 'Data oficial de realizaç
 
 
 
+COMMENT ON COLUMN "public"."eventos"."metodos_vinculo" IS 'Forma de vincular o celular do avaliador: ''pareamento'' (padrão, o Staff digita o código mostrado no celular) ou ''codigo'' (o Staff gera um código de uso único). ''ambos'' é legado e não é mais oferecido na interface.';
+
+
+
 COMMENT ON COLUMN "public"."eventos"."url_icone" IS 'URL pública do ícone do evento (bucket identidade-visual). Substitui o "IF" do cabeçalho e serve de favicon.';
 
 
 
 COMMENT ON COLUMN "public"."eventos"."url_imagem_evento" IS 'URL pública da imagem do evento (bucket identidade-visual): login, autocadastro, Telão, relatórios e topo da tela do avaliador.';
+
+
+
+COMMENT ON COLUMN "public"."eventos"."fixar_questionario_primeira_avaliacao" IS 'Ligada (padrão): a primeira avaliação fixa o questionário do projeto (projetos.id_questionario_fixado) e os demais avaliadores ficam presos a ele. Desligada: cada avaliador escolhe o questionário e nada é fixado.';
 
 
 
@@ -4600,6 +5075,23 @@ $$;
 
 
 ALTER FUNCTION "public"."parametros_acesso"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."questionario_do_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid") RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT ae.id_questionario
+  FROM public.avaliadores_evento ae
+  WHERE ae.id_usuario = p_id_usuario AND ae.id_evento = p_id_evento;
+$$;
+
+
+ALTER FUNCTION "public"."questionario_do_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."questionario_do_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid") IS 'Questionário vinculado ao avaliador no evento, ou NULL quando ele usa o questionário do projeto.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."restaurar_avaliacao"("p_id_avaliacao" "uuid", "p_motivo" "text" DEFAULT NULL::"text") RETURNS "jsonb"
@@ -4640,12 +5132,15 @@ BEGIN
   END IF;
 
   SELECT (SELECT count(*) FROM public.avaliacoes a
-          WHERE a.id_projeto = v_id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA'))::int
+          WHERE a.id_projeto = v_id_projeto AND (a.status IS NULL OR a.status <> 'CANCELADA')
+            AND NOT a.is_voto_popular)::int
        + (SELECT count(*) FROM public.locks_ativos l
-          WHERE l.id_projeto = v_id_projeto AND l.expira_em > now() AND l.id_usuario <> v_id_usuario)::int
+          WHERE l.id_projeto = v_id_projeto AND l.expira_em > now() AND l.id_usuario <> v_id_usuario
+            AND NOT l.is_voto_popular)::int
     INTO v_ocupadas;
 
-  IF v_ocupadas >= v_cota THEN
+  IF v_ocupadas >= v_cota
+     AND NOT (SELECT coalesce(is_voto_popular, false) FROM public.avaliacoes WHERE id_avaliacao = p_id_avaliacao) THEN
     RAISE EXCEPTION 'O projeto % já está com a cota completa (% de % vagas ocupadas). Cancele outra avaliação dele antes de restaurar esta.',
       v_codigo, v_ocupadas, v_cota USING ERRCODE = 'P0001';
   END IF;
@@ -4714,6 +5209,7 @@ DECLARE
   v_id_projeto_sorteado UUID;
   v_minutos_lock INTEGER := 30;
   v_cota_padrao INTEGER := 3;
+  v_votante BOOLEAN := false;
 BEGIN
   -- Identidade real: o avaliador só age em nome de si mesmo (aparelho vinculado).
   IF NOT public.is_admin() AND public.avaliador_atual() IS DISTINCT FROM p_id_usuario THEN
@@ -4730,6 +5226,10 @@ BEGIN
   -- 2. Limpa lock anterior do avaliador, se houver
   DELETE FROM public.locks_ativos 
   WHERE id_usuario = p_id_usuario;
+
+  -- Votante do voto popular: ignora a cota técnica e as travas, porque vários votantes podem
+  -- estar no mesmo projeto e um votante não ocupa vaga de avaliação técnica.
+  v_votante := public.avaliador_e_voto_popular(p_id_usuario, p_id_evento);
 
   -- 3. Obtém instituição de origem do avaliador para evitar conflito de interesse
   SELECT id_instituicao INTO v_id_instituicao_avaliador
@@ -4759,6 +5259,7 @@ BEGIN
     SELECT p.id_projeto INTO v_id_projeto_sorteado
     FROM public.projetos p
     LEFT JOIN public.locks_ativos l ON l.id_projeto = p.id_projeto
+      AND NOT v_votante AND NOT l.is_voto_popular
     WHERE p.id_evento = p_id_evento
       AND NOT (p.id_projeto = ANY (v_descartados))
       AND p.is_check_in_realizado = true
@@ -4782,19 +5283,21 @@ BEGIN
         SELECT hi.id_projeto FROM public.historico_impedimentos hi WHERE hi.id_usuario = p_id_usuario
       )
       -- COTA DO PROJETO: Avaliações canceladas NÃO contam para a cota, liberando a vaga para OUTROS avaliadores.
-      AND (
+      AND (v_votante OR (
         (
           SELECT COUNT(*) 
           FROM public.avaliacoes a 
           WHERE a.id_projeto = p.id_projeto 
             AND (a.status IS NULL OR a.status != 'CANCELADA')
+            AND NOT a.is_voto_popular
         ) +
         (
           SELECT COUNT(*) 
           FROM public.locks_ativos lk 
           WHERE lk.id_projeto = p.id_projeto
+            AND NOT lk.is_voto_popular
         )
-      ) < COALESCE(p.cota_avaliacoes_customizada, v_cota_padrao)
+      ) < COALESCE(p.cota_avaliacoes_customizada, v_cota_padrao))
     ORDER BY 
       p.forcar_topo_fila DESC,
       -- Prioridade por Afinidade Temática: 0 se o projeto for da área do avaliador, 1 se for de outra área
@@ -4813,6 +5316,7 @@ BEGIN
         FROM public.avaliacoes a 
         WHERE a.id_projeto = p.id_projeto 
           AND (a.status IS NULL OR a.status != 'CANCELADA')
+          AND NOT a.is_voto_popular
       ) ASC,
       p.contagem_ausencia ASC,
       p.estande ASC
@@ -4820,10 +5324,13 @@ BEGIN
     FOR UPDATE OF p SKIP LOCKED;
     EXIT WHEN v_id_projeto_sorteado IS NULL;
 
-    EXIT WHEN NOT EXISTS (SELECT 1 FROM public.locks_ativos lk WHERE lk.id_projeto = v_id_projeto_sorteado)
+    EXIT WHEN v_votante
+      OR (NOT EXISTS (SELECT 1 FROM public.locks_ativos lk
+                       WHERE lk.id_projeto = v_id_projeto_sorteado AND NOT lk.is_voto_popular)
       AND (SELECT COUNT(*) FROM public.avaliacoes a
-           WHERE a.id_projeto = v_id_projeto_sorteado AND (a.status IS NULL OR a.status <> 'CANCELADA'))
-          < (SELECT COALESCE(p.cota_avaliacoes_customizada, v_cota_padrao) FROM public.projetos p WHERE p.id_projeto = v_id_projeto_sorteado);
+           WHERE a.id_projeto = v_id_projeto_sorteado AND (a.status IS NULL OR a.status <> 'CANCELADA')
+             AND NOT a.is_voto_popular)
+          < (SELECT COALESCE(p.cota_avaliacoes_customizada, v_cota_padrao) FROM public.projetos p WHERE p.id_projeto = v_id_projeto_sorteado));
 
     -- Outro sorteio ocupou este projeto: descarta e tenta o próximo
     v_descartados := v_descartados || v_id_projeto_sorteado;
@@ -4834,12 +5341,13 @@ BEGIN
 
   -- 6. Se encontrou um projeto, insere a trava na tabela locks_ativos
   IF v_id_projeto_sorteado IS NOT NULL THEN
-    INSERT INTO public.locks_ativos (id_usuario, id_projeto, bloqueado_em, expira_em)
+    INSERT INTO public.locks_ativos (id_usuario, id_projeto, bloqueado_em, expira_em, is_voto_popular)
     VALUES (
       p_id_usuario,
       v_id_projeto_sorteado,
       now(),
-      now() + (v_minutos_lock || ' minutes')::interval
+      now() + (v_minutos_lock || ' minutes')::interval,
+      v_votante
     );
   END IF;
 
@@ -4917,6 +5425,7 @@ CREATE TABLE IF NOT EXISTS "public"."avaliacoes" (
     "ajustada_em" timestamp with time zone,
     "ajustada_por" "uuid",
     "ajuste_motivo" "text",
+    "is_voto_popular" boolean DEFAULT false NOT NULL,
     CONSTRAINT "ck_avaliacoes_ajuste_tipo" CHECK ((("ajuste_tipo" IS NULL) OR ("ajuste_tipo" = ANY (ARRAY['respostas_corrigidas'::"text", 'nota_arbitrada'::"text", 'lancada_pelo_admin'::"text"]))))
 );
 
@@ -4937,6 +5446,10 @@ COMMENT ON COLUMN "public"."avaliacoes"."ajuste_tipo" IS 'Marca de ajuste manual
 
 
 COMMENT ON COLUMN "public"."avaliacoes"."ajustada_por" IS 'Admin (usuarios.id_usuario) que fez o ajuste. Sem FK de propósito, como cancelada_por.';
+
+
+
+COMMENT ON COLUMN "public"."avaliacoes"."is_voto_popular" IS 'Cópia de questionarios.is_voto_popular no momento da nota, mantida por trigger. Congela a classificação: média já publicada não muda se a marca do questionário for alterada.';
 
 
 
@@ -4967,11 +5480,16 @@ CREATE TABLE IF NOT EXISTS "public"."avaliadores_evento" (
     "id_evento" "uuid" NOT NULL,
     "id_instituicao" "uuid",
     "is_credenciado" boolean DEFAULT false,
-    "created_at" timestamp with time zone DEFAULT "now"()
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "id_questionario" "uuid"
 );
 
 
 ALTER TABLE "public"."avaliadores_evento" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."avaliadores_evento"."id_questionario" IS 'Questionário fixo deste avaliador no evento. Vazio: usa o questionário técnico do projeto. Apontando para um questionário de voto popular, o avaliador é um votante.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."codigos_acesso" (
@@ -5078,7 +5596,8 @@ CREATE TABLE IF NOT EXISTS "public"."locks_ativos" (
     "id_projeto" "uuid" NOT NULL,
     "bloqueado_em" timestamp with time zone DEFAULT "now"(),
     "expira_em" timestamp with time zone NOT NULL,
-    "atribuido_por" "uuid"
+    "atribuido_por" "uuid",
+    "is_voto_popular" boolean DEFAULT false NOT NULL
 );
 
 
@@ -5086,6 +5605,10 @@ ALTER TABLE "public"."locks_ativos" OWNER TO "postgres";
 
 
 COMMENT ON COLUMN "public"."locks_ativos"."atribuido_por" IS 'Admin (usuarios.id_usuario) que atribuiu o projeto. Sem FK de propósito: uma 2ª FK para usuarios quebra o embed usuarios(...) do PostgREST. NULL = trava do sorteio.';
+
+
+
+COMMENT ON COLUMN "public"."locks_ativos"."is_voto_popular" IS 'A reserva é de um votante do voto popular. O sorteio técnico a desconsidera (um votante no estande não impede o avaliador técnico, e vice-versa).';
 
 
 
@@ -5278,7 +5801,8 @@ CREATE TABLE IF NOT EXISTS "public"."questionarios" (
     "escala_minima" numeric(5,2) DEFAULT 0.00,
     "escala_maxima" numeric(5,2) DEFAULT 10.00,
     "created_at" timestamp with time zone DEFAULT "now"(),
-    "id_origem" "uuid"
+    "id_origem" "uuid",
+    "is_voto_popular" boolean DEFAULT false NOT NULL
 );
 
 
@@ -5286,6 +5810,10 @@ ALTER TABLE "public"."questionarios" OWNER TO "postgres";
 
 
 COMMENT ON COLUMN "public"."questionarios"."id_origem" IS 'Modelo (modelos_questionario) ou questionário de outro evento de onde esta cópia veio.';
+
+
+
+COMMENT ON COLUMN "public"."questionarios"."is_voto_popular" IS 'Questionário de voto popular: as notas dadas por ele não entram na média técnica, na cota, na quarentena, no ranking técnico nem na meta do Telão. Não pode ser alterada depois de o questionário ter avaliação.';
 
 
 
@@ -5366,7 +5894,7 @@ CREATE OR REPLACE VIEW "public"."view_projetos_pendentes_avaliacao" WITH ("secur
      LEFT JOIN "public"."modalidades" "m" ON (("m"."id_modalidade" = "p"."id_modalidade")))
      LEFT JOIN "public"."areas_tematicas" "ar" ON (("ar"."id_area" = "p"."id_area")))
      LEFT JOIN "public"."instituicoes" "inst" ON (("inst"."id_instituicao" = "p"."id_instituicao")))
-     LEFT JOIN "public"."avaliacoes" "a" ON (("a"."id_projeto" = "p"."id_projeto")))
+     LEFT JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (NOT "a"."is_voto_popular"))))
   WHERE ((COALESCE("p"."is_check_in_realizado", true) = true) AND (COALESCE("p"."is_fora_da_competicao", false) = false))
   GROUP BY "p"."id_projeto", "p"."codigo_projeto", "p"."titulo", "p"."estande", "p"."corredor", "m"."nome_modalidade", "p"."id_instituicao", "inst"."nome_exibicao", "p"."id_evento"
  HAVING ("count"("a"."id_avaliacao") FILTER (WHERE (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text"))) < 3);
@@ -5396,7 +5924,7 @@ CREATE OR REPLACE VIEW "public"."view_projetos_quarentena" WITH ("security_invok
      LEFT JOIN "public"."modalidades" "m" ON (("m"."id_modalidade" = "p"."id_modalidade")))
      LEFT JOIN "public"."areas_tematicas" "ar" ON (("ar"."id_area" = "p"."id_area")))
      LEFT JOIN "public"."instituicoes" "inst" ON (("inst"."id_instituicao" = "p"."id_instituicao")))
-     LEFT JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")))))
+     LEFT JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")) AND (NOT "a"."is_voto_popular"))))
   GROUP BY "p"."id_projeto", "p"."codigo_projeto", "p"."titulo", "p"."estande", "p"."corredor", "m"."nome_modalidade", "ar"."nome_area", "inst"."nome_exibicao", "p"."id_evento", "p"."quarentena_resolvida_em"
  HAVING ("bool_or"(COALESCE("a"."is_quarentena", false)) OR (("count"("a"."id_avaliacao") >= 2) AND (("max"("a"."nota_final") - "min"("a"."nota_final")) > 2.5) AND (("p"."quarentena_resolvida_em" IS NULL) OR ("max"("a"."created_at") > "p"."quarentena_resolvida_em"))));
 
@@ -5424,7 +5952,7 @@ CREATE OR REPLACE VIEW "public"."view_ranking_top3" WITH ("security_invoker"='tr
              LEFT JOIN "public"."modalidades" "m" ON (("m"."id_modalidade" = "p"."id_modalidade")))
              LEFT JOIN "public"."areas_tematicas" "ar" ON (("ar"."id_area" = "p"."id_area")))
              LEFT JOIN "public"."instituicoes" "inst" ON (("inst"."id_instituicao" = "p"."id_instituicao")))
-             JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")))))
+             JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")) AND (NOT "a"."is_voto_popular"))))
           WHERE (NOT COALESCE("p"."is_fora_da_competicao", false))
           GROUP BY "p"."id_projeto", "p"."codigo_projeto", "p"."titulo", "p"."estande", "p"."corredor", "m"."nome_modalidade", "ar"."nome_area", "inst"."nome_exibicao", "p"."id_evento", "p"."ajuste_media"
         ), "com_chave" AS (
@@ -5784,6 +6312,10 @@ CREATE INDEX "idx_avaliacoes_usuario" ON "public"."avaliacoes" USING "btree" ("i
 
 
 
+CREATE INDEX "idx_avaliadores_evento_questionario" ON "public"."avaliadores_evento" USING "btree" ("id_evento", "id_questionario");
+
+
+
 CREATE INDEX "idx_codigos_acesso_usuario_ativo" ON "public"."codigos_acesso" USING "btree" ("id_usuario") WHERE ("usado_em" IS NULL);
 
 
@@ -5924,6 +6456,10 @@ CREATE OR REPLACE TRIGGER "log_auditoria_imutavel_truncate" BEFORE TRUNCATE ON "
 
 
 
+CREATE OR REPLACE TRIGGER "trg_avaliacao_classificar_voto_popular" BEFORE INSERT OR UPDATE OF "id_questionario" ON "public"."avaliacoes" FOR EACH ROW EXECUTE FUNCTION "public"."avaliacao_classificar_voto_popular"();
+
+
+
 ALTER TABLE ONLY "public"."areas_tematicas"
     ADD CONSTRAINT "areas_tematicas_id_evento_fkey" FOREIGN KEY ("id_evento") REFERENCES "public"."eventos"("id_evento") ON DELETE CASCADE;
 
@@ -5989,6 +6525,11 @@ ALTER TABLE ONLY "public"."avaliadores_evento"
 
 ALTER TABLE ONLY "public"."avaliadores_evento"
     ADD CONSTRAINT "avaliadores_evento_id_instituicao_fkey" FOREIGN KEY ("id_instituicao") REFERENCES "public"."instituicoes"("id_instituicao") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."avaliadores_evento"
+    ADD CONSTRAINT "avaliadores_evento_id_questionario_fkey" FOREIGN KEY ("id_questionario") REFERENCES "public"."questionarios"("id_questionario") ON DELETE SET NULL;
 
 
 
@@ -6544,6 +7085,12 @@ GRANT ALL ON FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_i
 
 
 
+REVOKE ALL ON FUNCTION "public"."admin_marcar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_marcar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_marcar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."admin_remover_avaliador_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_remover_avaliador_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_remover_avaliador_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "service_role";
@@ -6628,6 +7175,12 @@ GRANT ALL ON FUNCTION "public"."admin_salvar_staff"("p_id_evento" "uuid", "p_ite
 
 
 
+REVOKE ALL ON FUNCTION "public"."admin_vincular_questionario_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid", "p_id_questionario" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_vincular_questionario_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid", "p_id_questionario" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_vincular_questionario_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid", "p_id_questionario" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."auditoria_ator"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."auditoria_ator"() TO "service_role";
 
@@ -6655,10 +7208,22 @@ GRANT ALL ON FUNCTION "public"."auditoria_registrar"("p_acao" "text", "p_tabela"
 
 
 
+GRANT ALL ON FUNCTION "public"."avaliacao_classificar_voto_popular"() TO "anon";
+GRANT ALL ON FUNCTION "public"."avaliacao_classificar_voto_popular"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."avaliacao_classificar_voto_popular"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."avaliador_atual"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."avaliador_atual"() TO "anon";
 GRANT ALL ON FUNCTION "public"."avaliador_atual"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."avaliador_atual"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."avaliador_e_voto_popular"("p_id_usuario" "uuid", "p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."avaliador_e_voto_popular"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."avaliador_e_voto_popular"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "service_role";
 
 
 
@@ -6705,6 +7270,12 @@ GRANT ALL ON FUNCTION "public"."fn_auditar"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_auditar_voto_popular"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_auditar_voto_popular"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_auditar_voto_popular"("p_id_evento" "uuid") TO "service_role";
 
 
 
@@ -6846,6 +7417,12 @@ GRANT ALL ON FUNCTION "public"."fn_politica_seguranca"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."fn_projetos_situacao"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_projetos_situacao"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_projetos_situacao"("p_id_evento" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") TO "service_role";
 
@@ -6869,6 +7446,12 @@ GRANT ALL ON FUNCTION "public"."fn_relatorio_avaliadores_completo"("p_id_evento"
 
 
 
+REVOKE ALL ON FUNCTION "public"."fn_relatorio_devolucoes_completo"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_relatorio_devolucoes_completo"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_relatorio_devolucoes_completo"("p_id_evento" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_relatorio_indicadores_gerenciais"("p_id_evento" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_relatorio_indicadores_gerenciais"("p_id_evento" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_relatorio_indicadores_gerenciais"("p_id_evento" "uuid") TO "service_role";
@@ -6884,6 +7467,12 @@ GRANT ALL ON FUNCTION "public"."fn_relatorio_instituicoes_completo"("p_id_evento
 REVOKE ALL ON FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_evento" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_evento" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_evento" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_relatorio_voto_popular_completo"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_relatorio_voto_popular_completo"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_relatorio_voto_popular_completo"("p_id_evento" "uuid") TO "service_role";
 
 
 
@@ -6966,6 +7555,12 @@ GRANT ALL ON TABLE "public"."eventos" TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."parametros_acesso"("p_id_evento" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."parametros_acesso"("p_id_evento" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."questionario_do_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."questionario_do_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."questionario_do_avaliador"("p_id_usuario" "uuid", "p_id_evento" "uuid") TO "service_role";
 
 
 
@@ -7179,11 +7774,13 @@ GRANT ALL ON TABLE "public"."view_projetos_pendentes_avaliacao" TO "service_role
 
 GRANT SELECT,MAINTAIN ON TABLE "public"."view_projetos_quarentena" TO "authenticated";
 GRANT ALL ON TABLE "public"."view_projetos_quarentena" TO "service_role";
+GRANT SELECT ON TABLE "public"."view_projetos_quarentena" TO "anon";
 
 
 
 GRANT SELECT,MAINTAIN ON TABLE "public"."view_ranking_top3" TO "authenticated";
 GRANT ALL ON TABLE "public"."view_ranking_top3" TO "service_role";
+GRANT SELECT ON TABLE "public"."view_ranking_top3" TO "anon";
 
 
 

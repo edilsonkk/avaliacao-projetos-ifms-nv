@@ -95,6 +95,32 @@ describe('ModalExclusaoAvaliacao', () => {
       expect(String(chamadasDe('avaliacoes', 'select')[0].args[0])).toContain('projetos!inner');
     });
 
+    it('deve marcar o voto popular, filtrar por ele e avisar que cancelar não libera vaga', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      paginas = [[
+        avaliacao('av-1', 'AGRO-01', 'Carlos', 9.5),
+        avaliacao('av-4', 'AGRO-01', 'Val Votante', 10, { is_voto_popular: true }),
+      ]];
+      renderizar();
+      await screen.findByText('Carlos');
+
+      // Act
+      await user.click(screen.getByRole('button', { name: /Voto popular \(1\)/ }));
+
+      // Assert: só o voto popular fica na lista, e com a marca
+      expect(screen.getByText('Val Votante')).toBeInTheDocument();
+      expect(screen.queryByText('Carlos')).not.toBeInTheDocument();
+      expect(screen.getByText('Voto popular')).toBeInTheDocument();
+
+      // Act: o aviso da confirmação é outro, porque não há vaga a liberar
+      await user.click(screen.getByRole('button', { name: /excluir avaliação de Val Votante/i }));
+
+      // Assert
+      const dialogo = await screen.findByRole('alertdialog');
+      expect(within(dialogo).getByText(/não libera vaga de avaliação técnica/i)).toBeInTheDocument();
+    });
+
     // Renderiza 1001 linhas: no runner do CI passa de 5 s, por isso o timeout maior.
     it('deve trazer todas as avaliações, mesmo acima de 1000 (paginado)', { timeout: 30000 }, async () => {
       // Arrange: 1000 na primeira página e 1 na segunda
@@ -174,7 +200,7 @@ describe('ModalExclusaoAvaliacao', () => {
       const dialogo = screen.getByRole('alertdialog', { name: 'Excluir esta avaliação?' });
       expect(within(dialogo).getByText('AGRO-01')).toBeInTheDocument();
       expect(within(dialogo).getAllByText('CIÊNCIAS AGRÁRIAS')).toHaveLength(2); // área do projeto e do avaliador
-      expect(within(dialogo).getByText('9.5')).toBeInTheDocument();
+      expect(within(dialogo).getByText('9,50')).toBeInTheDocument();
       expect(supabase.rpc).not.toHaveBeenCalled();
     });
 

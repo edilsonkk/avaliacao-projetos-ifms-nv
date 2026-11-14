@@ -27,7 +27,7 @@ vi.mock('@/features/auth/vinculoAparelho', async (importOriginal) => ({
   solicitarCodigoPareamento: vi.fn().mockResolvedValue({ codigo: 'K7Q4MP', expira_em: new Date(Date.now() + 600_000).toISOString() }),
 }));
 
-const perfilStaff = { autenticado: true, papel: 'staff' as const, id_usuario: 's-1', nome: 'Ana Staff', email: 'ana@ifms.edu.br', id_evento: 'e-1', metodos_vinculo: 'ambos' as const };
+const perfilStaff = { autenticado: true, papel: 'staff' as const, id_usuario: 's-1', nome: 'Ana Staff', email: 'ana@ifms.edu.br', id_evento: 'e-1', metodos_vinculo: 'pareamento' as const };
 
 describe('TelaLogin', () => {
   beforeEach(() => {

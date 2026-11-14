@@ -23,7 +23,7 @@ const perfilAvaliador = (sobrescrever: Partial<PerfilSessao> = {}): PerfilSessao
   nome: 'Maria Souza',
   email: 'maria@ifms.edu.br',
   id_evento: 'e-1',
-  metodos_vinculo: 'ambos',
+  metodos_vinculo: 'pareamento',
   ...sobrescrever,
 });
 

@@ -86,6 +86,10 @@ describe('GestorAvaliadores', () => {
       avaliador_areas: [{ id_usuario: 'u-ana', id_area: 'area-1' }],
       instituicao_aliases: [],
       modalidade_aliases: [],
+      questionarios: [
+        { id_questionario: 'q-tec', titulo: 'Técnico', is_voto_popular: false },
+        { id_questionario: 'q-pop', titulo: 'Voto Popular', is_voto_popular: true },
+      ],
     };
     mockarBanco();
     vi.mocked(supabase.rpc).mockResolvedValue({ data: { sucesso: true }, error: null } as never);
@@ -346,6 +350,26 @@ describe('GestorAvaliadores', () => {
       });
       expect(chamadasDe('avaliador_modalidades_bloqueadas', 'delete')).toHaveLength(0);
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
+
+    it('deve vincular o questionário do avaliador por RPC própria, criando um votante', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      renderizar();
+      await screen.findByText('Bruno Pendente');
+      await user.click(screen.getByRole('button', { name: 'Editar Bruno Pendente' }));
+      const dialogo = screen.getByRole('dialog', { name: 'Editar Avaliador' });
+
+      // Act
+      await user.selectOptions(within(dialogo).getByLabelText(/questionário deste avaliador/i), 'q-pop');
+      await user.click(within(dialogo).getByRole('button', { name: /salvar alterações/i }));
+
+      // Assert
+      expect(supabase.rpc).toHaveBeenCalledWith('admin_vincular_questionario_avaliador', {
+        p_id_usuario: 'u-bruno',
+        p_id_evento: ID_EVENTO,
+        p_id_questionario: 'q-pop',
+      });
     });
 
     it('deve manter o formulário aberto e mostrar o erro do banco', async () => {

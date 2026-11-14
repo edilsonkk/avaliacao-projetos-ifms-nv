@@ -52,11 +52,21 @@ conferência impressa.
 | C5 | nota final fora da escala | grave |
 | C6 | projeto com mais avaliações ativas que a cota | atenção |
 | C7 | avaliação ativa de projeto fora da competição ou sem check-in | atenção |
-| C8 | avaliação com questionário diferente do fixado no projeto | grave |
+| C8 | avaliação com questionário diferente do fixado no projeto (só quando o evento trava o questionário no primeiro avaliador) | grave |
 | C9 | a mesma média com números diferentes entre Classificação e Relatórios | grave |
 | C10 | nota alterada sem passar por RPC nenhuma (`origem = 'direto'`) | grave |
 | C11 | peso de pergunta alterado depois da primeira avaliação | atenção |
 | C12 | ajustes manuais do Admin no evento | informativo |
+| C13 | `avaliacoes.is_voto_popular` divergente da marca do questionário (`fn_auditar_voto_popular`) | grave |
+| C14 | avaliador vinculado a questionário de voto popular com nota na média técnica (`fn_auditar_voto_popular`) | atenção |
+
+C13 e C14 vivem em `fn_auditar_voto_popular`, que `fn_auditar_notas` agrega por `UNION ALL`: o Painel
+de Auditoria e o memorial do projeto leem só `fn_auditar_notas`.
+
+As contagens de cota (C6), de questionário fixado (C8) e de média (C9, C12) consideram **só nota
+técnica**: o [voto popular](avaliacao-e-quarentena.md#voto-popular) usa outro questionário e corre fora
+da cota por desenho, então acusá-lo seria falso positivo. A conta de cada voto continua conferida
+(C1, C2, C3b, C10, C11).
 
 A Classificação mostra uma faixa vermelha quando há achado grave: homologar com nota que não fecha é o
 erro que essa faixa evita.
@@ -115,7 +125,10 @@ limitado à amplitude da escala em uso, e `p_delta = 0` remove o ajuste.
 
 ## A média do projeto, sempre aberta
 
-`media_geral` (média das notas ativas) **+** `ajuste_media` **=** `media_final`. O `RANK()` do pódio ordena
+`media_geral` (média das notas ativas) **+** `ajuste_media` **=** `media_final`. O quadro **Média geral do
+projeto** (`src/features/auditoria/components/MemorialMediaProjeto.tsx`) mostra essa conta por extenso —
+`(nota + nota + nota) ÷ n = média das notas`, o ajuste e a média final — e é o mesmo componente usado na aba
+Projetos e Médias dos relatórios, para o número não divergir entre as telas. O `RANK()` do pódio ordena
 pela média final, e Classificação, Relatórios e memorial mostram as três colunas
 ([relatórios](relatorios-e-monitoramento.md#classificação-rankingpremiacao)). O indicador **Média Geral de
 Notas** dos Indicadores continua sendo a média das notas lançadas: é um indicador sobre notas, não sobre o

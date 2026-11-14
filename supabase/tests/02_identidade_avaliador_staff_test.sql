@@ -2,7 +2,7 @@
 -- Rodar: npx supabase@2.122.0 test db
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(30);
+SELECT plan(32);
 
 -- ---------------------------------------------------------------------------
 -- Cenário
@@ -77,8 +77,23 @@ SELECT is((SELECT is_credenciado FROM public.avaliadores_evento WHERE id_usuario
   true, 'Parear no balcão também credencia o avaliador');
 
 -- ---------------------------------------------------------------------------
--- Código de acesso: hash, uso único, tentativas
+-- Forma de vínculo do evento: uma por evento (padrão 'pareamento')
 -- ---------------------------------------------------------------------------
+RESET ROLE;
+SELECT is((SELECT metodos_vinculo FROM public.eventos WHERE id_evento = 'e0000000-0000-0000-0000-000000000001'),
+  'pareamento', 'Evento novo nasce em pareamento pelo Staff');
+
+SELECT pg_temp.como('d0000000-0000-0000-0000-0000000000aa');
+SELECT throws_ok($$ SELECT public.fn_gerar_codigo_acesso('b0000000-0000-0000-0000-0000000000a2') $$,
+  NULL, NULL, 'Evento de pareamento recusa gerar código de acesso');
+
+-- ---------------------------------------------------------------------------
+-- Código de acesso: hash, uso único, tentativas (evento configurado para código)
+-- ---------------------------------------------------------------------------
+RESET ROLE;
+UPDATE public.eventos SET metodos_vinculo = 'codigo'
+ WHERE id_evento = 'e0000000-0000-0000-0000-000000000001';
+
 SELECT pg_temp.como('d0000000-0000-0000-0000-0000000000aa');
 INSERT INTO t VALUES ('cod2', public.fn_gerar_codigo_acesso('b0000000-0000-0000-0000-0000000000a2')->>'codigo');
 RESET ROLE;
@@ -109,7 +124,11 @@ SELECT public.fn_vincular_com_codigo('aval2@teste.local', 'AAAAAA') FROM generat
 SELECT is(public.fn_vincular_com_codigo('aval2@teste.local', (SELECT valor FROM t WHERE chave = 'cod2b'))->>'ok', 'false',
   'Depois de 5 erros o código é invalidado, mesmo que o próximo esteja certo');
 
--- Um aparelho ativo por avaliador
+-- Um aparelho ativo por avaliador (de volta ao pareamento pelo Staff)
+RESET ROLE;
+UPDATE public.eventos SET metodos_vinculo = 'pareamento'
+ WHERE id_evento = 'e0000000-0000-0000-0000-000000000001';
+
 SELECT pg_temp.como('d0000000-0000-0000-0000-0000000000d3');
 INSERT INTO t VALUES ('par3', public.fn_solicitar_pareamento()->>'codigo');
 SELECT pg_temp.como('d0000000-0000-0000-0000-0000000000aa');

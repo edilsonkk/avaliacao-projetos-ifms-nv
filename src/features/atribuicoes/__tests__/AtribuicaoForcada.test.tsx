@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AtribuicaoForcada } from '@/features/atribuicoes';
 import { supabase } from '@/lib/supabase';
+import { rpcPaginavel } from '@/test/rpcPaginavel';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -18,6 +19,26 @@ const ID_EVENTO = 'evt-1';
 type Chamada = { tabela: string; metodo: string; args: unknown[] };
 let chamadas: Chamada[] = [];
 let dados: Record<string, unknown[]> = {};
+/** Linhas de fn_projetos_situacao: cota e vagas contadas no banco, não no navegador. */
+let situacao: unknown[] = [];
+/** Resposta das demais RPCs (atribuir banca, enfileirar). */
+let respostaRpc: unknown = { data: 1, error: null };
+
+const linhaSituacao = (id: string, over: Record<string, unknown> = {}) => ({
+  id_projeto: id,
+  cota: 3,
+  avaliacoes_tecnicas: 0,
+  travas_tecnicas: 0,
+  vagas_restantes: 3,
+  ...over,
+});
+
+const mockarRpc = () => {
+  vi.mocked(supabase.rpc).mockImplementation(((nome: string) =>
+    (nome === 'fn_projetos_situacao'
+      ? rpcPaginavel({ data: situacao, error: null })
+      : Promise.resolve(respostaRpc))) as never);
+};
 
 const mockarBanco = () => {
   vi.mocked(supabase.from).mockImplementation(((tabela: string) => {
@@ -84,12 +105,20 @@ describe('AtribuicaoForcada', () => {
         { id_projeto: 'p-2', id_usuario: 'x3', status: 'CONCLUIDA' },
         { id_projeto: 'p-1', id_usuario: 'x1', status: 'CANCELADA' },
       ],
+      questionarios: [],
       locks_ativos: [],
       historico_impedimentos: [{ id_projeto: 'p-1', id_usuario: 'u-4' }],
       avaliador_modalidades_bloqueadas: [],
     };
+    // p-2 com a cota cheia pela conta do banco; a avaliação cancelada de p-1 não ocupa vaga
+    situacao = [
+      linhaSituacao('p-1'),
+      linhaSituacao('p-2', { avaliacoes_tecnicas: 3, vagas_restantes: 0 }),
+      linhaSituacao('p-3'),
+    ];
     mockarBanco();
-    vi.mocked(supabase.rpc).mockResolvedValue({ data: 1, error: null } as never);
+    respostaRpc = { data: 1, error: null };
+    mockarRpc();
     vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: { access_token: 'jwt' } }, error: null } as never);
   });
 
@@ -112,6 +141,45 @@ describe('AtribuicaoForcada', () => {
       // Assert
       expect(await screen.findByText('Dra. Ana Credenciada')).toBeInTheDocument();
       expect(screen.queryByText('Sara do Staff')).not.toBeInTheDocument();
+    });
+
+    it('deve usar a vaga contada pelo banco, não a contagem das avaliações cruas', async () => {
+      // Arrange: no navegador p-1 pareceria cheio (3 avaliações); o banco diz que há vaga,
+      // porque voto popular não ocupa cota. Quem manda é fn_projetos_situacao.
+      dados.avaliacoes = [
+        { id_projeto: 'p-1', id_usuario: 'x1', status: 'CONCLUIDA' },
+        { id_projeto: 'p-1', id_usuario: 'x2', status: 'CONCLUIDA' },
+        { id_projeto: 'p-1', id_usuario: 'x3', status: 'CONCLUIDA' },
+      ];
+      situacao = [linhaSituacao('p-1', { avaliacoes_tecnicas: 1, vagas_restantes: 2 })];
+
+      // Act
+      renderizar();
+
+      // Assert
+      expect(await screen.findByText('PROJ-ELEGIVEL')).toBeInTheDocument();
+      expect(vi.mocked(supabase.rpc).mock.calls.map((c) => c[0])).toContain('fn_projetos_situacao');
+    });
+
+    it('não deve listar votante do voto popular como avaliador da atribuição técnica', async () => {
+      // Arrange
+      dados.questionarios = [
+        { id_questionario: 'q-vp', is_voto_popular: true },
+        { id_questionario: 'q-tec', is_voto_popular: false },
+      ];
+      dados.avaliadores_evento = [
+        avaliador('u-1', 'Dra. Ana Credenciada'),
+        avaliador('u-6', 'Vera Votante', { id_questionario: 'q-vp' }),
+        avaliador('u-7', 'Téo Técnico', { id_questionario: 'q-tec' }),
+      ];
+
+      // Act
+      renderizar();
+
+      // Assert
+      expect(await screen.findByText('Dra. Ana Credenciada')).toBeInTheDocument();
+      expect(screen.getByText('Téo Técnico')).toBeInTheDocument();
+      expect(screen.queryByText('Vera Votante')).not.toBeInTheDocument();
     });
 
     it('sem evento ativo deve avisar e não consultar nada, nem um evento guardado no navegador', async () => {
@@ -190,10 +258,10 @@ describe('AtribuicaoForcada', () => {
     it('deve mostrar o motivo quando o banco recusa (ex.: outra pessoa pegou a última vaga)', async () => {
       // Arrange
       const user = userEvent.setup();
-      vi.mocked(supabase.rpc).mockResolvedValue({
+      respostaRpc = {
         data: null,
         error: { code: 'P0001', message: 'O projeto PROJ-ELEGIVEL tem só 0 vaga(s) e foram escolhidos 1 avaliadores.' },
-      } as never);
+      };
       renderizar();
       await user.click(await screen.findByRole('radio', { name: /PROJ-ELEGIVEL/ }));
       await user.click(screen.getByRole('checkbox', { name: 'Avaliador Dra. Ana Credenciada' }));
@@ -226,7 +294,7 @@ describe('AtribuicaoForcada', () => {
       const user = userEvent.setup();
       dados.projetos = [projeto('p-1', 'PROJ-A'), projeto('p-5', 'PROJ-B')];
       dados.historico_impedimentos = [];
-      vi.mocked(supabase.rpc).mockResolvedValue({ data: { ativado: 'p-5', enfileirados: 1 }, error: null } as never);
+      respostaRpc = { data: { ativado: 'p-5', enfileirados: 1 }, error: null };
       renderizar();
       await user.click(await screen.findByRole('button', { name: /enfileirar para avaliador/i }));
       await user.click(await screen.findByRole('radio', { name: /Dra. Ana Credenciada/ }));
@@ -245,10 +313,10 @@ describe('AtribuicaoForcada', () => {
     it('não deve mostrar sucesso quando o banco recusa a fila', async () => {
       // Arrange
       const user = userEvent.setup();
-      vi.mocked(supabase.rpc).mockResolvedValue({
+      respostaRpc = {
         data: null,
         error: { code: 'P0001', message: 'Projeto PROJ-ELEGIVEL: Avaliador declarou conflito com este projeto.' },
-      } as never);
+      };
       renderizar();
       await user.click(await screen.findByRole('button', { name: /enfileirar para avaliador/i }));
       await user.click(await screen.findByRole('radio', { name: /Dra. Ana Credenciada/ }));

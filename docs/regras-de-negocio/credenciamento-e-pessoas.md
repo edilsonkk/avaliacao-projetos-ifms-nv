@@ -5,7 +5,8 @@ Código: `src/features/staff/` (`TelaStaff`, `GestorStaff`), `src/features/avali
 
 ## Login
 
-- Abas: Avaliador, Coordenação (Admin), Monitoramento e Expositor, sem subtítulos.
+- Abas: Avaliador, Staff e Admin, sem subtítulos (`AbaLogin` em `src/features/auth/components/TelaLogin.tsx`).
+  O Telão não passa pelo login: é a rota pública `/telao`.
 - **Admin e Staff:** e-mail e senha no Supabase Auth. A conta do Staff é criada pelo Admin no painel do Supabase e
   ligada ao perfil no primeiro login ([criar Staff](../arquitetura/configuracao.md#criar-um-membro-do-staff)).
 - **Avaliador:** sem senha. O celular é **vinculado** no credenciamento ([segurança](../arquitetura/seguranca.md#como-o-celular-do-avaliador-é-vinculado)):
@@ -18,8 +19,12 @@ Código: `src/features/staff/` (`TelaStaff`, `GestorStaff`), `src/features/avali
 - O celular só funciona enquanto o avaliador estiver **credenciado no evento ativo**: **Bloquear** corta o acesso na
   hora (a tela do celular volta ao login) e **Credenciar** reativa o mesmo aparelho. Em um evento novo, o celular é
   vinculado de novo.
-- Validade, tamanho dos códigos, tentativas e formas liberadas ficam nas Configurações do evento (engrenagem),
+- Validade, tamanho dos códigos, tentativas e a forma de vínculo ficam nas Configurações do evento (engrenagem),
   seção **Acesso dos avaliadores**.
+- **Uma forma por evento** (`eventos.metodos_vinculo`): ou **só pareamento pelo Staff** (o padrão, porque exige o
+  avaliador presente no balcão) ou **só código de acesso**. O celular do avaliador abre direto na forma escolhida,
+  sem alternativa, e o balcão do Staff (**Aparelho**) mostra apenas ela. O valor legado `ambos`, que liberava as
+  duas no mesmo evento, saiu da interface; evento antigo que ainda o tenha gravado é lido como pareamento.
 - Celular perdido ou trocado: **Aparelho → Desvincular aparelho** e parear o novo.
 - A aba Avaliador precisa de um navegador **sem a conta do Admin/Staff**. No mesmo navegador em que a equipe está
   logada, a tela avisa e oferece **Sair desta conta e preparar o aparelho** (sai só ali); o pareamento e o código de

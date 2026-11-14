@@ -45,6 +45,8 @@ export interface UsuarioAvaliador {
   nomes_modalidades_bloqueadas?: string[];
   areas?: string[];
   nomes_areas?: string[];
+  /** Questionário vinculado no evento; vazio: usa o questionário do projeto. */
+  id_questionario?: string | null;
 }
 
 export interface InstituicaoRef {
@@ -129,6 +131,15 @@ export const GestorAvaliadores: React.FC<{
   // Modal de edição
   const [usuario_em_edicao, set_usuario_em_edicao] = useState<{ id_usuario: string; nome: string; email: string } | null>(null);
   const [edit_instituicao_id, set_edit_instituicao_id] = useState<string>('');
+  /**
+   * Questionário vinculado ao avaliador (`avaliadores_evento.id_questionario`). Vazio: ele usa o
+   * questionário técnico do projeto. Apontando para um de voto popular, ele é um votante — as notas
+   * dele não entram na média técnica.
+   */
+  const [edit_questionario_id, set_edit_questionario_id] = useState<string>('');
+  const [lista_questionarios, set_lista_questionarios] = useState<
+    { id_questionario: string; titulo: string; is_voto_popular: boolean }[]
+  >([]);
   const [edit_modalidades_bloqueadas, set_edit_modalidades_bloqueadas] = useState<string[]>([]);
   const [edit_areas, set_edit_areas] = useState<string[]>([]);
   const [salvando_edicao, set_salvando_edicao] = useState<boolean>(false);
@@ -178,12 +189,13 @@ export const GestorAvaliadores: React.FC<{
     }
     set_carregando(true);
     try {
-      const [resInst, resMods, resAreas] = await Promise.all([
+      const [resInst, resMods, resAreas, resQuests] = await Promise.all([
         supabase.from('instituicoes').select('id_instituicao, nome_exibicao, sigla').eq('id_evento', idEvento).order('nome_exibicao', { ascending: true }),
         supabase.from('modalidades').select('id_modalidade, nome_modalidade').eq('id_evento', idEvento).order('nome_modalidade', { ascending: true }),
         supabase.from('areas_tematicas').select('id_area, nome_area').eq('id_evento', idEvento).order('nome_area', { ascending: true }),
+        supabase.from('questionarios').select('id_questionario, titulo, is_voto_popular').eq('id_evento', idEvento).order('titulo', { ascending: true }),
       ]);
-      for (const res of [resInst, resMods, resAreas]) {
+      for (const res of [resInst, resMods, resAreas, resQuests]) {
         if (res.error) throw res.error;
       }
       const instituicoes = (resInst.data || []) as InstituicaoRef[];
@@ -192,12 +204,19 @@ export const GestorAvaliadores: React.FC<{
       set_lista_instituicoes(instituicoes);
       set_lista_modalidades(modalidades);
       set_lista_areas(areas);
+      set_lista_questionarios(
+        ((resQuests.data || []) as any[]).map((q) => ({
+          id_questionario: q.id_questionario,
+          titulo: q.titulo || 'Questionário',
+          is_voto_popular: q.is_voto_popular === true,
+        })),
+      );
 
       const [vinculos, bloqueios, areasAvaliadores] = await Promise.all([
         buscarTodas<any>(() =>
           supabase
             .from('avaliadores_evento')
-            .select('id_usuario, is_credenciado, id_instituicao, usuarios!inner(nome, email, papel)')
+            .select('id_usuario, is_credenciado, id_instituicao, id_questionario, usuarios!inner(nome, email, papel)')
             .eq('id_evento', idEvento)
             .order('id_usuario', { ascending: true })
         ),
@@ -248,6 +267,7 @@ export const GestorAvaliadores: React.FC<{
             is_credenciado: Boolean(v.is_credenciado),
             id_instituicao: v.id_instituicao || null,
             nome_instituicao: (v.id_instituicao && nomeInstituicao.get(v.id_instituicao)) || null,
+            id_questionario: v.id_questionario || null,
             modalidades_bloqueadas: modIds,
             nomes_modalidades_bloqueadas: modIds.map((id) => nomeModalidade.get(id) as string),
             areas: areaIds,
@@ -652,6 +672,7 @@ export const GestorAvaliadores: React.FC<{
   const handle_abrir_edicao = (item: UsuarioAvaliador) => {
     set_usuario_em_edicao({ id_usuario: item.id_usuario, nome: item.nome, email: item.email });
     set_edit_instituicao_id(item.id_instituicao || '');
+    set_edit_questionario_id(item.id_questionario || '');
     set_edit_modalidades_bloqueadas(item.modalidades_bloqueadas || []);
     set_edit_areas(item.areas || []);
   };
@@ -681,6 +702,18 @@ export const GestorAvaliadores: React.FC<{
       });
       if (error) {
         set_mensagem_erro(`Erro ao salvar o avaliador: ${tratarErroEscritaAdmin(error)}`);
+        return;
+      }
+
+      // Vínculo de questionário por RPC própria: admin_atualizar_avaliador não muda de assinatura,
+      // para não quebrar a versão anterior do front-end entre o db push e o deploy.
+      const { error: erroVinculo } = await supabase.rpc('admin_vincular_questionario_avaliador', {
+        p_id_usuario: usuario_em_edicao.id_usuario,
+        p_id_evento: idEvento,
+        p_id_questionario: edit_questionario_id || null,
+      });
+      if (erroVinculo) {
+        set_mensagem_erro(`Avaliador salvo, mas o questionário vinculado não foi gravado: ${tratarErroEscritaAdmin(erroVinculo)}`);
         return;
       }
       exibir_notificacao('Avaliador atualizado.');
@@ -1343,6 +1376,32 @@ export const GestorAvaliadores: React.FC<{
                   </select>
                 </div>
               </div>
+
+              {lista_questionarios.length > 0 && (
+                <div className="space-y-1">
+                  <label htmlFor="edit-questionario-avaliador" className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Questionário deste avaliador
+                  </label>
+                  <select
+                    id="edit-questionario-avaliador"
+                    value={edit_questionario_id}
+                    onChange={(e) => set_edit_questionario_id(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="">Usa o questionário do projeto</option>
+                    {lista_questionarios.map((q) => (
+                      <option key={q.id_questionario} value={q.id_questionario}>
+                        {q.titulo}{q.is_voto_popular ? ' (voto popular)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-500">
+                    Vinculado, o avaliador abre direto neste questionário e não escolhe nada no celular.
+                    Sendo de voto popular, as notas dele não entram na média técnica, na cota nem no
+                    ranking técnico.
+                  </p>
+                </div>
+              )}
 
               {lista_modalidades.length > 0 && (
                 <div className="space-y-1.5 pt-1">

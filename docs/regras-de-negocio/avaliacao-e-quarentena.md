@@ -42,9 +42,45 @@ projeto. Esse projeto não volta a ser sorteado para o mesmo avaliador.
 - Cada nota deve estar dentro de `escala_minima`–`escala_maxima` do questionário.
 - O banco exige **todas as perguntas do questionário, uma vez cada, com nota**: responder só algumas, repetir uma
   pergunta ou usar perguntas de outro questionário é recusado. O questionário precisa ser do evento do projeto.
-- O projeto usa o questionário em `projetos.id_questionario_fixado`, fixado na primeira avaliação, se ainda não houver;
-  depois disso, outro questionário é recusado.
+- **Trava do questionário no primeiro avaliador** (`eventos.fixar_questionario_primeira_avaliacao`, opção nas
+  Configurações do evento, **ligada por padrão**): a primeira avaliação grava
+  `projetos.id_questionario_fixado` e, a partir daí, outro questionário é recusado pelo banco — os avaliadores
+  seguintes não escolhem nada. **Desligada**, cada avaliador escolhe o questionário, nada é fixado e o banco não
+  recusa questionário diferente, inclusive em projeto que já tinha um fixado de antes; nesse caso a
+  [conferência](auditoria-de-notas.md#conferência-o-que-é-verificado) não acusa o achado C8, porque questionário
+  diferente passa a ser a regra do evento. Quem decide é o banco (`fn_enviar_avaliacao` e `fn_meu_perfil`), não a
+  tela do celular.
 - Parecer: até 5000 caracteres.
+
+## Voto popular
+
+Um **questionário de voto popular** (marca `is_voto_popular`, no Gestor de Questionários) existe para
+o julgamento do público, à parte da avaliação técnica. As notas dele:
+
+- **não** entram na média técnica do projeto nem no ranking técnico;
+- **não** ocupam a cota de avaliações (projeto com a cota cheia continua recebendo voto);
+- **não** acionam quarentena por divergência;
+- **não** entram na meta nem nas contagens de avaliação do Telão (de lá saem só contadores de voto);
+- **não** fixam o questionário do projeto, e não são recusadas pela trava do primeiro avaliador.
+
+Quem decide é a **marca do questionário**, não o avaliador: cada avaliação copia a marca ao ser
+gravada (`avaliacoes.is_voto_popular`, por trigger), e a marca não pode mudar depois do primeiro uso.
+Ver [ADR 0016](../decisoes/0016-voto-popular-separado-e-media-bayesiana.md).
+
+**Quem vota:** o Admin vincula o avaliador ao questionário de voto popular no Gestor de Avaliadores
+(`avaliadores_evento.id_questionario`). O celular dele abre direto nesse questionário, sem lista de
+escolha, e o cabeçalho diz "Voto Popular". Um avaliador vinculado não consegue enviar outro
+questionário (o banco recusa). Quem não tem vínculo nem vê os questionários de voto popular na lista.
+
+**Sorteio do votante:** mesmas regras de elegibilidade do técnico (check-in, na competição, conflito
+institucional, modalidade bloqueada, não votou nesse projeto ainda), **menos** a cota — e ignorando as
+travas: vários votantes podem estar no mesmo projeto, e um votante não impede o avaliador técnico (nem
+o contrário). Quando já votou em todos, a tela avisa "Você já votou em todos os projetos".
+
+**Resultado:** média própria, [classificação própria por média bayesiana](relatorios-e-monitoramento.md#classificação-rankingpremiacao)
+e [relatório próprio](relatorios-e-monitoramento.md#relatórios-relatoriosadmin). A conferência de notas
+continua verificando a conta de cada voto (C1, C2, C3b, C10, C11) e ganha dois achados próprios: **C13**
+(classificação gravada divergente da marca do questionário) e **C14** (votante com nota na média técnica).
 
 ## Gestor de Questionários (Admin)
 

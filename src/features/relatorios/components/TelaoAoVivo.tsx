@@ -10,6 +10,7 @@ import {
   Award,
   RefreshCw,
   PieChart,
+  Heart,
   WifiOff
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
@@ -32,6 +33,13 @@ interface ResumoTelao {
   projetos_quarentena: number;
   cota_padrao: number;
   avaliacao_finalizada: boolean;
+  /**
+   * Voto popular, só agregados. O Telão é público (`anon`) e não mostra nome, nota nem ranking:
+   * a média do voto popular fica na Classificação, que é do Admin.
+   */
+  votos_populares: number;
+  projetos_votados: number;
+  votantes_credenciados: number;
 }
 
 // Estado inicial zerado: o Telão é público e não deve projetar números de exemplo.
@@ -51,6 +59,9 @@ const RESUMO_VAZIO: ResumoTelao = {
   projetos_quarentena: 0,
   cota_padrao: 3,
   avaliacao_finalizada: false,
+  votos_populares: 0,
+  projetos_votados: 0,
+  votantes_credenciados: 0,
 };
 
 const INTERVALO_ATUALIZACAO_MS = 10_000;
@@ -102,6 +113,9 @@ export const TelaoAoVivo: React.FC = () => {
         projetos_quarentena: numero(r.projetos_quarentena),
         cota_padrao: numero(r.cota_padrao) || 3,
         avaliacao_finalizada: r.avaliacao_finalizada === true,
+        votos_populares: Number(r.votos_populares ?? 0),
+        projetos_votados: Number(r.projetos_votados ?? 0),
+        votantes_credenciados: Number(r.votantes_credenciados ?? 0),
       });
       set_ultima_atualizacao(new Date());
       set_sem_conexao(false);
@@ -209,6 +223,46 @@ export const TelaoAoVivo: React.FC = () => {
       )}
 
       {/* 5 CARDS GRANDES DE KPIS CONECTADOS */}
+      {(resumo.votos_populares > 0 || resumo.votantes_credenciados > 0) && (
+        <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-6">
+          {/* Voto popular: contagens agregadas. Nenhuma nota e nenhum nome aqui. */}
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between space-y-3 border-l-4 border-l-fuchsia-500">
+            <div className="flex items-center justify-between text-fuchsia-600 dark:text-fuchsia-400">
+              <span className="text-xs font-bold uppercase tracking-wider">Voto Popular</span>
+              <Heart className="w-6 h-6" aria-hidden="true" />
+            </div>
+            <div className="text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
+              {resumo.votos_populares}
+            </div>
+            <span className="text-xs text-fuchsia-600 dark:text-fuchsia-400 font-semibold">
+              {resumo.votos_populares === 1 ? 'voto registrado' : 'votos registrados'}
+            </span>
+          </div>
+
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between space-y-3">
+            <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+              <span className="text-xs font-bold uppercase tracking-wider">Projetos Votados</span>
+              <FolderGit2 className="w-6 h-6 text-slate-600 dark:text-slate-300" aria-hidden="true" />
+            </div>
+            <div className="text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
+              {resumo.projetos_votados}
+            </div>
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">de {resumo.total_projetos} no total</span>
+          </div>
+
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between space-y-3">
+            <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+              <span className="text-xs font-bold uppercase tracking-wider">Votantes</span>
+              <Users className="w-6 h-6 text-slate-600 dark:text-slate-300" aria-hidden="true" />
+            </div>
+            <div className="text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
+              {resumo.votantes_credenciados}
+            </div>
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">credenciados para votar</span>
+          </div>
+        </section>
+      )}
+
       <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 lg:gap-6">
         {/* Total de Projetos */}
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between space-y-3">

@@ -25,6 +25,10 @@ const RESUMO = {
   avaliacoes_na_meta: 40,
   projetos_quarentena: 2,
   cota_padrao: 3,
+  // Voto popular: só agregados (o Telão é público e não mostra nome nem nota)
+  votos_populares: 73,
+  projetos_votados: 24,
+  votantes_credenciados: 6,
 };
 
 describe('TelaoAoVivo', () => {
@@ -45,6 +49,33 @@ describe('TelaoAoVivo', () => {
     expect(await screen.findByText('40')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
     expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it('deve mostrar o andamento do voto popular, só em contagens', async () => {
+    // Arrange / Act
+    render(<TelaoAoVivo />);
+
+    // Assert
+    expect(await screen.findByText('73')).toBeInTheDocument();
+    expect(screen.getByText('24')).toBeInTheDocument();
+    expect(screen.getByText('6')).toBeInTheDocument();
+    expect(screen.getByText(/votos registrados/i)).toBeInTheDocument();
+    expect(screen.getByText(/credenciados para votar/i)).toBeInTheDocument();
+  });
+
+  it('não deve mostrar o bloco do voto popular em evento que não tem votação', async () => {
+    // Arrange
+    vi.mocked(supabase.rpc).mockResolvedValue({
+      data: { ...RESUMO, votos_populares: 0, projetos_votados: 0, votantes_credenciados: 0 },
+      error: null,
+    } as never);
+
+    // Act
+    render(<TelaoAoVivo />);
+
+    // Assert
+    await screen.findByText('40');
+    expect(screen.queryByText(/votos registrados/i)).not.toBeInTheDocument();
   });
 
   it('deve usar sempre o evento ativo do banco, e não um id guardado no navegador', async () => {

@@ -105,6 +105,42 @@ describe('GestorQuestionarios', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Questionário "Feira 2026" cadastrado com 2 pergunta(s).');
   });
 
+  it('deve gravar a marca de voto popular pela RPC própria, sem mexer na assinatura de admin_salvar_questionario', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    renderizar();
+    await screen.findByText('Pesquisa Aplicada');
+
+    // Act
+    await user.type(screen.getByLabelText('Título'), 'Voto Popular 2026');
+    await user.type(screen.getByLabelText('Texto da pergunta 1'), 'Gostei do projeto');
+    await user.click(screen.getByRole('checkbox', { name: /questionário de voto popular/i }));
+    await user.click(screen.getByRole('button', { name: 'Salvar Questionário' }));
+
+    // Assert
+    await waitFor(() =>
+      expect(supabase.rpc).toHaveBeenCalledWith('admin_marcar_questionario_voto_popular', {
+        p_id_questionario: 'q-novo',
+        p_is_voto_popular: true,
+      }),
+    );
+  });
+
+  it('deve travar a marca de voto popular de questionário já usado', async () => {
+    // Arrange: o questionário em edição já tem avaliação
+    usos = 3;
+    const user = userEvent.setup();
+    renderizar();
+    await screen.findByText('Pesquisa Aplicada');
+
+    // Act
+    await user.click(screen.getByRole('button', { name: /editar pesquisa aplicada/i }));
+
+    // Assert
+    expect(await screen.findByRole('checkbox', { name: /questionário de voto popular/i })).toBeDisabled();
+    expect(screen.getByText(/a marca não pode mais mudar/i)).toBeInTheDocument();
+  });
+
   it('deve mostrar o erro do banco e não limpar o formulário', async () => {
     // Arrange
     const user = userEvent.setup();

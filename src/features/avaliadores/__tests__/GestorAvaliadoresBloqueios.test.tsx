@@ -16,7 +16,12 @@ const { mockFrom, mockInsert, mockUpdate, mockUpsert, mockDelete } = vi.hoisted(
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: mockFrom,
-    rpc: vi.fn(),
+    // fn_projetos_situacao é lida paginada (buscarTodas monta .order().range())
+    rpc: vi.fn(() => {
+      const resultado = { data: [], error: null };
+      const entregar = () => Promise.resolve(resultado);
+      return { then: (ok: any, err: any) => entregar().then(ok, err), order: () => ({ range: entregar }), range: entregar };
+    }),
   },
   verificar_conexao_configurada: vi.fn(() => true),
 }));
