@@ -279,13 +279,15 @@ export const TelaoAoVivo: React.FC = () => {
         {/* Avaliadores Credenciados */}
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-bold uppercase tracking-wider">Avaliadores</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Avaliadores técnicos</span>
             <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
           </div>
           <div className="text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
             {resumo.avaliadores_credenciados}
           </div>
-          <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold">Credenciados liberados</span>
+          <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold">
+            Credenciados liberados{resumo.votantes_credenciados > 0 ? ' (votantes à parte)' : ''}
+          </span>
         </div>
 
         {/* Avaliações em Andamento (locks_ativos) */}

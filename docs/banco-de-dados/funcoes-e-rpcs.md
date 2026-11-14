@@ -52,7 +52,7 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `fn_janela_avaliacao_aberta(id_evento)` | Logados | Janela do evento aberta agora (data, horário no fuso de MS e sistema liberado); usada pelo sorteio e pela fila |
 | `fn_feira_concluida(id_evento)` | Avaliador/Staff/Admin | Avaliação finalizada: há projetos presentes (check-in) na competição e todos atingiram a cota (mesma regra de `avaliacao_finalizada` do Telão) |
 | `fn_autocadastro_avaliador(...)` | Público | Autocadastro pelo QR; nunca altera cadastro existente |
-| `fn_telao_resumo(id_evento)` | Público | Totais do Telão (evento ativo se nulo): nome/data/horário do evento, projetos presentes, meta pela cota de cada projeto, avaliações na meta, travas (todas e as que cabem na meta), avaliadores credenciados (só papel Avaliador), quarentena pendente, `avaliacao_finalizada`; sem nomes de pessoas, títulos nem notas |
+| `fn_telao_resumo(id_evento)` | Público | Totais do Telão (evento ativo se nulo): nome/data/horário do evento, projetos presentes, meta pela cota de cada projeto, avaliações na meta, travas (todas e as que cabem na meta), avaliadores credenciados (só papel Avaliador e só técnico; votante vai em `votantes_credenciados`), quarentena pendente, `avaliacao_finalizada`; sem nomes de pessoas, títulos nem notas |
 
 ## Administração
 
@@ -81,7 +81,7 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `admin_excluir_staff(p_id_usuario)` | Exclui membro do Staff/Monitor (recusa outros papéis) |
 | `admin_salvar_questionario(p_id_questionario, p_id_evento, p_titulo, p_escala_minima, p_escala_maxima, p_perguntas jsonb)` → `uuid` | Cria (`p_id_questionario` nulo) ou edita o questionário numa transação; perguntas atualizadas no lugar. Questionário já usado só muda o título |
 | `admin_excluir_questionario(p_id_questionario)` | Exclui questionário nunca usado em avaliação |
-| `admin_copiar_questionario(p_id_origem, p_id_evento)` → `uuid` | Copia um modelo ou um questionário de outro evento para o evento (perguntas, ajuda e pesos). Não duplica: devolve a cópia existente |
+| `admin_copiar_questionario(p_id_origem, p_id_evento)` → `uuid` | Copia um modelo ou um questionário de outro evento para o evento (perguntas, ajuda e pesos). A marca `is_voto_popular` acompanha a cópia de questionário; cópia de modelo nasce técnica. Não duplica: devolve a cópia existente |
 | `admin_salvar_modelo_questionario(p_id_modelo, p_titulo, p_descricao, p_escala_minima, p_escala_maxima, p_perguntas)` → `jsonb` | Cria (`p_id_modelo` nulo) ou edita um modelo. Ao editar, atualiza a cópia do evento ativo se ela não foi usada; devolve `copia` = `atualizada`, `em_uso` ou `sem_copia` |
 | `admin_excluir_modelo_questionario(p_id_modelo)` | Exclui um modelo; as cópias nos eventos continuam |
 | `admin_salvar_questionario_como_modelo(p_id_questionario)` → `uuid` | Cria um modelo a partir de um questionário do evento |

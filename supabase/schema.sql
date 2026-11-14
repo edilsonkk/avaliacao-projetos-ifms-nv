@@ -376,6 +376,7 @@ DECLARE
   v_max           numeric(5,2);
   v_evento_origem uuid;
   v_origem_quest  uuid;
+  v_voto_popular  boolean := false;
   v_eh_modelo     boolean;
   v_origem        uuid;
   v_id            uuid;
@@ -395,8 +396,11 @@ BEGIN
   v_origem := p_id_origem;
 
   IF NOT v_eh_modelo THEN
-    SELECT q.titulo, q.escala_minima, q.escala_maxima, q.id_evento, q.id_origem
-      INTO v_titulo, v_min, v_max, v_evento_origem, v_origem_quest
+    -- A marca acompanha a cópia: copiar um questionário de voto popular dava um
+    -- questionário técnico com as perguntas do voto popular.
+    SELECT q.titulo, q.escala_minima, q.escala_maxima, q.id_evento, q.id_origem,
+           coalesce(q.is_voto_popular, false)
+      INTO v_titulo, v_min, v_max, v_evento_origem, v_origem_quest, v_voto_popular
     FROM public.questionarios q WHERE q.id_questionario = p_id_origem;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'Questionário de origem não encontrado.' USING ERRCODE = '22023';
@@ -424,8 +428,8 @@ BEGIN
     v_n := v_n + 1;
   END LOOP;
 
-  INSERT INTO public.questionarios (id_evento, titulo, escala_minima, escala_maxima, id_origem)
-  VALUES (p_id_evento, v_titulo, v_min, v_max, v_origem)
+  INSERT INTO public.questionarios (id_evento, titulo, escala_minima, escala_maxima, id_origem, is_voto_popular)
+  VALUES (p_id_evento, v_titulo, v_min, v_max, v_origem, v_voto_popular)
   RETURNING id_questionario INTO v_id;
 
   IF v_eh_modelo THEN
@@ -444,6 +448,10 @@ $$;
 
 
 ALTER FUNCTION "public"."admin_copiar_questionario"("p_id_origem" "uuid", "p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."admin_copiar_questionario"("p_id_origem" "uuid", "p_id_evento" "uuid") IS 'Copia um questionário (ou modelo) para o evento, com perguntas e pesos. A marca is_voto_popular acompanha a cópia de questionário; cópia de modelo nasce técnica.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_corrigir_respostas_avaliacao"("p_id_avaliacao" "uuid", "p_respostas" "jsonb", "p_motivo" "text" DEFAULT NULL::"text") RETURNS "jsonb"
@@ -904,9 +912,12 @@ BEGIN
   SELECT v_id_avaliacao, (r ->> 'id_pergunta')::uuid, (r ->> 'nota')::numeric
   FROM jsonb_array_elements(p_respostas) AS r;
 
+  -- Fixa o questionário do projeto só quando o evento trava no primeiro avaliador,
+  -- e nunca por voto popular (igual a fn_enviar_avaliacao).
   UPDATE public.projetos
   SET id_questionario_fixado = p_id_questionario
   WHERE id_projeto = p_id_projeto AND id_questionario_fixado IS NULL
+    AND v_fixar_quest
     AND NOT v_voto_popular;
 
   v_quarentena := public.fn_recalcular_quarentena(p_id_projeto);
@@ -924,7 +935,7 @@ END $$;
 ALTER FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_id_usuario" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_motivo" "text", "p_confirmar_acima_da_cota" boolean) OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_id_usuario" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_motivo" "text", "p_confirmar_acima_da_cota" boolean) IS 'Lança a avaliação de um avaliador do evento (ficha em papel). Acima da cota só com p_confirmar_acima_da_cota. Só Admin.';
+COMMENT ON FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_id_usuario" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_motivo" "text", "p_confirmar_acima_da_cota" boolean) IS 'Lança a avaliação de um avaliador do evento (ficha em papel, celular sem acesso). Cota, trava do questionário e fixação seguem as mesmas regras de fn_enviar_avaliacao: só nota técnica ocupa cota, e voto popular nunca fixa o questionário do projeto.';
 
 
 
@@ -4668,10 +4679,14 @@ CREATE OR REPLACE FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid" DEFAU
     'horario_fim', (SELECT horario_fim FROM ev),
     'total_projetos', (SELECT count(*) FROM public.projetos p JOIN ev ON ev.id_evento = p.id_evento),
     'projetos_presentes', (SELECT count(*) FROM presentes),
+    -- Só avaliador técnico: o votante entra em votantes_credenciados, senão a
+    -- média por avaliador do painel sai diluída.
     'avaliadores_credenciados', (SELECT count(*) FROM public.avaliadores_evento ae
                                  JOIN ev ON ev.id_evento = ae.id_evento
                                  JOIN public.usuarios u ON u.id_usuario = ae.id_usuario
-                                 WHERE ae.is_credenciado AND upper(u.papel) = 'AVALIADOR'),
+                                 LEFT JOIN public.questionarios q ON q.id_questionario = ae.id_questionario
+                                 WHERE ae.is_credenciado AND upper(u.papel) = 'AVALIADOR'
+                                   AND NOT coalesce(q.is_voto_popular, false)),
     'avaliacoes_em_andamento', (SELECT coalesce(sum(qtd), 0) FROM travas),
     'em_andamento_na_meta', (SELECT coalesce(sum(least(travas, greatest(cota - qtd, 0))), 0) FROM presentes),
     'avaliacoes_realizadas', (SELECT coalesce(sum(qtd), 0) FROM validas),
@@ -4691,6 +4706,10 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_telao_resumo"("p_id_evento" "uuid") IS 'Resumo agregado do Telão: só contadores, sem nota, nome ou e-mail. Meta, realizadas, em andamento e avaliadores_credenciados são de nota técnica; o voto popular tem votos_populares, projetos_votados e votantes_credenciados.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_vagas_projeto"("p_id_projeto" "uuid") RETURNS integer
@@ -5376,6 +5395,29 @@ $$;
 ALTER FUNCTION "public"."trg_instituicoes_normalizar"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."trg_projetos_fixado_tecnico"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.id_questionario_fixado IS NOT NULL
+     AND EXISTS (SELECT 1 FROM public.questionarios q
+                 WHERE q.id_questionario = NEW.id_questionario_fixado
+                   AND coalesce(q.is_voto_popular, false)) THEN
+    RAISE EXCEPTION 'Questionário de voto popular não fixa o questionário do projeto.'
+      USING ERRCODE = '22023';
+  END IF;
+  RETURN NEW;
+END $$;
+
+
+ALTER FUNCTION "public"."trg_projetos_fixado_tecnico"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."trg_projetos_fixado_tecnico"() IS 'Recusa gravar questionário de voto popular em projetos.id_questionario_fixado: o fixado é a escala da nota técnica, e a tela do avaliador o impõe quando o evento trava o questionário.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."validar_avaliador_do_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -6007,11 +6049,15 @@ CREATE OR REPLACE VIEW "public"."view_relatorio_admin" WITH ("security_invoker"=
     "p"."corredor",
     COALESCE("round"("avg"("a"."nota_final"), 2), 0.00) AS "media_notas"
    FROM ("public"."projetos" "p"
-     LEFT JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")))))
+     LEFT JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")) AND (NOT "a"."is_voto_popular"))))
   GROUP BY "p"."id_projeto", "p"."codigo_projeto", "p"."titulo", "p"."estande", "p"."corredor";
 
 
 ALTER VIEW "public"."view_relatorio_admin" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."view_relatorio_admin" IS 'Média por projeto, só de nota técnica. Legada: as telas leem fn_relatorio_projetos_completo.';
+
 
 
 CREATE OR REPLACE VIEW "public"."view_relatorio_ausencias" WITH ("security_invoker"='true') AS
@@ -6068,11 +6114,15 @@ CREATE OR REPLACE VIEW "public"."view_relatorio_avaliadores" WITH ("security_inv
      JOIN "public"."projetos" "p" ON (("p"."id_projeto" = "a"."id_projeto")))
      LEFT JOIN "public"."modalidades" "m" ON (("m"."id_modalidade" = "p"."id_modalidade")))
      LEFT JOIN "public"."areas_tematicas" "ar" ON (("ar"."id_area" = "p"."id_area")))
-  WHERE (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text"))
+  WHERE ((("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")) AND (NOT "a"."is_voto_popular"))
   ORDER BY "u"."nome", "a"."created_at" DESC;
 
 
 ALTER VIEW "public"."view_relatorio_avaliadores" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."view_relatorio_avaliadores" IS 'Avaliações por avaliador, só de nota técnica (o voto popular tem fn_relatorio_voto_popular_completo). Legada: as telas leem fn_relatorio_avaliadores_completo.';
+
 
 
 CREATE OR REPLACE VIEW "public"."view_relatorio_projetos" WITH ("security_invoker"='true') AS
@@ -6097,12 +6147,16 @@ CREATE OR REPLACE VIEW "public"."view_relatorio_projetos" WITH ("security_invoke
      LEFT JOIN "public"."modalidades" "m" ON (("m"."id_modalidade" = "p"."id_modalidade")))
      LEFT JOIN "public"."areas_tematicas" "ar" ON (("ar"."id_area" = "p"."id_area")))
      LEFT JOIN "public"."instituicoes" "inst" ON (("inst"."id_instituicao" = "p"."id_instituicao")))
-     LEFT JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")))))
+     LEFT JOIN "public"."avaliacoes" "a" ON ((("a"."id_projeto" = "p"."id_projeto") AND (("a"."status" IS NULL) OR (("a"."status")::"text" <> 'CANCELADA'::"text")) AND (NOT "a"."is_voto_popular"))))
   GROUP BY "p"."id_projeto", "p"."id_evento", "p"."codigo_projeto", "p"."titulo", "p"."estande", "p"."corredor", "m"."nome_modalidade", "ar"."nome_area", "inst"."nome_exibicao", "p"."id_instituicao", "p"."id_modalidade", "p"."id_area", "p"."is_check_in_realizado", "p"."is_fora_da_competicao"
   ORDER BY COALESCE("round"("avg"("a"."nota_final"), 2), 0.00) DESC;
 
 
 ALTER VIEW "public"."view_relatorio_projetos" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."view_relatorio_projetos" IS 'Contagem, média e notas por projeto, só de nota técnica. Legada: as telas leem fn_relatorio_projetos_completo.';
+
 
 
 ALTER TABLE ONLY "public"."areas_tematicas"
@@ -6457,6 +6511,10 @@ CREATE OR REPLACE TRIGGER "log_auditoria_imutavel_truncate" BEFORE TRUNCATE ON "
 
 
 CREATE OR REPLACE TRIGGER "trg_avaliacao_classificar_voto_popular" BEFORE INSERT OR UPDATE OF "id_questionario" ON "public"."avaliacoes" FOR EACH ROW EXECUTE FUNCTION "public"."avaliacao_classificar_voto_popular"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_projetos_fixado_tecnico" BEFORE INSERT OR UPDATE OF "id_questionario_fixado" ON "public"."projetos" FOR EACH ROW EXECUTE FUNCTION "public"."trg_projetos_fixado_tecnico"();
 
 
 
@@ -7590,6 +7648,12 @@ GRANT ALL ON FUNCTION "public"."sortear_proximo_projeto"("p_id_usuario" "uuid", 
 GRANT ALL ON FUNCTION "public"."trg_instituicoes_normalizar"() TO "anon";
 GRANT ALL ON FUNCTION "public"."trg_instituicoes_normalizar"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."trg_instituicoes_normalizar"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."trg_projetos_fixado_tecnico"() TO "anon";
+GRANT ALL ON FUNCTION "public"."trg_projetos_fixado_tecnico"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."trg_projetos_fixado_tecnico"() TO "service_role";
 
 
 
