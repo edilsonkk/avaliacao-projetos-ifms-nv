@@ -1,5 +1,5 @@
 import { defineConfig, mergeConfig } from 'vitest/config';
-import viteConfig from './vite.config';
+import viteConfig from './vite.config.ts';
 
 // Herda plugins e aliases (`@/`) do vite.config.ts para que app e testes resolvam módulos da mesma forma.
 export default mergeConfig(
