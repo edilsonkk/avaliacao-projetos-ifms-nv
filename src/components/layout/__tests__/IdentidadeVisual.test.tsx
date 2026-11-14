@@ -56,6 +56,9 @@ describe('Cabecalho - ícone do evento', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    // O <link rel="icon"> vive no <head> e sobrevive ao unmount do React: sem limpar,
+    // um teste lê o ícone deixado pelo anterior e a asserção fica dependendo da ordem.
+    document.querySelectorAll('link[rel="icon"]').forEach((link) => link.remove());
   });
 
   const renderizar = () =>
