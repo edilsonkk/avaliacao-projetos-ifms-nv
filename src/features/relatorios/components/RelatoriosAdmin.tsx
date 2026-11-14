@@ -205,6 +205,9 @@ export interface IndicadoresGerenciais {
   // Avaliadores
   total_avaliadores: number;
   avaliadores_credenciados: number;
+  /** Votantes do voto popular: credenciados, mas fora da contagem técnica. */
+  total_votantes: number;
+  votantes_credenciados: number;
   avaliadores_ausentes: number;
   taxa_comparecimento_avaliadores: number;
   // Avaliações
@@ -549,10 +552,14 @@ export const RelatoriosAdmin: React.FC<{
         // Ordena por `posicao`: o ORDER BY do PostgREST substitui o da função, e por
         // id_projeto a classificação sairia em ordem de UUID, com a posição embaralhada.
         buscarTodas<any>(() => rpc('fn_relatorio_voto_popular_completo', { p_id_evento: idEvento }).order('posicao')),
-        buscarTodas<{ is_credenciado: boolean | null; usuarios: { papel: string | null } | { papel: string | null }[] | null }>(() =>
+        buscarTodas<{
+          is_credenciado: boolean | null;
+          usuarios: { papel: string | null } | { papel: string | null }[] | null;
+          questionarios: { is_voto_popular: boolean | null } | { is_voto_popular: boolean | null }[] | null;
+        }>(() =>
           supabase
             .from('avaliadores_evento')
-            .select('id_usuario, is_credenciado, usuarios!inner(papel)')
+            .select('id_usuario, is_credenciado, id_questionario, usuarios!inner(papel), questionarios(is_voto_popular)')
             .eq('id_evento', idEvento)
             .order('id_usuario')
         ),
@@ -661,8 +668,18 @@ export const RelatoriosAdmin: React.FC<{
         const usuario = Array.isArray(a.usuarios) ? a.usuarios[0] : a.usuarios;
         return String(usuario?.papel || '').toUpperCase() === 'AVALIADOR';
       });
-      const totalAvalCadastrados = soAvaliadores.length;
-      const totalAvalCredenciados = soAvaliadores.filter((a) => a.is_credenciado).length;
+      // Votante é credenciado, mas não é avaliador técnico: somar os dois dilui a
+      // média por avaliador e a taxa de comparecimento. Ele tem contador próprio.
+      const ehVotante = (a: (typeof soAvaliadores)[number]) => {
+        const quest = Array.isArray(a.questionarios) ? a.questionarios[0] : a.questionarios;
+        return quest?.is_voto_popular === true;
+      };
+      const soTecnicos = soAvaliadores.filter((a) => !ehVotante(a));
+      const soVotantes = soAvaliadores.filter(ehVotante);
+      const totalAvalCadastrados = soTecnicos.length;
+      const totalAvalCredenciados = soTecnicos.filter((a) => a.is_credenciado).length;
+      const totalVotantes = soVotantes.length;
+      const totalVotantesCredenciados = soVotantes.filter((a) => a.is_credenciado).length;
       const countQuarentena = quarentena.count ?? 0;
 
       // ========================================================================
@@ -817,6 +834,8 @@ export const RelatoriosAdmin: React.FC<{
         taxa_presenca_projetos: taxaPresencaProjetos,
         total_avaliadores: totalAvalCadastrados,
         avaliadores_credenciados: totalAvalCredenciados,
+        total_votantes: totalVotantes,
+        votantes_credenciados: totalVotantesCredenciados,
         avaliadores_ausentes: avalAusentes,
         taxa_comparecimento_avaliadores: taxaComparecimentoAval,
         total_avaliacoes_realizadas: totalAvalRealizadas,
@@ -1490,8 +1509,10 @@ export const RelatoriosAdmin: React.FC<{
         ['Projetos Ausentes', indicadores.projetos_ausentes],
         ['Projetos Não Credenciados', indicadores.projetos_nao_credenciados],
         ['Taxa de Presença Projetos', `${indicadores.taxa_presenca_projetos}%`],
-        ['Avaliadores Cadastrados', indicadores.total_avaliadores],
-        ['Avaliadores Credenciados', indicadores.avaliadores_credenciados],
+        ['Avaliadores Cadastrados (técnicos)', indicadores.total_avaliadores],
+        ['Avaliadores Credenciados (técnicos)', indicadores.avaliadores_credenciados],
+        ['Votantes Cadastrados (voto popular)', indicadores.total_votantes],
+        ['Votantes Credenciados (voto popular)', indicadores.votantes_credenciados],
         ['Avaliadores Ausentes', indicadores.avaliadores_ausentes],
         ['Taxa de Comparecimento Avaliadores', `${indicadores.taxa_comparecimento_avaliadores}%`],
         ['Avaliações Realizadas', indicadores.total_avaliacoes_realizadas],
@@ -2884,7 +2905,7 @@ export const RelatoriosAdmin: React.FC<{
             {/* KPI 2: Avaliadores Cadastrados / Ativos */}
             <div className="p-5 sm:p-6 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-2 print:p-4">
               <div className="flex items-center justify-between text-slate-500">
-                <span className="text-xs font-bold uppercase tracking-wider">Avaliadores</span>
+                <span className="text-xs font-bold uppercase tracking-wider">Avaliadores técnicos</span>
                 <Users className="w-5 h-5 text-indigo-600" />
               </div>
               <div className="flex items-baseline justify-between">
@@ -2900,6 +2921,14 @@ export const RelatoriosAdmin: React.FC<{
                 <span>Ausentes/Inativos: <strong className="text-amber-600">{indicadores.avaliadores_ausentes}</strong></span>
                 <span>Total: <strong>{indicadores.total_avaliadores}</strong></span>
               </div>
+              {indicadores.total_votantes > 0 && (
+                <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-700">
+                  <span>Votantes (voto popular)</span>
+                  <span>
+                    <strong>{indicadores.votantes_credenciados}</strong> / {indicadores.total_votantes} credenciados
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* KPI 3: Avaliações Realizadas */}

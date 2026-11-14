@@ -308,6 +308,14 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
             { id_usuario: 'usr-4', is_credenciado: false, usuarios: { papel: 'AVALIADOR' } },
             // Staff credenciado no evento: não entra na conta de avaliadores
             { id_usuario: 'usr-staff', is_credenciado: true, usuarios: { papel: 'STAFF' } },
+            // Votante: credenciado, mas vinculado ao questionário de voto popular
+            {
+              id_usuario: 'usr-votante',
+              is_credenciado: true,
+              id_questionario: 'quest-vp',
+              usuarios: { papel: 'AVALIADOR' },
+              questionarios: { is_voto_popular: true },
+            },
           ],
           error: null,
         });
@@ -609,6 +617,24 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
       expect(screen.getByText(/16m/i)).toBeDefined();
       // Média geral das notas (9,50 pts)
       expect(screen.getAllByText('9,50 pts').length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('5b. ABA INDICADORES: votante não entra na contagem de avaliadores técnicos e aparece à parte', async () => {
+    // Arrange / Act: 4 técnicos (3 credenciados) + 1 votante credenciado + 1 Staff
+    render(<RelatoriosAdmin id_evento_ativo="evt-2026" />);
+    await waitFor(() => expect(screen.getByText('Robô Pantaneiro Autônomo')).toBeDefined());
+    const abaIndicadores = screen.getByText('Indicadores');
+    fireEvent.click(abaIndicadores.closest('button') || abaIndicadores);
+
+    // Assert
+    await waitFor(() => {
+      // Continua 3 de 4 técnicos: o votante credenciado não vira avaliador técnico
+      expect(screen.getByText(/75% presentes/i)).toBeDefined();
+      expect(screen.getByText('Avaliadores técnicos')).toBeDefined();
+      // E o votante aparece no contador próprio
+      expect(screen.getByText(/votantes \(voto popular\)/i)).toBeDefined();
+      expect(screen.getByText(/1 credenciados/i)).toBeDefined();
     });
   });
 

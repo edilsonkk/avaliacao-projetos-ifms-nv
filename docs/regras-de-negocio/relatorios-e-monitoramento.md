@@ -126,7 +126,10 @@ hora em que a tela volta do segundo plano. O Telão **não** mostra o ranking (a
   na Classificação, que é do Admin. O teste `supabase/tests/18_telao_test.sql` garante que o resumo do Telão não
   contenha `nota`, `media`, `titulo` nem `email` — é por isso que as chaves são `votos_populares`, `projetos_votados`
   e `votantes_credenciados`.
-- Meta, realizadas, em andamento e "avaliação finalizada" contam **só nota técnica**.
+- Meta, realizadas, em andamento e "avaliação finalizada" contam **só nota técnica**. `avaliadores_credenciados`
+  também: votante é credenciado, mas não é avaliador técnico, e somar os dois diluiria a média por avaliador. Ele é
+  contado em `votantes_credenciados`. Nos Indicadores do Admin vale o mesmo: o card "Avaliadores técnicos" exclui
+  votante, que aparece numa linha própria com o total de credenciados.
 
 - Sempre o **evento ativo do banco** (não um id guardado no navegador). O título é o nome (e a edição) do evento; sem
   evento ativo, "Nenhum evento ativo".

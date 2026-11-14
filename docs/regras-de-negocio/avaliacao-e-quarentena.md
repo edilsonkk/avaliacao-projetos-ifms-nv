@@ -48,8 +48,11 @@ projeto. Esse projeto não volta a ser sorteado para o mesmo avaliador.
   seguintes não escolhem nada. **Desligada**, cada avaliador escolhe o questionário, nada é fixado e o banco não
   recusa questionário diferente, inclusive em projeto que já tinha um fixado de antes; nesse caso a
   [conferência](auditoria-de-notas.md#conferência-o-que-é-verificado) não acusa o achado C8, porque questionário
-  diferente passa a ser a regra do evento. Quem decide é o banco (`fn_enviar_avaliacao` e `fn_meu_perfil`), não a
-  tela do celular.
+  diferente passa a ser a regra do evento. Quem decide é o banco (`fn_enviar_avaliacao`, `fn_meu_perfil` e
+  `admin_lancar_avaliacao`, que seguem a mesma regra), não a tela do celular.
+  O fixado é **sempre de nota técnica**: `trg_projetos_fixado_tecnico` recusa gravar ali um questionário de voto
+  popular. Com a trava ligada, a tela do avaliador impõe o fixado, então um fixado de voto popular prenderia o
+  projeto e o avaliador técnico não conseguiria escolher o questionário certo.
 - Parecer: até 5000 caracteres.
 
 ## Voto popular
