@@ -156,12 +156,15 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
         ),
         // Cota, vagas, média e quarentena vêm prontas do banco, pela mesma regra do
         // sorteio (fn_projetos_situacao): sem voto popular na cota nem na média técnica.
-        supabase.rpc('fn_projetos_situacao', { p_id_evento: id_evento_ativo }),
+        // Paginada como a consulta de projetos: uma linha por projeto do evento, e o
+        // PostgREST corta em 1000 — sem isso, projeto nenhum do fim da lista teria situação.
+        buscarTodas<SituacaoProjeto>(() =>
+          supabase.rpc('fn_projetos_situacao', { p_id_evento: id_evento_ativo }).order('id_projeto')
+        ),
       ]);
-      if (situacao.error) throw situacao.error;
 
       const mapaSituacao = new Map<string, SituacaoProjeto>(
-        ((situacao.data || []) as SituacaoProjeto[]).map((s) => [s.id_projeto, s])
+        situacao.map((s) => [s.id_projeto, s])
       );
 
       const processados: ProjetoMapItem[] = projetosData.map((p) => {

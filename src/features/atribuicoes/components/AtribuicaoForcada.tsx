@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
+import { buscarTodas } from '@/lib/buscarTodas';
 
 interface AtribuicaoForcadaProps {
   isOpen: boolean;
@@ -238,18 +239,23 @@ export const AtribuicaoForcada: React.FC<AtribuicaoForcadaProps> = ({
         doEvento(supabase.from('avaliacoes').select('id_projeto, id_usuario, status, projetos!inner(id_evento)')),
         queryBloqueios,
         doEvento(supabase.from('historico_impedimentos').select('id_projeto, id_usuario, projetos!inner(id_evento)').eq('tipo', 'conflito')),
-        // Cota, avaliações técnicas e travas técnicas pela mesma regra do sorteio
-        supabase.rpc('fn_projetos_situacao', { p_id_evento: eventoIdResolvido }),
+        // Cota, avaliações técnicas e travas técnicas pela mesma regra do sorteio.
+        // Paginada: uma linha por projeto do evento, e o PostgREST corta em 1000 —
+        // projeto sem situação na lista seria oferecido como se tivesse vaga.
+        buscarTodas<SituacaoProjeto>(() =>
+          supabase.rpc('fn_projetos_situacao', { p_id_evento: eventoIdResolvido }).order('id_projeto')
+        ),
         // Questionários de voto popular do evento: quem está vinculado a um deles é votante
         supabase.from('questionarios').select('id_questionario, is_voto_popular').eq('id_evento', eventoIdResolvido),
       ]);
       // Qualquer leitura que falhe vira erro na tela: lista incompleta aqui vira vaga
       // oferecida a quem não pode avaliar.
-      const primeiroErro = [resLocksAtivos, resAvaliadoresEvento, resAvaliacoes, resBloqueiosModalidade, resConflitosDeclarados, resSituacao, resQuestionarios].find((r: any) => r?.error)?.error;
+      // resSituacao vem de buscarTodas, que já lança o erro da leitura paginada.
+      const primeiroErro = [resLocksAtivos, resAvaliadoresEvento, resAvaliacoes, resBloqueiosModalidade, resConflitosDeclarados, resQuestionarios].find((r: any) => r?.error)?.error;
       if (primeiroErro) throw primeiroErro;
 
       const situacaoPorProjeto = new Map<string, SituacaoProjeto>(
-        ((resSituacao?.data || []) as SituacaoProjeto[]).map((s) => [s.id_projeto, s])
+        resSituacao.map((s) => [s.id_projeto, s])
       );
 
       const questionariosVotoPopular = new Set<string>(

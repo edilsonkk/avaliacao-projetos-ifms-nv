@@ -135,6 +135,43 @@ describe('TelaAvaliador: trava do questionário conforme o evento', () => {
     expect(screen.queryByText(/questionário oficial vinculado/i)).not.toBeInTheDocument();
   });
 
+  it('votante sem projeto deve ver a mensagem do voto popular mesmo se o perfil falhar na primeira leitura', async () => {
+    // Arrange: fn_meu_perfil falha no efeito de abertura e responde na releitura do sorteio.
+    // Sem a releitura, o votante cairia na mensagem de cota técnica ("Feira Concluídas").
+    vi.mocked(obterPerfilSessao)
+      .mockRejectedValueOnce(new Error('rede instável'))
+      .mockResolvedValue(perfil(true, 'quest-2', true) as never);
+    // Nenhum projeto sorteado: é o caminho da fila vazia
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: null, error: null } as never);
+    vi.mocked(supabase.from).mockImplementation(((tabela: string) => {
+      if (tabela === 'eventos') {
+        // Janela aberta hoje: o sorteio só chega na mensagem de fila vazia com o evento liberado
+        return cadeia({
+          data: {
+            id_evento: EVENTO,
+            data_evento: new Date().toLocaleDateString('en-CA'),
+            horario_inicio: '00:00',
+            horario_fim: '23:59:59',
+            sistema_liberado: true,
+          },
+          error: null,
+        });
+      }
+      return cadeia({ data: null, error: null });
+    }) as never);
+
+    // Act
+    render(
+      <ProvedorAvisos>
+        <TelaAvaliador id_usuario_logado={AVALIADOR} id_evento_ativo={EVENTO} />
+      </ProvedorAvisos>,
+    );
+
+    // Assert
+    expect(await screen.findByText(/você já votou em todos os projetos/i)).toBeInTheDocument();
+    expect(screen.queryByText(/avaliações da feira concluídas/i)).not.toBeInTheDocument();
+  });
+
   it('com a trava desligada, deve deixar o avaliador escolher o questionário', async () => {
     // Arrange
     vi.mocked(obterPerfilSessao).mockResolvedValue(perfil(false) as never);

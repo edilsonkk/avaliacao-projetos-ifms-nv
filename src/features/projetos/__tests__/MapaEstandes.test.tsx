@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MapaEstandes } from '@/features/projetos';
 import { supabase } from '@/lib/supabase';
+import { rpcPaginavel } from '@/test/rpcPaginavel';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: { from: vi.fn(), rpc: vi.fn(), auth: { getSession: vi.fn() } },
@@ -46,7 +47,7 @@ const mockarBanco = () => {
   }) as never);
   vi.mocked(supabase.rpc).mockImplementation(((nome: string, args: unknown) => {
     chamadas.push({ tabela: `rpc:${nome}`, metodo: 'rpc', args: [args] });
-    return Promise.resolve({ data: situacao, error: null }) as never;
+    return rpcPaginavel({ data: situacao, error: null }) as never;
   }) as never);
 };
 
@@ -103,6 +104,33 @@ describe('MapaEstandes', () => {
     expect(chamadas.some((c) => c.tabela === 'locks_ativos')).toBe(false);
     expect(chamadas.some((c) => c.tabela === 'view_projetos_quarentena')).toBe(false);
     expect(chamadas.some((c) => c.tabela === 'avaliacoes')).toBe(false);
+  });
+
+  it('deve paginar fn_projetos_situacao: projeto além da primeira página também recebe a situação do banco', async () => {
+    // Arrange: o PostgREST corta em 1000 linhas. P-2 é a linha 1001, então só chega
+    // na segunda página — sem paginar, o estande ficaria com o padrão do navegador.
+    const encheLinhas = Array.from({ length: 1000 }, (_, i) => linhaSituacao({ id_projeto: `id-enche-${i}` }));
+    const todas = [...encheLinhas, linhaSituacao({ id_projeto: 'id-P-2', media_tecnica: 7.5, notas_tecnicas: [7, 8] })];
+    const faixas: Array<[number, number]> = [];
+    vi.mocked(supabase.rpc).mockImplementation(((nome: string, args: unknown) => {
+      chamadas.push({ tabela: `rpc:${nome}`, metodo: 'rpc', args: [args] });
+      return {
+        order: () => ({
+          range: (inicio: number, fim: number) => {
+            faixas.push([inicio, fim]);
+            return Promise.resolve({ data: todas.slice(inicio, fim + 1), error: null });
+          },
+        }),
+      } as never;
+    }) as never);
+
+    // Act
+    render(<MapaEstandes id_evento_ativo={ID_EVENTO} />);
+    await screen.findByText('Projeto P-2');
+
+    // Assert: buscou a segunda página e usou a média que veio dela
+    expect(faixas).toEqual([[0, 999], [1000, 1999]]);
+    expect(within(cardDe('P-2')).getByText('7,50 pts')).toBeInTheDocument();
   });
 
   it('deve mostrar a média e as notas técnicas que vieram do banco', async () => {

@@ -2,7 +2,7 @@
 -- Rodar: npx supabase@2.122.0 test db
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(28);
+SELECT plan(32);
 
 -- Cenário: evento ativo com janela aberta e COTA 1 (para a cota técnica encher com uma nota só).
 -- Qt = questionário técnico, Qp = questionário de voto popular (marca is_voto_popular).
@@ -203,6 +203,47 @@ SELECT is((SELECT count(*)::int FROM public.fn_auditar_notas('e3100000-0000-0000
   'A conferência não acusa cota, questionário fixado nem escala por causa do voto popular');
 SELECT is((SELECT count(*)::int FROM public.fn_auditar_voto_popular('e3100000-0000-0000-0000-000000000001')), 0,
   'Sem achados próprios do voto popular: classificação e vínculos coerentes');
+
+-- ---------------------------------------------------------------------------
+-- Lançamento manual do Admin segue as mesmas regras do envio pelo celular
+-- ---------------------------------------------------------------------------
+-- VP-1 tem o questionário técnico fixado. O questionário do votante é, por desenho,
+-- outro: se a guarda do lançamento não olhasse a marca, o Admin nunca conseguiria
+-- lançar a ficha de papel de um votante.
+SELECT is(
+  (public.admin_lancar_avaliacao('f3100000-0000-0000-0000-000000000001',
+     'c3100000-0000-0000-0000-0000000000e3', 'a3100000-0000-0000-0000-0000000000bb',
+     jsonb_build_array(jsonb_build_object('id_pergunta', 'b3100000-0000-0000-0000-0000000000dd', 'nota', 7)),
+     'ficha de papel do votante', 'celular sem acesso no dia') ->> 'nota_final')::numeric,
+  7.00::numeric, 'Admin lança voto popular em projeto com outro questionário fixado');
+
+-- ---------------------------------------------------------------------------
+-- Os achados do voto popular chegam ao Painel de Auditoria
+-- ---------------------------------------------------------------------------
+-- Nota técnica de quem está vinculado ao questionário de voto popular: é o C14.
+SELECT isnt(
+  (public.admin_lancar_avaliacao('f3100000-0000-0000-0000-000000000001',
+     'c3100000-0000-0000-0000-0000000000e2', 'a3100000-0000-0000-0000-0000000000aa',
+     jsonb_build_array(jsonb_build_object('id_pergunta', 'b3100000-0000-0000-0000-0000000000cc', 'nota', 6)),
+     'ficha de papel', 'reconstituição de nota', true) ->> 'nota_final'),
+  NULL, 'Admin lança nota técnica acima da cota com confirmação');
+SELECT is((SELECT count(*)::int FROM public.fn_auditar_notas('e3100000-0000-0000-0000-000000000001')
+           WHERE codigo = 'C14'), 1,
+  'fn_auditar_notas devolve C14: o Painel de Auditoria vê os achados do voto popular');
+
+-- ---------------------------------------------------------------------------
+-- O memorial explica o desempate pela mesma chave do ranking
+-- ---------------------------------------------------------------------------
+RESET role;
+UPDATE public.perguntas_questionario SET peso_desempate = 1
+ WHERE id_pergunta = 'b3100000-0000-0000-0000-0000000000dd';
+SELECT pg_temp.como('d3100000-0000-0000-0000-0000000000ad');
+SELECT is(
+  (SELECT count(*)::int
+     FROM jsonb_array_elements(public.fn_memorial_projeto('f3100000-0000-0000-0000-000000000001')
+            -> 'desempate' -> 'por_prioridade') d
+    WHERE d->>'criterio' = 'Gostei do projeto'),
+  0, 'O desempate do memorial ignora pergunta de voto popular, como fn_chave_desempate');
 
 SELECT * FROM finish();
 ROLLBACK;

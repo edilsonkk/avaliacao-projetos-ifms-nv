@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AtribuicaoForcada } from '@/features/atribuicoes';
 import { supabase } from '@/lib/supabase';
+import { rpcPaginavel } from '@/test/rpcPaginavel';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -34,7 +35,9 @@ const linhaSituacao = (id: string, over: Record<string, unknown> = {}) => ({
 
 const mockarRpc = () => {
   vi.mocked(supabase.rpc).mockImplementation(((nome: string) =>
-    Promise.resolve(nome === 'fn_projetos_situacao' ? { data: situacao, error: null } : respostaRpc)) as never);
+    (nome === 'fn_projetos_situacao'
+      ? rpcPaginavel({ data: situacao, error: null })
+      : Promise.resolve(respostaRpc))) as never);
 };
 
 const mockarBanco = () => {

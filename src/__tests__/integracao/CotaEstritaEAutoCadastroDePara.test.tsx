@@ -6,6 +6,7 @@ import { AtribuicaoForcada } from '@/features/atribuicoes';
 import { TelaAvaliador } from '@/features/avaliacao';
 import { GestorProjetos } from '@/features/projetos';
 import { supabase } from '@/lib/supabase';
+import { rpcPaginavel } from '@/test/rpcPaginavel';
 
 // Mock do Supabase
 vi.mock('@/lib/supabase', () => {
@@ -124,7 +125,7 @@ describe('Regras de Negócio: Cota Estrita, Sorteio, Auto-cadastro e De-Para', (
 
     // Cota e vagas são contadas no banco (fn_projetos_situacao), não no navegador
     mockRpc.mockImplementation((nome: string) =>
-      Promise.resolve(
+      rpcPaginavel(
         nome === 'fn_projetos_situacao'
           ? {
               data: [
@@ -202,7 +203,7 @@ describe('Regras de Negócio: Cota Estrita, Sorteio, Auto-cadastro e De-Para', (
     it('sem item válido na fila, segue para o sorteio sem gravar trava ou fila direto', async () => {
       // Arrange
       mockRpc.mockImplementation((nome: string) =>
-        Promise.resolve(nome === 'fn_assumir_item_fila' ? { data: null, error: null } : { data: 'proj-sorteado-novo', error: null })
+        rpcPaginavel(nome === 'fn_assumir_item_fila' ? { data: null, error: null } : { data: 'proj-sorteado-novo', error: null } as any)
       );
 
       // Act
@@ -221,7 +222,7 @@ describe('Regras de Negócio: Cota Estrita, Sorteio, Auto-cadastro e De-Para', (
     it('com item válido na fila, carrega o projeto entregue pelo banco e não sorteia', async () => {
       // Arrange
       mockRpc.mockImplementation((nome: string) =>
-        Promise.resolve(nome === 'fn_assumir_item_fila' ? { data: PROJETO_FILA, error: null } : { data: 'proj-sorteado-novo', error: null })
+        rpcPaginavel(nome === 'fn_assumir_item_fila' ? { data: PROJETO_FILA, error: null } : { data: 'proj-sorteado-novo', error: null } as any)
       );
 
       // Act

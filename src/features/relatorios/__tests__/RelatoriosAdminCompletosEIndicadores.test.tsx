@@ -33,6 +33,8 @@ vi.stubGlobal('URL', {
 import { RelatoriosAdmin } from '@/features/relatorios';
 
 describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial de Indicadores', () => {
+  let ordenacoesRpc: Array<{ funcao: string; coluna: string }> = [];
+
   const criarQueryChain = (resultado: any) => {
     const chain: any = {
       select: vi.fn(() => chain),
@@ -247,7 +249,16 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
     vi.clearAllMocks();
     mockFromCalls.length = 0;
 
-    mockRpc.mockImplementation((funcao: string) => criarQueryChain({ data: respostasRpc()[funcao] ?? [], error: null }));
+    ordenacoesRpc = [];
+    mockRpc.mockImplementation((funcao: string) => {
+      const chain = criarQueryChain({ data: respostasRpc()[funcao] ?? [], error: null });
+      // Registra a coluna de ordenação: o ORDER BY do PostgREST substitui o da função
+      chain.order = vi.fn((coluna: string) => {
+        ordenacoesRpc.push({ funcao, coluna });
+        return chain;
+      });
+      return chain;
+    });
 
     mockFrom.mockImplementation((tabela: string) => {
       mockFromCalls.push(tabela);
@@ -501,6 +512,18 @@ describe('Card de Relatórios: 5 Relatórios Especializados e Painel Gerencial d
       expect(screen.getAllByText('9,10 pts').length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText('1º')).toBeDefined();
     });
+  });
+
+  it('3d-bis. ABA VOTO POPULAR: pede a lista ordenada por posição, não por id_projeto', async () => {
+    // Arrange / Act: o ORDER BY do PostgREST substitui o da função, então ordenar por
+    // id_projeto devolveria a classificação em ordem de UUID, com a posição embaralhada.
+    render(<RelatoriosAdmin id_evento_ativo="evt-2026" />);
+    await waitFor(() => expect(screen.getByText('Robô Pantaneiro Autônomo')).toBeDefined());
+
+    // Assert
+    const doVotoPopular = ordenacoesRpc.filter((o) => o.funcao === 'fn_relatorio_voto_popular_completo');
+    expect(doVotoPopular).not.toHaveLength(0);
+    expect(doVotoPopular.every((o) => o.coluna === 'posicao')).toBe(true);
   });
 
   it('3e. ABA PROJETOS E MÉDIAS: o voto popular aparece em coluna própria, fora da média técnica', async () => {

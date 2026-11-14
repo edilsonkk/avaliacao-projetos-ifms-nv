@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MapaEstandes } from '@/features/projetos';
 import { supabase } from '@/lib/supabase';
+import { rpcPaginavel } from '@/test/rpcPaginavel';
 
 vi.mock('@/lib/supabase', () => {
   const mockFrom = vi.fn();
@@ -125,7 +126,7 @@ describe('MapaEstandes: Visualização Expandida, Cores e Badges de Notas', () =
   ];
 
   const mockarSituacao = (resultado: { data: unknown; error: unknown }) => {
-    (supabase.rpc as any).mockImplementation(() => Promise.resolve(resultado));
+    (supabase.rpc as any).mockImplementation(() => rpcPaginavel(resultado as any));
   };
 
   const mockarTabelas = (respostas: Record<string, { data: unknown; error: unknown }>) => {

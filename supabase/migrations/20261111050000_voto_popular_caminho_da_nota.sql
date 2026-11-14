@@ -542,6 +542,7 @@ AS $function$
 DECLARE
   v_id_evento     uuid;
   v_cota          integer;
+  v_fixar_quest   boolean;
   v_voto_popular  boolean;
   v_quest_fixado  uuid;
   v_codigo        text;
@@ -558,8 +559,9 @@ BEGIN
   END IF;
 
   SELECT p.id_evento, coalesce(p.cota_avaliacoes_customizada, e.cota_avaliacoes_padrao, 3),
-         p.id_questionario_fixado, coalesce(p.codigo_projeto, p.titulo)
-    INTO v_id_evento, v_cota, v_quest_fixado, v_codigo
+         p.id_questionario_fixado, coalesce(p.codigo_projeto, p.titulo),
+         coalesce(e.fixar_questionario_primeira_avaliacao, true)
+    INTO v_id_evento, v_cota, v_quest_fixado, v_codigo, v_fixar_quest
   FROM public.projetos p
   LEFT JOIN public.eventos e ON e.id_evento = p.id_evento
   WHERE p.id_projeto = p_id_projeto
@@ -583,7 +585,15 @@ BEGIN
                   WHERE q.id_questionario = p_id_questionario AND q.id_evento = v_id_evento) THEN
     RAISE EXCEPTION 'Questionário de outro evento.' USING ERRCODE = '22023';
   END IF;
-  IF v_quest_fixado IS NOT NULL AND v_quest_fixado IS DISTINCT FROM p_id_questionario THEN
+  SELECT coalesce(q.is_voto_popular, false) INTO v_voto_popular
+  FROM public.questionarios q WHERE q.id_questionario = p_id_questionario;
+  v_voto_popular := coalesce(v_voto_popular, false);
+
+  -- Mesma regra de fn_enviar_avaliacao: só recusa quando o evento trava o
+  -- questionário no primeiro avaliador, e o voto popular nunca bate na trava
+  -- (o questionário dele é, por desenho, diferente do fixado no projeto).
+  IF v_fixar_quest AND NOT v_voto_popular
+     AND v_quest_fixado IS NOT NULL AND v_quest_fixado IS DISTINCT FROM p_id_questionario THEN
     RAISE EXCEPTION 'O projeto % já está fixado em outro questionário: use o mesmo das demais avaliações.', v_codigo
       USING ERRCODE = '22023';
   END IF;
@@ -598,10 +608,6 @@ BEGIN
     END IF;
     RAISE EXCEPTION 'Este avaliador já avaliou o projeto %.', v_codigo USING ERRCODE = '22023';
   END IF;
-
-  SELECT coalesce(q.is_voto_popular, false) INTO v_voto_popular
-  FROM public.questionarios q WHERE q.id_questionario = p_id_questionario;
-  v_voto_popular := coalesce(v_voto_popular, false);
 
   -- Cota é de nota técnica: lançar voto popular não consome vaga nem pede confirmação
   SELECT count(*) INTO v_ativas FROM public.avaliacoes a

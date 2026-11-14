@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   MapPin,
   CheckCircle2,
@@ -265,6 +265,10 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
   const [questionario_vinculado, set_questionario_vinculado] = useState<string | null>(null);
   const [sou_votante, set_sou_votante] = useState<boolean>(false);
   const [perfil_carregado, set_perfil_carregado] = useState<boolean>(false);
+  // Só true quando fn_meu_perfil respondeu de fato: o sorteio precisa saber se é
+  // votante antes de escolher a mensagem de fila vazia, e o catch abaixo marca
+  // perfil_carregado sem ter a resposta.
+  const perfil_resolvido_ref = useRef<boolean>(false);
   const [horario_inicio_avaliacao, set_horario_inicio_avaliacao] = useState<string | null>(null);
   const [lista_criterios, set_lista_criterios] = useState<CriterioLikert[]>([]);
   const [notas_criterios, set_notas_criterios] = useState<Record<string, number>>({});
@@ -474,6 +478,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
         set_trava_questionario(perfil.fixar_questionario !== false);
         set_questionario_vinculado(perfil.id_questionario_vinculado || null);
         set_sou_votante(perfil.voto_popular === true);
+        perfil_resolvido_ref.current = true;
         set_perfil_carregado(true);
       })
       .catch(() => {
@@ -764,11 +769,26 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
       if (!idSorteado) {
         // Verifica se todos os projetos ativos já atingiram a cota padrão do evento
+        // A mensagem depende de ser votante. Se fn_meu_perfil ainda não respondeu (ou
+        // falhou), resolve agora: sem isso o votante sem projeto veria "Avaliações da
+        // Feira Concluídas!", que mede cota técnica.
+        let votante = sou_votante;
+        if (!perfil_resolvido_ref.current) {
+          try {
+            const perfil = await obterPerfilSessao();
+            votante = perfil.voto_popular === true;
+            perfil_resolvido_ref.current = true;
+            set_sou_votante(votante);
+          } catch (_errPerfil) {
+            // Sem resposta, segue como avaliador técnico (padrão do banco)
+          }
+        }
+
         let feiraFinalizada = false;
         try {
           // fn_feira_concluida mede a cota técnica: para o votante ela diria "concluída"
           // enquanto ainda há projeto para votar.
-          if (id_evento_ativo && !sou_votante) {
+          if (id_evento_ativo && !votante) {
             // Calculado no banco: considera cota customizada e projetos fora da competição
             const { data: concluida } = await supabase.rpc('fn_feira_concluida', { p_id_evento: id_evento_ativo });
             feiraFinalizada = concluida === true;
@@ -779,7 +799,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
         if (feiraFinalizada) {
           setMensagemFila("Avaliações da Feira Concluídas! Todos os projetos atingiram a cota necessária.");
-        } else if (sou_votante) {
+        } else if (votante) {
           setMensagemFila("Você já votou em todos os projetos.");
         } else {
           setMensagemFila("Todos os projetos disponíveis já foram avaliados ou bloqueados por conflito institucional/modalidade.");

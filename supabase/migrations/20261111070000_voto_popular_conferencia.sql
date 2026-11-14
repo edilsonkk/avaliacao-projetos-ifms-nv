@@ -203,6 +203,7 @@ BEGIN
           JOIN public.perguntas_questionario pq ON pq.id_pergunta = r.id_pergunta
           WHERE a.id_projeto = p.id_projeto
             AND (a.status IS NULL OR a.status <> 'CANCELADA')
+            AND NOT a.is_voto_popular
             AND pq.peso_desempate > 0
           GROUP BY pq.id_pergunta, pq.peso_desempate, pq.ordem, pq.texto_pergunta
         ) d
@@ -564,7 +565,14 @@ BEGIN
                 WHERE a.id_projeto = p.id_projeto
                   AND (a.status IS NULL OR a.status <> 'CANCELADA')
                   AND NOT a.is_voto_popular) media ON true
-  WHERE p.id_evento = v_id_evento AND p.ajuste_media <> 0;
+  WHERE p.id_evento = v_id_evento AND p.ajuste_media <> 0
+
+  UNION ALL
+  -- C13 e C14: achados próprios do voto popular. Ficam aqui porque o Painel de
+  -- Auditoria e o memorial do projeto leem só fn_auditar_notas.
+  SELECT vp.severidade, vp.codigo, vp.titulo, vp.id_projeto, vp.codigo_projeto,
+         vp.id_avaliacao, vp.esperado, vp.encontrado, vp.detalhe
+  FROM public.fn_auditar_voto_popular(v_id_evento) vp;
 END $function$;
 
 

@@ -546,7 +546,9 @@ export const RelatoriosAdmin: React.FC<{
         buscarTodas<any>(() => rpc('fn_relatorio_avaliadores_completo', { p_id_evento: idEvento }).order('id_usuario')),
         buscarTodas<any>(() => rpc('fn_relatorio_ausencias_completo', { p_id_evento: idEvento }).order('id_usuario')),
         buscarTodas<any>(() => rpc('fn_relatorio_devolucoes_completo', { p_id_evento: idEvento }).order('id_usuario')),
-        buscarTodas<any>(() => rpc('fn_relatorio_voto_popular_completo', { p_id_evento: idEvento }).order('id_projeto')),
+        // Ordena por `posicao`: o ORDER BY do PostgREST substitui o da função, e por
+        // id_projeto a classificação sairia em ordem de UUID, com a posição embaralhada.
+        buscarTodas<any>(() => rpc('fn_relatorio_voto_popular_completo', { p_id_evento: idEvento }).order('posicao')),
         buscarTodas<{ is_credenciado: boolean | null; usuarios: { papel: string | null } | { papel: string | null }[] | null }>(() =>
           supabase
             .from('avaliadores_evento')

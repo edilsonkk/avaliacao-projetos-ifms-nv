@@ -105,4 +105,6 @@ COMMENT ON FUNCTION public.fn_projetos_situacao(uuid) IS
 REVOKE ALL ON FUNCTION public.fn_projetos_situacao(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_projetos_situacao(uuid) TO authenticated, service_role;
 
+NOTIFY pgrst, 'reload schema';
+
 COMMIT;

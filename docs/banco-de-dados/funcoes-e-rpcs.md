@@ -113,7 +113,7 @@ Desenho completo em [auditoria de notas](../regras-de-negocio/auditoria-de-notas
 | `fn_memorial_evento(p_id_evento uuid default null)` | `jsonb` | Folha de conferência consolidada: todos os projetos do evento, com os achados de uma única rodada da conferência |
 | `fn_validar_respostas(p_id_questionario uuid, p_respostas jsonb)` | `numeric` | Valida o conjunto de respostas e devolve a média ponderada. Mesma regra de `fn_enviar_avaliacao` |
 | `admin_corrigir_respostas_avaliacao(p_id_avaliacao, p_respostas jsonb, p_motivo)` | `jsonb` | Corrige as notas por critério e recalcula a nota final pela fórmula oficial |
-| `admin_lancar_avaliacao(p_id_projeto, p_id_usuario, p_id_questionario, p_respostas, p_parecer, p_motivo, p_confirmar_acima_da_cota)` | `jsonb` | Lança a avaliação de um avaliador do evento; acima da cota só com confirmação |
+| `admin_lancar_avaliacao(p_id_projeto, p_id_usuario, p_id_questionario, p_respostas, p_parecer, p_motivo, p_confirmar_acima_da_cota)` | `jsonb` | Lança a avaliação de um avaliador do evento; acima da cota só com confirmação. Recusa questionário diferente do fixado só quando o evento trava o questionário e a nota não é de voto popular, igual a `fn_enviar_avaliacao` |
 | `admin_arbitrar_nota_final(p_id_avaliacao, p_nota numeric, p_motivo)` | `jsonb` | Define a nota final sem mexer nas respostas (vira achado informativo na conferência) |
 | `admin_ajustar_media_projeto(p_id_projeto, p_delta numeric, p_motivo)` | `jsonb` | Bónus ou penalidade na média do projeto, limitado à amplitude da escala; `p_delta = 0` remove |
 | `auditoria_marcar_origem(p_origem, p_motivo)` | `void` | Interna: cada RPC confiável se identifica na trilha. **Não** é executável pela API |
