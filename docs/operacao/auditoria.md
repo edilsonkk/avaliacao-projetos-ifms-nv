@@ -184,6 +184,7 @@ submetido, antes da resposta do Supabase chegar.
 | `bundle-excel` | nenhum import estático de `exceljs` em código de produção |
 | `service-role-no-src` | nenhuma chave `service_role` em código que vai para o navegador |
 | `orcamento-bundle` | JS inicial dentro do teto de catraca (165 KB comprimidos), quando há `dist/` |
+| `rpc-no-contrato` | toda RPC chamada em `src/` está na lista que o pgTAP cobra |
 
 Pendências, contadas sem travar, para virar bloqueante no dia em que zerarem:
 
@@ -201,6 +202,23 @@ A meta de performance vive em `lighthouse-budget.json` (150 KB de script, 400 KB
 Slow 4G). O teto da guarda é 165 KB porque a medição atual é 158 KB: ele impede a regressão enquanto a meta
 não é alcançada. Gate que fica vermelho todo dia é gate que a equipe aprende a ignorar.
 
+## A costura entre o front-end e o banco
+
+Os testes do Vitest usam um Supabase falso e os testes pgTAP não têm interface: um `supabase.rpc()`
+com nome ou parâmetro errado passava pelos dois lados e só aparecia em produção. Dois testes fecham
+isso, um de cada lado da costura:
+
+- `supabase/tests/36_contrato_rpcs_do_front_test.sql` cobra que **toda** RPC chamada em `src/`
+  existe, é executável por `authenticated`, que nenhuma função `admin_*` é alcançável por `anon`, e
+  prende a assinatura de `fn_enviar_avaliacao`, por onde a nota entra no banco. A guarda
+  `rpc-no-contrato` recusa o lint se o front chamar uma RPC fora dessa lista.
+- `src/__tests__/integracao/VotoPopularDaTelaAoRanking.test.tsx` confere o payload que a tela monta,
+  chave por chave, contra essa mesma assinatura.
+
+`supabase/tests/35_sorteio_paridade_test.sql` cobre a armadilha do `AGENTS.md`: `sortear_projeto` e
+`sortear_proximo_projeto` precisam concordar. Hoje a primeira delega para a segunda, e o teste
+recusa o dia em que alguém copiar a regra para dentro do alias.
+
 ## O que ainda não está coberto
 
 Em ordem de valor:
@@ -214,5 +232,8 @@ Em ordem de valor:
 3. **Código morto e fronteiras de import.** `knip` e `dependency-cruiser` ainda não estão no projeto. Uma
    regra de fronteira `publico-nao-importa-admin` é o que impediria a divisão do bundle de se desfazer
    sozinha na próxima feature.
-4. **Teste de RLS com dois usuários** para cada tabela com dado de pessoa, em `supabase/tests/`. O schema
-   está correto; falta a regressão que impede ele de deixar de estar.
+4. **Teste de RLS com dois usuários** para cada tabela com dado de pessoa, em `supabase/tests/`. Três
+   tabelas não aparecem em nenhum teste de banco: `avaliador_areas`, `configuracoes_seguranca` e
+   `instituicao_aliases`.
+5. **Sinalizadores de tipagem da catraca `ts-strict`** e, no front-end, `CabecalhoOrdenavel` e
+   `AbaImpedimentos`, que são apresentação e ficaram de fora por decisão, não por esquecimento.
