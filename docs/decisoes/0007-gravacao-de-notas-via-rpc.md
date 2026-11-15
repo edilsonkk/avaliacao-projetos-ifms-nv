@@ -1,6 +1,7 @@
 # 0007. Gravação de notas só via `fn_enviar_avaliacao`
 
-- **Status**: Aceito
+- **Status**: Aceito, emendado por [0011](0011-identidade-real-avaliador-e-staff.md) e
+  [0015](0015-ajuste-manual-de-notas.md)
 - **Data**: 2026-10-26
 
 ## Contexto
@@ -18,4 +19,16 @@ modalidade, cota, janela, faixa de nota), calcula a nota final no servidor e gra
 
 - Regras de avaliação não podem ser contornadas pelo cliente.
 - Regras novas de avaliação devem ser implementadas na função, não só no front-end.
-- A identidade do avaliador ainda vem do cliente até existir login autenticado.
+- A identidade do avaliador vinha do cliente quando esta decisão foi tomada. O
+  [ADR 0011](0011-identidade-real-avaliador-e-staff.md) fechou isso: a função recusa `p_id_usuario` diferente de
+  `avaliador_atual()`, a identidade do aparelho vinculado.
+
+## Emendas
+
+- **[0011](0011-identidade-real-avaliador-e-staff.md)** (identidade real): a nota não depende mais de um
+  `id_usuario` escolhido pelo cliente.
+- **[0015](0015-ajuste-manual-de-notas.md)** (ajuste manual): o título desta decisão vale para a **tela do
+  avaliador**. A coordenação passou a ter caminhos oficiais de escrita de nota (`admin_lancar_avaliacao`,
+  `admin_corrigir_respostas_avaliacao`, `admin_arbitrar_nota_final`, `admin_ajustar_media_projeto`), todos com
+  `is_admin()`, marca em `ajuste_tipo` e registro na trilha. O que continua proibido é gravar nota **fora** de uma
+  função.

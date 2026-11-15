@@ -56,3 +56,11 @@ pódio ordena pela média final.
   expõe a ausência do motivo, o que cria a pressão certa sem bloquear.
 - **Apagar e reenviar a avaliação**: destruiria o histórico e contraria o soft delete do
   [ADR 0004](0004-soft-delete-de-avaliacoes-via-rpc.md).
+
+## Relacionados
+
+- [ADR 0007 — gravação de notas via RPC](0007-gravacao-de-notas-via-rpc.md): esta decisão o **emenda**. "Nota só
+  via `fn_enviar_avaliacao`" passa a valer para a tela do avaliador; a coordenação escreve pelas RPCs acima.
+- [ADR 0014 — trilha de auditoria append-only](0014-trilha-de-auditoria-append-only.md): é o que torna o ajuste
+  auditável.
+- [ADR 0001 — lógica crítica no banco](0001-logica-critica-no-banco.md)

@@ -25,11 +25,13 @@ Comece pela [visão geral](arquitetura/visao-geral.md). Para contribuir, leia o
 | Importação de planilhas, De-Para, aliases, CNPq | [Importação de planilhas](regras-de-negocio/importacao-de-planilhas.md) |
 | Gestão de projetos e mapa de estandes | [Projetos e estandes](regras-de-negocio/projetos-e-estandes.md) |
 | Login, Staff, credenciamento, autocadastro | [Credenciamento e pessoas](regras-de-negocio/credenciamento-e-pessoas.md) |
+| Voto popular, votantes, média bayesiana | [Avaliação e quarentena](regras-de-negocio/avaliacao-e-quarentena.md), [ADR 0016](decisoes/0016-voto-popular-separado-e-media-bayesiana.md) |
 | Relatórios, PDF, classificação, telão | [Relatórios e monitoramento](regras-de-negocio/relatorios-e-monitoramento.md) |
 | Deu um erro conhecido | [Troubleshooting](operacao/troubleshooting.md) |
 | Como publicar uma versão, rollback, backup, segredos | [CI/CD e deploy](operacao/ci-cd-e-deploy.md) |
 | Como rodar o banco localmente / criar Admin | [Configuração](arquitetura/configuracao.md#desenvolvimento-local) |
 | Roteiro da semana da feira | [Cronograma da feira](operacao/cronograma-da-feira.md) |
+| Achados da auditoria da documentação | [Relatório de docs](auditoria/relatorio-docs.md) |
 | Por que foi decidido assim? | [Decisões (ADRs)](decisoes/README.md) |
 | Como escrever testes? | [TESTES_TDD](../.agents/rules/TESTES_TDD.md) |
 

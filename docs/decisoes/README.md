@@ -28,7 +28,7 @@ Correções de bug e ajustes visuais não precisam de ADR: o commit e a doc do d
 | [0004](0004-soft-delete-de-avaliacoes-via-rpc.md) | Soft delete de avaliações via RPC | Aceito |
 | [0005](0005-sorteio-nao-repete-avaliador.md) | Sorteio nunca repete o par projeto/avaliador | Aceito |
 | [0006](0006-rls-escrita-restrita-a-admin.md) | RLS com escrita administrativa restrita ao Admin | Aceito |
-| [0007](0007-gravacao-de-notas-via-rpc.md) | Gravação de notas só via `fn_enviar_avaliacao` | Aceito |
+| [0007](0007-gravacao-de-notas-via-rpc.md) | Gravação de notas só via `fn_enviar_avaliacao` | Aceito, emendado por 0011 e 0015 |
 | [0008](0008-frontend-organizado-por-features.md) | Front-end organizado por features | Aceito |
 | [0009](0009-ambientes-e-releases.md) | Ambientes local e produção, com releases versionadas | Aceito |
 | [0010](0010-hospedagem-firebase.md) | Front-end no Firebase Hosting; backend continua no Supabase | Aceito |

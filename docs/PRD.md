@@ -41,12 +41,13 @@ O sistema é uma SPA (React 19 + Vite + Tailwind) sobre o Supabase (PostgreSQL +
 
 ## 4. Escopo
 
-**Dentro do escopo (implementado):** configuração do evento; cadastros e importação de Projetos, Avaliadores, Staff, Instituições, Modalidades e Níveis, Questionários; login por papel; autocadastro por QR Code; credenciamento; motor de sorteio; atribuição forçada (banca e fila); avaliação; quarentena; bloqueios e desbloqueios; exclusão/restauração de avaliações; mapa de estandes; telão; ranking; relatórios com CSV/PDF; reset global.
+**Dentro do escopo (implementado):** configuração do evento; cadastros e importação de Projetos, Avaliadores, Staff, Instituições, Modalidades e Níveis, Questionários; login por papel; autocadastro por QR Code; credenciamento; motor de sorteio; atribuição forçada (banca e fila); avaliação; quarentena; bloqueios e desbloqueios; exclusão/restauração de avaliações; **voto popular em pista separada**, com classificação por média bayesiana ([ADR 0016](decisoes/0016-voto-popular-separado-e-media-bayesiana.md)); **conferência e auditoria de notas** (memorial de cálculo, trilha append-only e folha de conferência) e **ajuste manual de notas** por RPC marcada ([ADR 0015](decisoes/0015-ajuste-manual-de-notas.md)); mapa de estandes; telão; ranking; relatórios com CSV/PDF; reset global.
 
 **Fora do escopo (hoje):**
 - Submissão de projetos pelos próprios estudantes (a carga é feita pela coordenação).
 - Vários eventos ativos ao mesmo tempo (o sistema trabalha com um "evento ativo").
-- Recursos de IA: `GEMINI_API_KEY` e `@google/genai` estão declarados, mas não são usados em `src/`.
+- Recursos de IA: não há dependência nem chave de IA no projeto. O `metadata.json` ainda declara a capacidade
+  `MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API`, herdada do AI Studio e sem efeito na aplicação.
 - Emissão de certificados e notificações por e-mail aos avaliadores.
 - App nativo ou modo offline: sem internet, a avaliação não é enviada nem guardada; as notas ficam na tela para reenviar.
 
@@ -194,7 +195,8 @@ usuarios ─┬─ avaliador_areas / avaliador_modalidades_bloqueadas (por event
 **Jornada do avaliador:**
 1. Escaneia o QR Code e se cadastra, ou já está cadastrado.
 2. O Staff confirma o credenciamento.
-3. Faz login com o e-mail e o sistema valida a janela de horário.
+3. O celular é vinculado no balcão (pareamento pelo Staff ou código de acesso; sem senha) e o sistema valida a
+   janela de horário.
 4. Recebe um projeto (fila direcionada ou sorteio) e vai ao estande.
 5. Marca presença ou ausência, avalia os critérios, escreve o parecer e envia.
 6. A trava é liberada e ele pede o próximo projeto, até a cota da feira se esgotar ou o horário terminar.
