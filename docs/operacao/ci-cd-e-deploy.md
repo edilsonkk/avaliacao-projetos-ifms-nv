@@ -16,8 +16,8 @@ manual ───────────► deploy-frontend.yml (rollback para u
 
 | Workflow | Quando roda | O que faz |
 |---|---|---|
-| `ci.yml` | PR e push em `main` | `npm ci`, `npm run lint` (tipagem + guardas de interface), `npx vitest run` (inclui o axe das telas), `npm run build` |
-| `security.yml` | PR, push em `main`, toda segunda 06:00 UTC, manual | CodeQL, Trivy (bloqueia HIGH/CRITICAL), `npm audit --audit-level=high` |
+| `ci.yml` | PR e push em `main` | `npm ci`, `npm run lint` (tipagem + guardas de interface, documentação e auditoria), `npx vitest run` (inclui o axe das telas), `npm run build` e o orçamento de bundle |
+| `security.yml` | PR, push em `main`, toda segunda 06:00 UTC, manual | CodeQL, Trivy (bloqueia HIGH/CRITICAL), `npm audit --audit-level=high`, Gitleaks no histórico |
 | `release.yml` | Push em `main` | release-please; ao publicar versão, chama migrations e deploy |
 | `supabase-migrations.yml` | PR com migrations (validação); chamado pelo release; manual | Validação, backup e `supabase db push` |
 | `deploy-frontend.yml` | Chamado pelo release; manual (rollback) | Lint, testes, build da tag e publicação no Firebase Hosting |
@@ -146,6 +146,9 @@ Feita uma vez, por quem administra o repositório:
 5. **Firebase Hosting**: crie a service account e o secret `FIREBASE_SERVICE_ACCOUNT` ([abaixo](#hospedagem-firebase-hosting)).
 6. **Dependabot**: em *Settings → Code security*, ligue *Dependabot alerts* e *Dependabot security updates*. As
    atualizações de rotina vêm de `.github/dependabot.yml`.
+7. **Secret scanning**: em *Settings → Code security*, ligue *Secret scanning* e *Push protection*. É o único
+   controle que barra o segredo **antes** do push, quando ainda dá para evitar a rotação da chave; o Gitleaks do
+   `security.yml` só avisa depois. Ver [auditoria](auditoria.md).
 
 ## Hospedagem (Firebase Hosting)
 
@@ -211,6 +214,10 @@ O repositório tem *auto-merge* habilitado. PRs de código marcados com
   com `format: sarif`, a action ignora `severity` e o `exit-code` passaria a valer para qualquer achado — era o que
   derrubava o job por alertas *moderate*.
 - **npm audit** falha em vulnerabilidade `high` ou maior.
+- **Gitleaks** (`varredura-segredos`) varre o histórico inteiro (`fetch-depth: 0`), não só o estado atual:
+  chave que esteve em um commit antigo continua comprometida. Ele age **depois** do push — o controle que
+  age antes é o *secret scanning* com *push protection*, que precisa ser ligado nas configurações do
+  repositório ([abaixo](#configuração-única-do-repositório-github)).
 - A execução semanal pega vulnerabilidades novas mesmo sem commits.
 - **Ações fixadas por hash de commit** (com a versão em comentário), nunca por tag ou branch: uma tag pode ser movida
   para código malicioso (como no caso `tj-actions/changed-files`, 2025). O Dependabot (`.github/dependabot.yml`)

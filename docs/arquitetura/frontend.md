@@ -61,6 +61,13 @@ Fora de `src/`:
 3. **Direção permitida**: `app → features → components → lib/types`. `lib/` e `types/` não importam React nem features.
 4. **Um componente usado por duas ou mais features** sobe para `src/components/`.
 5. **Acesso ao Supabase** sempre via `@/lib/supabase`; não crie outros clientes.
+6. **Telas de depois do login entram por `lazy()`** em `src/app/App.tsx`, e só ali o `import()` aponta para o
+   módulo da tela (`@/features/staff/components/TelaStaff`) em vez do `index.ts`: apontando para o `index.ts`,
+   o empacotador avisa `INEFFECTIVE_DYNAMIC_IMPORT` e a tela volta ao bundle inicial. É a única exceção à
+   regra 2, vale apenas dentro de `lazy()` no `App.tsx`, e a guarda `bundle-telas-lazy` cobra as duas pontas
+   (ver [auditoria](../operacao/auditoria.md)). `TelaLogin` e `TelaAutocadastroAvaliador` ficam estáticas.
+7. **Biblioteca pesada entra por `import()`** dentro da função que a usa, não no topo do arquivo — é o caso do
+   ExcelJS em `src/lib/excel/excelUtils.ts`.
 
 ## Testes
 

@@ -49,6 +49,19 @@ fica **riscado** com a data, em vez de sair da tabela: é o histórico de como o
 | L23 | ~~**Contagens de nota no navegador:** `MapaEstandes`, `AtribuicaoForcada`, `ProjetosQuarentena` e `ModalExclusaoAvaliacao` leem `avaliacoes`/`locks_ativos` crus e refazem cota, média e vagas no cliente~~ **Resolvido em 2026-11-12** (migration `20261112010000`): `fn_projetos_situacao` devolve cota, vagas, média, notas, voto popular e quarentena pela regra do sorteio, e as duas telas de contagem leem dela; a Quarentena filtra o voto popular no detalhe e o modal de exclusão marca o voto popular e avisa que cancelá-lo não libera vaga. A Atribuição Forçada também deixou de oferecer votante como avaliador técnico | Cor de estande e vagas de banca erradas; contrariava o [ADR 0001](decisoes/0001-logica-critica-no-banco.md) | — | Média |
 | L21 | ~~**Três formatos de nota** na interface (`toFixed(1)`, `toFixed(2)`, `toLocaleString`) e `view_relatorio_admin` somando avaliação cancelada~~ **Resolvido em 2026-11-06**: `src/lib/formatoNota.ts` (duas casas, vírgula) e filtro de canceladas na view | A mesma nota com números diferentes em telas diferentes põe o resultado em dúvida | — | Média |
 
+---
+
+> **Auditoria de endurecimento (15-11-2026).** Uma auditoria de segurança, enxugamento e performance em rede
+> lenta confirmou a camada de permissão (RLS em 26 de 26 tabelas, `search_path` fixado em 86 de 86 funções
+> `SECURITY DEFINER`, nenhum segredo versionado) e encontrou o peso do carregamento como achado principal:
+> L25 e L26, abaixo. O método e os números estão em [auditoria](operacao/auditoria.md).
+
+| # | Achado no código | Risco | Recomendação | Prioridade |
+|---|---|---|---|---|
+| L25 | ~~**Aplicação inteira em um único bundle:** `App.tsx` importava as seis telas de forma estática, não havia um `React.lazy` em `src/`, e o ExcelJS entrava no topo de `excelUtils.ts`~~ **Resolvido em 2026-11-15**: as cinco telas de depois do login entram por `lazy()` com `<Suspense>`, o ExcelJS por `await import()`, e as guardas `bundle-telas-lazy`, `bundle-excel` e `orcamento-bundle` cobram o resultado. JS inicial de 553 KB para 158 KB comprimidos | Avaliador em 4G congestionado baixava o painel administrativo e a biblioteca de planilhas antes de ver o login | Falta o Lighthouse no CI cobrando `lighthouse-budget.json` | **Alta** |
+| L26 | ~~**`eventos` legível inteira pela `anon`:** a política `rls_eventos_leitura` entrega a linha completa, com os parâmetros do código de acesso e o `limite_corte` da premiação~~ **Resolvido em 2026-11-15** (migration `20261115010000`): permissão por coluna, com teste em `supabase/tests/34_eventos_colunas_publicas_test.sql` | Calibrar força bruta no código de acesso e saber o corte antes do resultado | — | Baixa |
+| L27 | **Tipagem estrita parcial:** `strict`, `noImplicitOverride` e `noFallthroughCasesInSwitch` ligados (zero erros), mas `noUncheckedIndexedAccess` (192), `noUnusedLocals` (66), `exactOptionalPropertyTypes` (18) e `noUnusedParameters` (6) seguem desligados | `undefined` que só aparece em produção, em código escrito com apoio de IA | Ligar por catraca, uma pasta por PR; a guarda `ts-strict` conta o que falta | Média |
+
 **Roadmap sugerido**
 - **Feito:** as migrations da auditoria de segurança estão aplicadas, o `TelaAvaliador` envia a nota por `rpc('fn_enviar_avaliacao')` e a identidade do avaliador vem do aparelho vinculado. Resta [recriar o banco de teste](banco-de-dados/migrations.md#recriar-o-banco-remoto-do-zero).
 - **Curto prazo (antes do próximo evento):** L15 (fechar a policy `FOR ALL` do Admin, agora que o ajuste manual é oficial) e L10 (arquivar o evento em vez de apagar).

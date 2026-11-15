@@ -27,6 +27,7 @@ Comece pela [visão geral](arquitetura/visao-geral.md). Para contribuir, leia o
 | Login, Staff, credenciamento, autocadastro | [Credenciamento e pessoas](regras-de-negocio/credenciamento-e-pessoas.md) |
 | Voto popular, votantes, média bayesiana | [Avaliação e quarentena](regras-de-negocio/avaliacao-e-quarentena.md), [ADR 0016](decisoes/0016-voto-popular-separado-e-media-bayesiana.md) |
 | Relatórios, PDF, classificação, telão | [Relatórios e monitoramento](regras-de-negocio/relatorios-e-monitoramento.md) |
+| Como auditar o projeto, achados e orçamento de bundle | [Auditoria e endurecimento](operacao/auditoria.md) |
 | Deu um erro conhecido | [Troubleshooting](operacao/troubleshooting.md) |
 | Como publicar uma versão, rollback, backup, segredos | [CI/CD e deploy](operacao/ci-cd-e-deploy.md) |
 | Como rodar o banco localmente / criar Admin | [Configuração](arquitetura/configuracao.md#desenvolvimento-local) |

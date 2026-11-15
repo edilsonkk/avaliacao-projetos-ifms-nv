@@ -14,7 +14,7 @@ SPA React 19 + Vite + Tailwind 4 + TypeScript sobre Supabase/PostgreSQL, usada e
 ```bash
 npm install          # dependências (.npmrc usa legacy-peer-deps)
 npm run dev          # http://localhost:3000
-npm run lint         # tsc --noEmit + guardas de interface e de documentação (scripts/guardas*.mjs)
+npm run lint         # tsc --noEmit + guardas de interface, documentação e auditoria (scripts/guardas*.mjs)
 npm test             # vitest run (todos os testes)
 npx vitest run <caminho>   # um arquivo de teste
 npm run build        # build de produção
