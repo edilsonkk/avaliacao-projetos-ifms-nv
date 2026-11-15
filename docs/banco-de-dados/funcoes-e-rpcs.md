@@ -9,7 +9,13 @@ Funções PostgreSQL chamadas pelo front-end via `supabase.rpc()`. Quem pode exe
 |---|---|---|
 | `sortear_proximo_projeto(p_id_usuario uuid, p_id_evento uuid)` | `uuid` | Sorteia o próximo projeto para o avaliador e cria a trava. Regras em [sorteio](../regras-de-negocio/sorteio-e-atribuicao.md#ordem-e-filtros-do-sorteio) |
 | `sortear_projeto(...)` | — | Alias legado de `sortear_proximo_projeto`; deve ser mantido em sincronia |
-| `fn_enviar_avaliacao(...)` | — | **Único caminho** para gravar notas. Ver abaixo |
+| `fn_enviar_avaliacao(...)` | — | **Único caminho do avaliador** para gravar nota. Ver abaixo |
+
+Nota gravada pela tela do avaliador passa **só** por `fn_enviar_avaliacao`. A coordenação tem caminhos próprios,
+todos `is_admin()` e marcados na trilha (`ajuste_tipo`): `admin_lancar_avaliacao` (ficha em papel),
+`admin_corrigir_respostas_avaliacao`, `admin_arbitrar_nota_final` e `admin_ajustar_media_projeto` — ver
+[auditoria de notas](#auditoria-de-notas) e [ADR 0015](../decisoes/0015-ajuste-manual-de-notas.md). Fora dessas
+funções, nada grava nota.
 
 ### `fn_enviar_avaliacao`
 `SECURITY DEFINER`. Numa única transação:
@@ -52,6 +58,7 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `fn_janela_avaliacao_aberta(id_evento)` | Logados | Janela do evento aberta agora (data, horário no fuso de MS e sistema liberado); usada pelo sorteio e pela fila |
 | `fn_feira_concluida(id_evento)` | Avaliador/Staff/Admin | Avaliação finalizada: há projetos presentes (check-in) na competição e todos atingiram a cota (mesma regra de `avaliacao_finalizada` do Telão) |
 | `fn_autocadastro_avaliador(...)` | Público | Autocadastro pelo QR; nunca altera cadastro existente |
+| `fn_identidade_visual()` | Público | Ícone e imagem do evento ativo (bucket `identidade-visual`); pública porque o cabeçalho e o login precisam dela sem sessão |
 | `fn_telao_resumo(id_evento)` | Público | Totais do Telão (evento ativo se nulo): nome/data/horário do evento, projetos presentes, meta pela cota de cada projeto, avaliações na meta, travas (todas e as que cabem na meta), avaliadores credenciados (só papel Avaliador e só técnico; votante vai em `votantes_credenciados`), quarentena pendente, `avaliacao_finalizada`; sem nomes de pessoas, títulos nem notas |
 
 ## Administração
@@ -82,6 +89,8 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `admin_salvar_questionario(p_id_questionario, p_id_evento, p_titulo, p_escala_minima, p_escala_maxima, p_perguntas jsonb)` → `uuid` | Cria (`p_id_questionario` nulo) ou edita o questionário numa transação; perguntas atualizadas no lugar. Questionário já usado só muda o título |
 | `admin_excluir_questionario(p_id_questionario)` | Exclui questionário nunca usado em avaliação |
 | `admin_copiar_questionario(p_id_origem, p_id_evento)` → `uuid` | Copia um modelo ou um questionário de outro evento para o evento (perguntas, ajuda e pesos). A marca `is_voto_popular` acompanha a cópia de questionário; cópia de modelo nasce técnica. Não duplica: devolve a cópia existente |
+| `admin_marcar_questionario_voto_popular(p_id_questionario, p_is_voto_popular boolean)` | Liga ou desliga a marca de voto popular do questionário. Recusa a mudança se ele já tem avaliação: reclassificaria nota lançada e mudaria média publicada ([ADR 0016](../decisoes/0016-voto-popular-separado-e-media-bayesiana.md)) |
+| `admin_vincular_questionario_avaliador(p_id_usuario, p_id_evento, p_id_questionario default null)` | Fixa em `avaliadores_evento.id_questionario` o questionário daquele avaliador no evento (é o que torna alguém votante); `NULL` desfaz o vínculo. Exige avaliador inscrito no evento e questionário do mesmo evento |
 | `admin_salvar_modelo_questionario(p_id_modelo, p_titulo, p_descricao, p_escala_minima, p_escala_maxima, p_perguntas)` → `jsonb` | Cria (`p_id_modelo` nulo) ou edita um modelo. Ao editar, atualiza a cópia do evento ativo se ela não foi usada; devolve `copia` = `atualizada`, `em_uso` ou `sem_copia` |
 | `admin_excluir_modelo_questionario(p_id_modelo)` | Exclui um modelo; as cópias nos eventos continuam |
 | `admin_salvar_questionario_como_modelo(p_id_questionario)` → `uuid` | Cria um modelo a partir de um questionário do evento |
@@ -106,7 +115,8 @@ Desenho completo em [auditoria de notas](../regras-de-negocio/auditoria-de-notas
 
 | Função | Retorno | Descrição |
 |---|---|---|
-| `fn_auditar_notas(p_id_evento uuid default null)` | `TABLE` | Conferência do evento: recalcula cada nota a partir das respostas e lista os achados (C1 a C12) com severidade |
+| `fn_auditar_notas(p_id_evento uuid default null)` | `TABLE` | Conferência do evento: recalcula cada nota a partir das respostas e lista os achados (`C1` em diante) com severidade |
+| `fn_auditar_voto_popular(p_id_evento uuid default null)` | `TABLE` | Achados próprios do voto popular (`C13` e `C14`): classificação gravada na avaliação divergente da marca do questionário, e votante com nota na média técnica. Entra no resultado de `fn_auditar_notas` |
 | `fn_memorial_avaliacao(p_id_avaliacao uuid)` | `jsonb` | A conta de uma nota: critério, peso, nota, produto, somas, divisão sem arredondar, valor gravado e marca de ajuste |
 | `fn_memorial_projeto(p_id_projeto uuid, p_incluir_achados boolean default true)` | `jsonb` | Memorial do projeto: avaliações ativas e canceladas, média aberta, desempate, quarentena, achados e trilha |
 | `fn_memorial_por_codigo(p_codigo_projeto text, p_id_evento uuid default null)` | `jsonb` | O mesmo, achando o projeto pelo código (a interface nunca pede UUID) |

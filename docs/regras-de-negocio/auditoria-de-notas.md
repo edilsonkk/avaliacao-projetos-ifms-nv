@@ -152,16 +152,13 @@ Dois interruptores decidem o que vai no papel:
 
 `src/lib/formatoNota.ts` é o único lugar que decide como nota aparece: **duas casas e vírgula**
 (`8,75`), peso sem casas desnecessárias (`2`, `1,5`), ajuste com sinal (`+1,50`, `−0,50`) e travessão
-para valor ausente. Antes a mesma nota saía como `8.8`, `8.75` e `8,75` em telas diferentes — numa
-conferência, isso basta para alguém achar que a conta não fecha.
+para valor ausente. Toda tela de nota passa por ele: dois formatos para a mesma nota bastam para alguém
+achar, numa conferência, que a conta não fecha.
 
-## O que mudou no caminho das notas
+## Histórico
 
-- **Formulário do avaliador começa em branco.** Antes vinha com a nota **máxima** marcada em todos os
-  critérios: quem apertasse "Salvar" dava nota cheia sem avaliar. O envio agora exige nota em todos.
-- **Não há mais gravação de nota fora de `fn_enviar_avaliacao`.** O caminho legado do front calculava
-  média **simples** em JavaScript e ignorava os pesos.
-- **Apagar projeto ou usuário com nota é recusado** (erro `23503`): as FKs saíram de `ON DELETE CASCADE`
-  para `RESTRICT`. Para tirar um avaliador do evento, descredencie.
-- **O reset global apaga só o evento** e recusa rodar sem evento definido.
-- **`view_relatorio_admin`** deixou de somar avaliação cancelada.
+As seis falhas que esta auditoria encontrou no caminho das notas (nota alterável sem rastro, conta invisível,
+reset global sem filtro de evento, `ON DELETE CASCADE`, formulário com nota máxima pré-marcada e caminho legado
+de gravação) estão em [lacunas, riscos e roadmap](../roadmap.md) como `L15`–`L21`, com a migration que fechou
+cada uma. O desenho das correções está no [ADR 0014](../decisoes/0014-trilha-de-auditoria-append-only.md) e no
+[ADR 0015](../decisoes/0015-ajuste-manual-de-notas.md).

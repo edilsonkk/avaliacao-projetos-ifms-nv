@@ -14,9 +14,9 @@ Código: `src/features/avaliacao/components/TelaAvaliador.tsx`, `src/features/at
 5. Preenche as notas por critério do questionário (escala Likert do questionário) e o parecer. Cada critério é um
    grupo de campos com o título no `legend`, e cada nota é um botão de opção que o leitor de tela anuncia como
    "Nota 4 de 5" — dá para escolher pelo teclado, com as setas. **Nenhuma nota vem pré-marcada**, e o botão de
-   enviar só habilita com nota em todos os critérios (a tela diz quantos faltam). Antes o formulário vinha com a
-   nota **máxima** marcada em tudo: quem apertasse "Salvar" dava nota cheia sem avaliar, e nada distinguia isso
-   de uma decisão do avaliador ([auditoria](auditoria-de-notas.md#o-que-mudou-no-caminho-das-notas)).
+   enviar só habilita com nota em todos os critérios (a tela diz quantos faltam): nota cheia gravada sem
+   avaliação seria indistinguível de uma decisão do avaliador
+   ([auditoria](auditoria-de-notas.md#histórico)).
 6. Envia por `supabase.rpc('fn_enviar_avaliacao', ...)`. Regras do servidor em
    [funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#fn_enviar_avaliacao).
 7. Sem projetos elegíveis, mostra o status da fila e o botão `"Consultar Novamente"` (sem subtítulo explicativo).
@@ -135,8 +135,6 @@ continua verificando a conta de cada voto (C1, C2, C3b, C10, C11) e ganha dois a
 - As duas ações de aceite pedem confirmação num diálogo da própria tela, com campo **Motivo (opcional)** que vai
   para a [trilha de auditoria](auditoria-de-notas.md#trilha-de-auditoria-log_auditoria) e para a folha de
   conferência. O contador do painel conta projetos (não avaliações) do evento ativo.
-- Antes da migration `20261029220000`, "Tirar de Quarentena" só zerava `is_quarentena`: a divergência continuava e o
-  projeto voltava para a lista ao recarregar.
 
 ## Exclusão de avaliação (soft delete)
 
@@ -147,16 +145,13 @@ Card **Excluir uma avaliação** (`ModalExclusaoAvaliacao`). Decisão: [ADR 0004
   view). Cancelar a nota fora da curva tira o projeto da quarentena; o aviso diz "O projeto saiu da quarentena".
 - **Motivo opcional**: o modal de confirmação tem um campo de justificativa. Ela fica na trilha de auditoria e
   sai na folha de conferência do projeto — é o que explica a decisão num recurso. Cancelar e restaurar também
-  passaram a deixar rastro na trilha (antes, restaurar apagava `cancelada_em`/`cancelada_por` e não registrava nada).
+  deixam rastro na trilha.
 - **Desfazer** disponível por 8 segundos num toast; depois, a restauração continua possível pelo botão **Restaurar**
   (`restaurar_avaliacao` → `CONCLUIDA`, também recalcula a quarentena).
 - **Restaurar respeita a cota**: se a vaga liberada já foi ocupada (outra avaliação ativa ou trava válida), o banco
   recusa com "O projeto X já está com a cota completa (N de N vagas ocupadas)". Cancele outra avaliação antes.
 - A lista mostra **todas** as avaliações do evento ativo (filtro no banco, paginada de 1000 em 1000), com contadores
   de concluídas e canceladas. Erros do banco aparecem na tela; nada é gravado por fora das funções.
-- Antes da migration `20261029240000`, cancelar só desmarcava a avaliação cancelada (as outras continuavam marcadas
-  e o projeto seguia em quarentena), restaurar podia passar da cota, e a tela lia só as 300 avaliações mais recentes
-  de todos os eventos.
 - Confirmação obrigatória: um modal vermelho mostra código, nome e área do projeto, nome e áreas do avaliador e nota
   final antes de `Confirmar Exclusão` (`role="alertdialog"`).
 - Avaliação cancelada libera a cota do projeto para **outros** avaliadores; o mesmo avaliador nunca recebe o projeto

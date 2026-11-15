@@ -47,7 +47,7 @@ Antes de mudar uma regra de negócio, leia o arquivo correspondente em `docs/reg
   1. a tabela "Procurando…" de [`docs/README.md`](docs/README.md) aponta o arquivo;
   2. `grep -n '^#' <arquivo>` lista as seções com o número da linha;
   3. leia só a faixa daquela seção, não o arquivo todo.
-- Nenhuma doc passa de 270 linhas, então a seção certa resolve. Em
+- Nenhuma doc passa de 300 linhas, então a seção certa resolve. Em
   [`docs/operacao/troubleshooting.md`](docs/operacao/troubleshooting.md) há um cabeçalho por sintoma: procure a
   mensagem de erro.
 - Este arquivo entra em toda sessão: `npm run lint` recusa `CLAUDE.md` + `AGENTS.md` acima de 8 KB. Detalhe novo
@@ -60,7 +60,8 @@ Antes de mudar uma regra de negócio, leia o arquivo correspondente em `docs/reg
 2. **Testes (TDD)**: siga [`.agents/rules/TESTES_TDD.md`](.agents/rules/TESTES_TDD.md). Use seletores acessíveis e
    nunca classes Tailwind; padrão AAA; `vi.mock('@/lib/supabase')`; nada de rede real.
 3. **Segurança no banco**: permissões e validações críticas ficam na RLS e em funções (ver
-   [segurança](docs/arquitetura/seguranca.md)). Nunca confie só no front-end. Notas só via `fn_enviar_avaliacao`.
+   [segurança](docs/arquitetura/seguranca.md)). Nunca confie só no front-end. Nota do avaliador só via `fn_enviar_avaliacao`; a coordenação, só pelas RPCs
+   `admin_*` marcadas na trilha. Nada grava nota fora de função.
 4. **Escritas do Admin**: chame `garantirSessaoAdmin()` antes e trate erros com `tratarErroEscritaAdmin()`.
    **Identidade**: papéis vêm do banco (`is_admin()`, `is_staff()`, `avaliador_atual()`); nunca confie em IDs do
    `localStorage` nem libere tabelas para `anon`. Regra nova de acesso = policy + teste em `supabase/tests/`.

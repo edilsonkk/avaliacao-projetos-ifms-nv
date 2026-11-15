@@ -31,8 +31,9 @@ SEGUNDA              TERÇA                QUARTA               QUINTA          
 - **15:30–17:00**: importar avaliadores (instituição, áreas, modalidades bloqueadas) e equipe Staff. Criar a conta
   de cada Staff no painel do Supabase ([como](../arquitetura/configuracao.md#criar-um-membro-do-staff)) e conferir a
   seção **Acesso dos avaliadores** nas Configurações do evento.
-- **17:00–18:00**: simular um ciclo completo de avaliação em homologação. Configurar data, horários, cota e timeout
-  do evento.
+- **17:00–18:00**: simular um ciclo completo de avaliação **no ambiente local** (`npx supabase@2.122.0 db reset` e
+  dados de teste) — não há homologação ([ADR 0009](../decisoes/0009-ambientes-e-releases.md)). Configurar data,
+  horários, cota e timeout do evento.
 
 ## Quarta-feira: feira, dia 1
 

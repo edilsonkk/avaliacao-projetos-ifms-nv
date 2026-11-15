@@ -20,7 +20,7 @@ auditoria e homologação dos resultados.
                    │ SQL e chamadas RPC
                    ▼
 ┌────────────────────────────────────────┐
-│          POSTGRESQL 15+                │
+│          POSTGRESQL 17                 │
 │  - Funções SECURITY DEFINER            │
 │  - Travamento pessimista (locks_ativos)│
 │  - Upsert por chave natural            │
@@ -38,7 +38,12 @@ auditoria e homologação dos resultados.
    avaliadores no mesmo projeto) quanto em fila prioritária por avaliador.
 4. **Quarentena automática**: divergência maior que 2,5 pontos entre avaliadores do mesmo projeto envia o projeto
    para auditoria. Ver [avaliação e quarentena](../regras-de-negocio/avaliacao-e-quarentena.md).
-5. **Monitoramento em tempo real**: estatísticas vêm de views e funções no banco e alimentam o Telão ao Vivo e os
+5. **Voto popular em pista separada**: um questionário marcado como voto popular cria uma segunda pista, que não
+   entra na média técnica, na cota, na quarentena nem no ranking técnico; a classificação usa média bayesiana.
+   Ver [ADR 0016](../decisoes/0016-voto-popular-separado-e-media-bayesiana.md).
+6. **Nota conferível**: memorial de cálculo por avaliação, conferência por recálculo, trilha append-only e ajuste
+   manual só por RPC marcada. Ver [auditoria de notas](../regras-de-negocio/auditoria-de-notas.md).
+7. **Monitoramento em tempo real**: estatísticas vêm de views e funções no banco e alimentam o Telão ao Vivo e os
    painéis administrativos, sem cálculos pesados no cliente.
 
 ## Princípios
@@ -72,7 +77,7 @@ auditoria e homologação dos resultados.
 | Ícones | lucide-react | Ícones |
 | Planilhas | exceljs | Leitura e geração de `.xlsx`/`.xls`/`.csv` (`src/lib/excel/`) |
 | Backend | Supabase (`@supabase/supabase-js`) | Auth, PostgREST, RPC |
-| Banco | PostgreSQL 15+ | Extensões `uuid-ossp` e `pgcrypto` |
+| Banco | PostgreSQL 17 no ambiente local (`supabase/config.toml`); em produção, a versão do projeto Supabase | Extensões `uuid-ossp` e `pgcrypto` |
 | Testes | Vitest + JSDOM + Testing Library | Testes unitários e de integração |
 | Hospedagem | Firebase Hosting | SPA estática em `avaliacao-projetos-ifms-nv.web.app` |
 | CI/CD | GitHub Actions | Ver [CI/CD e deploy](../operacao/ci-cd-e-deploy.md) |

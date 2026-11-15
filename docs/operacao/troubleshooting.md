@@ -268,3 +268,25 @@ LEFT JOIN public.dispositivos_avaliador d ON d.id_usuario = u.id_usuario
 LEFT JOIN public.codigos_acesso c ON c.id_usuario = u.id_usuario
 WHERE lower(u.email) = lower('avaliador@exemplo.br');
 ```
+
+## Avaliador técnico preso ao questionário de voto popular
+
+**Sintoma**: com a trava de questionário ligada, a tela do avaliador abre o projeto já com o questionário de voto
+popular e sem o botão **Trocar Questionário**. Gravar o fixado pelo painel devolve
+`Questionário de voto popular não fixa o questionário do projeto.`
+
+**Causa**: `projetos.id_questionario_fixado` aponta para questionário marcado como voto popular. O fixado é a
+escala da **nota técnica**, e a tela o impõe quando `eventos.fixar_questionario_primeira_avaliacao` está ligada.
+Acontecia quando um voto popular era a primeira avaliação do projeto, antes da migration `20261114010000`, que
+repara os projetos afetados e criou a trigger `trg_projetos_fixado_tecnico` para recusar a gravação (`L24` em
+[lacunas, riscos e roadmap](../roadmap.md)).
+
+**O que fazer**: com a migration aplicada não se repete. Para conferir e corrigir um caso remanescente:
+
+```sql
+SELECT p.codigo_projeto, q.titulo FROM public.projetos p
+JOIN public.questionarios q ON q.id_questionario = p.id_questionario_fixado
+WHERE coalesce(q.is_voto_popular, false);
+-- zerar o fixado: a próxima avaliação técnica fixa o questionário certo
+UPDATE public.projetos SET id_questionario_fixado = NULL WHERE codigo_projeto = 'EXEMPLO-01';
+```

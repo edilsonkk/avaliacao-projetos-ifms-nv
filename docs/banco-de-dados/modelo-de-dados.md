@@ -47,6 +47,8 @@ A feira. Quase todas as tabelas são isoladas por `id_evento`.
 | `fixar_questionario_primeira_avaliacao` | Ligada (padrão): a primeira avaliação fixa o questionário do projeto |
 | `url_icone` | Ícone do evento (bucket `identidade-visual`): substitui o "IF" do cabeçalho e serve de favicon |
 | `url_imagem_evento` | Imagem do evento: login, autocadastro, Telão, relatórios impressos e topo da tela do avaliador |
+| `logo_url` | **Morta**: anterior à identidade visual, nunca lida pela aplicação. Use `url_icone` / `url_imagem_evento` |
+| `intervalo_pausa_avaliador` | **Morta**: gravada como `0` na criação do evento e nunca lida |
 
 Os limites ficam em `CHECK` no banco e são editados nas Configurações do evento (engrenagem).
 
@@ -96,9 +98,22 @@ isso é gravado em texto. Expira conforme o evento.
 Código que o Staff gera para o avaliador digitar. É credencial: só o hash bcrypt é gravado, tem uso único e conta
 tentativas (`max_tentativas`). Gerar um novo invalida o anterior.
 
+### `registro_autocadastro`
+Contador do limite do autocadastro, que é endpoint público: `id`, `id_evento`, `criado_em`, `criou_instituicao`.
+`fn_autocadastro_avaliador` recusa a partir de 30 cadastros por minuto no sistema e apaga os registros com mais de
+um dia. Sem acesso para `anon` nem `authenticated` (só `service_role` e as funções `SECURITY DEFINER`).
+
+### `configuracoes_seguranca`
+Política de segurança do sistema, **linha única** (`id boolean` com `CHECK`), não por evento: `exigir_mfa_admin`,
+`minutos_inatividade_sessao` (`0` = sem expiração, ou 5–720), `atualizado_em`, `atualizado_por`. Escrita só por
+`admin_salvar_configuracoes_seguranca`; mudar o MFA exige sessão `aal2`
+([ADR 0012](../decisoes/0012-mfa-admin-e-expiracao-de-sessao.md)).
+
 ### `avaliadores_evento`
 Vínculo da pessoa com o evento. PK `(id_usuario, id_evento)`.
-`id_instituicao` (usada no conflito de interesse) e `is_credenciado` (check-in presencial).
+`id_instituicao` (usada no conflito de interesse), `is_credenciado` (check-in presencial) e `id_questionario`:
+questionário fixado para aquele avaliador no evento, gravado por `admin_vincular_questionario_avaliador`. Se ele
+aponta para um questionário de voto popular, a pessoa é **votante**, não avaliador técnico.
 
 ### `avaliador_modalidades_bloqueadas`
 Modalidades que o avaliador não pode avaliar. PK `(id_usuario, id_evento, id_modalidade)`, `ON DELETE CASCADE`.
@@ -131,6 +146,10 @@ A tabela **não** tem colunas textuais `modalidade`, `area_conhecimento` ou `nom
 ### `questionarios` e `perguntas_questionario`
 - `questionarios`: `id_questionario`, `id_evento`, `titulo`, `escala_minima`, `escala_maxima`, `id_origem` (modelo
   ou questionário de outro evento de onde a cópia veio; único por evento).
+- `questionarios.is_voto_popular`: **a marca que define a pista**. Nota dada por um questionário marcado não entra
+  na média técnica, na cota, na quarentena, no ranking técnico nem na meta do Telão
+  ([ADR 0016](../decisoes/0016-voto-popular-separado-e-media-bayesiana.md)). Só muda por
+  `admin_marcar_questionario_voto_popular`, e não muda depois de o questionário ter avaliação.
 - `modelos_questionario` e `perguntas_modelo_questionario`: questionários prontos, fora de qualquer evento (só o Admin
   lê; carga pela migration `20261031050000`). Ativar um modelo copia para `questionarios`. `is_original` marca os 7
   do documento (restauráveis). Escrita só pelas funções `admin_*_modelo_*`.
@@ -174,7 +193,8 @@ Nota por critério: `id_resposta`, `id_avaliacao`, `id_pergunta`, `nota_atribuid
 ### `locks_ativos`
 Travas de avaliação em andamento: `id_lock`, `id_usuario` (**único**: um projeto por vez por avaliador),
 `id_projeto` (vários avaliadores permitidos: banca), `bloqueado_em`, `expira_em`, `atribuido_por` (Admin da
-atribuição forçada; `NULL` = sorteio).
+atribuição forçada; `NULL` = sorteio), `is_voto_popular` (trava de votante: não ocupa vaga da cota técnica nem
+aparece nas contagens do sorteio).
 
 ### `fila_atribuicoes_direcionadas`
 Atribuições feitas pela coordenação: `id_atribuicao`, `id_usuario`, `id_projeto`, `ordem`,
