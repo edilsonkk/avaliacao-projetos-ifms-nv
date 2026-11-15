@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.12.1...v0.12.2) (2026-11-15)
+
+
+### Desempenho
+
+* divide o bundle, endurece a leitura de eventos e fecha a costura front/banco ([#111](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/111)) ([d7b816c](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/d7b816ce7861e260dd9b58be562696cc7a933de4))
+
 ## [0.12.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.12.0...v0.12.1) (2026-11-15)
 
 
