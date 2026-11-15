@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.12.0...v0.12.1) (2026-11-15)
+
+
+### Documentação
+
+* auditoria da documentação e correção dos 17 achados ([#109](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/109)) ([ac585d6](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/ac585d6103440a67a166b635d9aec1623367fe90))
+
 ## [0.12.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.11.1...v0.12.0) (2026-11-14)
 
 
