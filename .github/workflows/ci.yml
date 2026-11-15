@@ -36,3 +36,8 @@ jobs:
       - name: Validar Build de Produção (Vite Build Gate)
         run: npm run build
 
+      # Repetido depois do build: só com dist/ gerado a guarda mede o JS do carregamento inicial
+      # e cobra o teto de catraca (ver docs/operacao/auditoria.md).
+      - name: Orçamento de Bundle (Performance Gate)
+        run: npm run guardas:auditoria
+

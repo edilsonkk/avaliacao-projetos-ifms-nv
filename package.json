@@ -11,8 +11,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit && node scripts/guardas.mjs && node scripts/guardas-docs.mjs",
+    "lint": "tsc --noEmit && node scripts/guardas.mjs && node scripts/guardas-docs.mjs && node scripts/guardas-auditoria.mjs",
     "guardas:docs": "node scripts/guardas-docs.mjs",
+    "guardas:auditoria": "node scripts/guardas-auditoria.mjs",
     "contraste": "node scripts/contraste.mjs",
     "test": "vitest run",
     "test:watch": "vitest"

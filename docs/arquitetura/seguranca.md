@@ -66,7 +66,8 @@ Base: `ALL` para o Admin em todas as tabelas; `TRUNCATE` revogado de todos.
 
 | Tabela | Visitante (`anon`) | Avaliador vinculado | Staff |
 |---|---|---|---|
-| `eventos`, `instituicoes`, `areas_tematicas`, `modalidades` | ler | ler | ler |
+| `eventos` | ler **só as colunas públicas** (ver abaixo) | ler | ler |
+| `instituicoes`, `areas_tematicas`, `modalidades` | ler | ler | ler |
 | `projetos`, `questionarios`, `perguntas_questionario` | — | ler | ler |
 | `usuarios` (sem `cpf`/`celular` para logados) | — | só o próprio | ler e alterar avaliadores |
 | `avaliadores_evento` | — | ler o próprio | ler; inserir e alterar **só avaliadores** |
@@ -113,6 +114,26 @@ que a coordenação precisa fazer, existem RPCs validadas
 `ON DELETE RESTRICT`, então apagar projeto ou usuário com nota é recusado (`23503`).
 
 **Views** usam `security_invoker` (respeitam a RLS de quem consulta) e são somente leitura.
+
+### Colunas públicas de `eventos`
+
+A política `rls_eventos_leitura` libera `SELECT` para `anon` com `USING (true)`, porque a tela de login e o
+autocadastro pelo QR Code precisam do catálogo antes de existir sessão. A fronteira é a permissão por coluna
+(migration `20261115010000_eventos_colunas_publicas.sql`, teste
+`supabase/tests/34_eventos_colunas_publicas_test.sql`):
+
+- **`anon` lê**: `id_evento`, `nome_evento`, `edicao`, `descricao`, `logo_url`, `url_icone`,
+  `url_imagem_evento`, `is_ativo`, `sistema_liberado`, `data_evento`, `data_inicio`, `data_fim`,
+  `horario_inicio`, `horario_fim`, `cota_avaliacoes_padrao`.
+- **`anon` não lê**: os parâmetros do código de acesso (`tamanho_codigo`, `max_tentativas_codigo`,
+  `minutos_validade_codigo_acesso`, `minutos_validade_pareamento`), `metodos_vinculo`,
+  `minutos_timeout_lock`, `intervalo_pausa_avaliador`, `fixar_questionario_primeira_avaliacao`,
+  `limite_corte` e `created_at`. O primeiro grupo calibraria tentativa de força bruta; `limite_corte`
+  antecipa o corte da premiação.
+
+`authenticated` continua lendo a linha inteira — as telas de administração usam `select('*')`. Coluna nova em
+`eventos` **não** fica pública por padrão: só entra na lista se a tela de login ou o autocadastro precisarem
+dela. Ver [auditoria](../operacao/auditoria.md).
 
 ## Funções
 

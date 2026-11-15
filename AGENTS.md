@@ -14,7 +14,7 @@ SPA React 19 + Vite + Tailwind 4 + TypeScript sobre Supabase/PostgreSQL, usada e
 ```bash
 npm install          # dependências (.npmrc usa legacy-peer-deps)
 npm run dev          # http://localhost:3000
-npm run lint         # tsc --noEmit + guardas de interface e de documentação (scripts/guardas*.mjs)
+npm run lint         # tsc --noEmit + guardas de interface, documentação e auditoria (scripts/guardas*.mjs)
 npm test             # vitest run (todos os testes)
 npx vitest run <caminho>   # um arquivo de teste
 npm run build        # build de produção
@@ -79,7 +79,7 @@ Antes de mudar uma regra de negócio, leia o arquivo correspondente em `docs/reg
 - Erro `PGRST204` / "schema cache": ver [troubleshooting](docs/operacao/troubleshooting.md).
 - Consultas `anon` com `select('*')` em `usuarios`/`avaliacoes` falham: projete colunas.
 - `projetos` não tem colunas textuais `modalidade`, `area_conhecimento`, `nome_instituicao`: use os relacionamentos.
-- `sortear_proximo_projeto` e `sortear_projeto` precisam ficar em sincronia.
+- `sortear_proximo_projeto` e `sortear_projeto` precisam ficar em sincronia (teste 35 em `supabase/tests/`).
 - Migrations são aplicadas só por `supabase db push` (CI). Nunca sugira colar SQL no SQL Editor do painel.
 - `supabase/schema.sql` é **gerado** (`db dump --local`); não edite à mão. Mudou permissão? Rode `npx supabase@2.122.0 test db`.
 - Vários componentes são muito grandes (2–3 mil linhas). Leia por trechos e prefira extrair hooks/subcomponentes
