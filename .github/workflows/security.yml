@@ -96,3 +96,21 @@ jobs:
       - name: Executar NPM Audit Estrito
         run: |
           npm audit --audit-level=high
+
+  varredura-segredos:
+    name: Segredos no Histórico (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 porque a varredura vale para o histórico inteiro, não só para o estado atual:
+      # chave que esteve em um commit antigo continua comprometida.
+      - name: Checkout do Repositório
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Varredura de Segredos (bloqueia o merge)
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0 (fixado por hash)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Licença só é exigida de organizações; em conta pessoal a varredura roda sem ela.
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
