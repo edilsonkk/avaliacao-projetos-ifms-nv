@@ -8,6 +8,7 @@
  *   2. bundle-excel         — o ExcelJS entra só por `import()`; nunca no bundle inicial.
  *   3. service-role-no-src  — nenhuma chave `service_role` em código que vai para o navegador.
  *   4. orcamento-bundle     — o JS inicial não passa do teto de catraca (só quando há `dist/`).
+ *   5. rpc-no-contrato      — toda RPC chamada em `src/` está no teste de contrato do banco.
  *
  * Regras PENDENTES (contadas no fim, sem travar): o que a auditoria mediu e deixou para os
  * próximos PRs. Cada uma vira bloqueante no dia em que zerar, como as pastas do `guardas.mjs`.
@@ -143,7 +144,30 @@ if (existsSync(join(RAIZ, INDEX_BUILD))) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. telas-lazy-efetivas (pendência): o `index.ts` da feature desfaz a divisão
+// 5. rpc-no-contrato: nome de RPC só existe de verdade se o banco for cobrado por ele
+// ---------------------------------------------------------------------------
+const CONTRATO_RPC = 'supabase/tests/36_contrato_rpcs_do_front_test.sql';
+const contrato = ler(CONTRATO_RPC);
+
+for (const caminho of arquivosDeProducao) {
+  const relativo = relative(RAIZ, caminho);
+  ler(relativo)
+    .split('\n')
+    .forEach((linha, i) => {
+      if (/^\s*(\/\/|\/\*|\*)/.test(linha)) return;
+      for (const [, nome] of linha.matchAll(/\brpc\(\s*'([a-z0-9_]+)'/g)) {
+        if (!contrato.includes(`('${nome}')`)) {
+          problemas.push(
+            `${relativo}:${i + 1}  rpc-no-contrato: ${nome}() não está em ${CONTRATO_RPC} — ` +
+              'acrescente à lista para o pgTAP cobrar que a função existe',
+          );
+        }
+      }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// 6. telas-lazy-efetivas (pendência): o `index.ts` da feature desfaz a divisão
 // ---------------------------------------------------------------------------
 for (const [, feature, tela] of app.matchAll(/import\('@\/features\/([^/']+)\/components\/(\w+)'\)/g)) {
   const barril = `src/features/${feature}/index.ts`;
@@ -159,7 +183,7 @@ for (const [, feature, tela] of app.matchAll(/import\('@\/features\/([^/']+)\/co
 }
 
 // ---------------------------------------------------------------------------
-// 6. ts-strict (pendência): sinalizadores de tipagem ainda por ligar
+// 7. ts-strict (pendência): sinalizadores de tipagem ainda por ligar
 // ---------------------------------------------------------------------------
 const tsconfig = JSON.parse(ler('tsconfig.json')).compilerOptions ?? {};
 
