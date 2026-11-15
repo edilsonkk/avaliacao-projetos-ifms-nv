@@ -7605,9 +7605,69 @@ GRANT ALL ON FUNCTION "public"."normalizar_codigo"("p_codigo" "text") TO "servic
 
 
 
-GRANT SELECT,MAINTAIN ON TABLE "public"."eventos" TO "anon";
+GRANT MAINTAIN ON TABLE "public"."eventos" TO "anon";
 GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE "public"."eventos" TO "authenticated";
 GRANT ALL ON TABLE "public"."eventos" TO "service_role";
+
+
+
+GRANT SELECT("id_evento") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("nome_evento") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("edicao") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("descricao") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("logo_url") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("is_ativo") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("cota_avaliacoes_padrao") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("sistema_liberado") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("horario_inicio") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("horario_fim") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("data_evento") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("data_inicio") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("data_fim") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("url_icone") ON TABLE "public"."eventos" TO "anon";
+
+
+
+GRANT SELECT("url_imagem_evento") ON TABLE "public"."eventos" TO "anon";
 
 
 
