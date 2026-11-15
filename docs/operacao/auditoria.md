@@ -93,6 +93,11 @@ O que foi feito:
 - As cinco telas de depois do login (`TelaAvaliador`, `TelaStaff`, `TelaAdmin`, `TelaRedefinirSenha`,
   `TelaoAoVivo`) entram por `lazy(() => import(...))`, com um `<Suspense>` em volta da troca de tela.
 - `TelaLogin` e `TelaAutocadastroAvaliador` **ficam estáticas de propósito** — ver a seção seguinte.
+- Dividir o bundle criou uma falha que não existia: o pedaço da tela pode não chegar. `carregarTela`
+  (`src/lib/carregarTela.ts`) insiste três vezes com recuo crescente, e o `<LimiteDeErro>` em volta do
+  `<Suspense>` explica e oferece recarregar em vez de deixar a página branca — o `React.lazy` guarda a falha
+  do `import()`, então repetir a renderização não busca o arquivo de novo, só uma carga nova da página busca.
+  Não havia error boundary nenhum no projeto antes disto.
 - O ExcelJS entra por `await import('exceljs')` dentro de `excelUtils.ts`. É um ponto só, e não os treze
   pontos de chamada, porque os parsers de `src/lib/parsers/` importam `excelUtils` de forma estática: mudar
   só os componentes deixaria a biblioteca presa ao pedaço do painel.

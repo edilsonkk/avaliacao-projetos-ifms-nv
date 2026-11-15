@@ -68,6 +68,10 @@ Fora de `src/`:
    (ver [auditoria](../operacao/auditoria.md)). `TelaLogin` e `TelaAutocadastroAvaliador` ficam estáticas.
 7. **Biblioteca pesada entra por `import()`** dentro da função que a usa, não no topo do arquivo — é o caso do
    ExcelJS em `src/lib/excel/excelUtils.ts`.
+8. **Todo `import()` de tela passa por `carregarTela`** (`src/lib/carregarTela.ts`), que insiste com recuo
+   crescente antes de desistir, e fica dentro do `<LimiteDeErro>` do `App.tsx`. Em rede instável a busca do
+   pedaço falha, e o `React.lazy` guarda a falha: sem a retentativa e sem o anteparo, a página fica branca e
+   só volta se a pessoa recarregar por conta própria.
 
 ## Testes
 

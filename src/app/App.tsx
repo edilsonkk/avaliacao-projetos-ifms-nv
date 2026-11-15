@@ -10,8 +10,9 @@ import { TelaAutocadastroAvaliador } from '@/features/avaliacao';
 import { supabase } from '@/lib/supabase';
 import { EVENTO_SESSAO_ADMIN_EXPIRADA, MENSAGEM_SESSAO_EXPIRADA } from '@/lib/sessaoAdmin';
 import { iniciarKeepAliveSessao } from '@/lib/keepAliveSessao';
+import { carregarTela } from '@/lib/carregarTela';
 import { iniciarExpiracaoPorInatividade } from '@/lib/expiracaoSessao';
-import { Estado, ProvedorAvisos, useAvisos } from '@/components/ui';
+import { Estado, LimiteDeErro, ProvedorAvisos, useAvisos } from '@/components/ui';
 import { aplicarPreferenciasVisuais, limparSessaoMantendoPreferencias } from '@/lib/preferenciasVisuais';
 import { ProvedorIdentidadeVisual } from '@/components/layout/IdentidadeVisual';
 import { obterPerfilSessao, lerPoliticaSeguranca, EVENTO_POLITICA_ALTERADA } from '@/features/auth';
@@ -24,12 +25,13 @@ import { obterPerfilSessao, lerPoliticaSeguranca, EVENTO_POLITICA_ALTERADA } fro
 // entra no bundle inicial por outra tela estática da mesma feature e o empacotador então não tem
 // como mover nada para outro pedaço ("INEFFECTIVE_DYNAMIC_IMPORT"). É a única exceção à regra de
 // importar feature só pelo `index.ts`, vale apenas dentro de `lazy()` aqui no app e a guarda
-// `bundle-telas-lazy` cobra isso. Ver docs/arquitetura/frontend.md e docs/operacao/auditoria.md.
-const TelaAvaliador = lazy(() => import('@/features/avaliacao/components/TelaAvaliador').then((m) => ({ default: m.TelaAvaliador })));
-const TelaStaff = lazy(() => import('@/features/staff/components/TelaStaff').then((m) => ({ default: m.TelaStaff })));
-const TelaAdmin = lazy(() => import('@/features/admin/components/TelaAdmin').then((m) => ({ default: m.TelaAdmin })));
-const TelaRedefinirSenha = lazy(() => import('@/features/auth/components/TelaRedefinirSenha').then((m) => ({ default: m.TelaRedefinirSenha })));
-const TelaoAoVivo = lazy(() => import('@/features/relatorios/components/TelaoAoVivo').then((m) => ({ default: m.TelaoAoVivo })));
+// `bundle-telas-lazy` cobra isso. A retentativa de `carregarTela` e o <LimiteDeErro> abaixo cobrem
+// a queda de rede no meio da busca do pedaço. Ver docs/arquitetura/frontend.md e docs/operacao/auditoria.md.
+const TelaAvaliador = lazy(() => carregarTela(() => import('@/features/avaliacao/components/TelaAvaliador'), 'TelaAvaliador'));
+const TelaStaff = lazy(() => carregarTela(() => import('@/features/staff/components/TelaStaff'), 'TelaStaff'));
+const TelaAdmin = lazy(() => carregarTela(() => import('@/features/admin/components/TelaAdmin'), 'TelaAdmin'));
+const TelaRedefinirSenha = lazy(() => carregarTela(() => import('@/features/auth/components/TelaRedefinirSenha'), 'TelaRedefinirSenha'));
+const TelaoAoVivo = lazy(() => carregarTela(() => import('@/features/relatorios/components/TelaoAoVivo'), 'TelaoAoVivo'));
 
 function ConteudoApp() {
   const { avisar } = useAvisos();
@@ -249,9 +251,11 @@ function ConteudoApp() {
 
       {/* Conteúdo da Tela Selecionada */}
       <div id="conteudo" tabIndex={-1} className="flex-1 py-4 sm:py-6">
-        <Suspense fallback={<Estado situacao="carregando" titulo="Carregando a tela..." className="mx-4 sm:mx-6" />}>
-          {renderizar_conteudo_tela()}
-        </Suspense>
+        <LimiteDeErro>
+          <Suspense fallback={<Estado situacao="carregando" titulo="Carregando a tela..." className="mx-4 sm:mx-6" />}>
+            {renderizar_conteudo_tela()}
+          </Suspense>
+        </LimiteDeErro>
       </div>
 
       {/* Rodapé Informativo */}

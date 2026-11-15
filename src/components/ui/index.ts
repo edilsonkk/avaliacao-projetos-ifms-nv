@@ -12,6 +12,7 @@ export {
 export { Cartao } from './Cartao';
 export { Selo, type TomSelo } from './Selo';
 export { Estado, type SituacaoEstado } from './Estado';
+export { LimiteDeErro } from './LimiteDeErro';
 export { Tabela } from './Tabela';
 export { Modal, type TamanhoModal } from './Modal';
 export { Aviso, type TipoAviso } from './Aviso';
