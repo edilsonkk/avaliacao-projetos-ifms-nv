@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Award, UserCheck, Shield, Mail, Lock, Loader2, AlertTriangle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { VinculoAvaliador } from './VinculoAvaliador';
-import { urlRedefinirSenha } from './TelaRedefinirSenha';
+import { urlRedefinirSenha } from '../caminhoRedefinirSenha';
 import { obterPerfilSessao, salvarPerfilLocal, type PerfilSessao } from '../vinculoAparelho';
 import { CadastroSegundoFator, VerificacaoSegundoFator } from './SegundoFator';
 import { ImagemEvento } from '@/components/layout/IdentidadeVisual';

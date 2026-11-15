@@ -1,18 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, KeyRound, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-
-/** Caminho para onde o e-mail de "Esqueci minha senha" leva (precisa estar nas Redirect URLs do Auth). */
-export const CAMINHO_REDEFINIR_SENHA = '/redefinir-senha';
-
-/**
- * Mínimo exigido pela tela, igual ao minimum_password_length do Supabase Auth (sem regras de
- * composição). Se o Auth recusar por outro motivo, a mensagem dele é exibida.
- */
-export const TAMANHO_MINIMO_SENHA = 8;
-
-/** URL completa do link de recuperação, no mesmo endereço em que o app está aberto. */
-export const urlRedefinirSenha = () => `${window.location.origin}${CAMINHO_REDEFINIR_SENHA}`;
+import { TAMANHO_MINIMO_SENHA } from '../caminhoRedefinirSenha';
 
 interface PropriedadesTelaRedefinirSenha {
   aoConcluir: () => void;

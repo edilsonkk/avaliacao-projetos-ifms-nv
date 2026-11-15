@@ -1,9 +1,15 @@
-import ExcelJS from 'exceljs';
-
 /**
  * Utilitário centralizado para leitura, parsing e exportação de planilhas (.xlsx e .csv)
  * utilizando a biblioteca ExcelJS.
  */
+
+/**
+ * O ExcelJS pesa cerca de 1 MB do bundle e só é necessário quando alguém de fato abre ou gera um
+ * `.xlsx`. Carregado por `import()`, ele vira um pedaço separado: quem só faz login, avalia ou
+ * importa um `.csv` nunca o baixa. A guarda `bundle-excel` cobra que ninguém volte ao import
+ * estático — ver docs/operacao/auditoria.md.
+ */
+const carregarExcelJS = async () => (await import('exceljs')).default;
 
 const OLE2_HEADER = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 
@@ -173,6 +179,7 @@ export async function lerPlanilhaParaJson(
   }
 
   // 4. Carrega via ExcelJS
+  const ExcelJS = await carregarExcelJS();
   const workbook = new ExcelJS.Workbook();
   try {
     // Passa ArrayBuffer para o loader
@@ -238,6 +245,7 @@ export async function gerarBufferPlanilha(
   colunas: string[],
   linhas: Record<string, unknown>[]
 ): Promise<Uint8Array> {
+  const ExcelJS = await carregarExcelJS();
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Sistema de Avaliação IFMS';
   workbook.created = new Date();

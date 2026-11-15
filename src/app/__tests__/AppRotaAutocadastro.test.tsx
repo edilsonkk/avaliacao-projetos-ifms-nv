@@ -17,8 +17,8 @@ vi.mock('@/lib/supabase', () => ({
 
 // Telas substituídas por marcadores: o teste é só do roteamento pela URL do QR Code.
 // O autocadastro expõe os dois caminhos de saída para o teste poder acioná-los.
+vi.mock('@/features/avaliacao/components/TelaAvaliador', () => ({ TelaAvaliador: () => <p>Tela do Avaliador</p> }));
 vi.mock('@/features/avaliacao', () => ({
-  TelaAvaliador: () => <p>Tela do Avaliador</p>,
   TelaAutocadastroAvaliador: ({ aoConcluir, aoVoltar }: { aoConcluir: () => void; aoVoltar: () => void }) => (
     <div>
       <p>Autocadastro</p>
@@ -31,12 +31,12 @@ vi.mock('@/features/avaliacao', () => ({
     </div>
   ),
 }));
-vi.mock('@/features/admin', () => ({ TelaAdmin: () => <p>Tela do Admin</p> }));
-vi.mock('@/features/staff', () => ({ TelaStaff: () => <p>Tela do Staff</p> }));
-vi.mock('@/features/relatorios', () => ({ TelaoAoVivo: () => <p>Telão</p> }));
+vi.mock('@/features/admin/components/TelaAdmin', () => ({ TelaAdmin: () => <p>Tela do Admin</p> }));
+vi.mock('@/features/staff/components/TelaStaff', () => ({ TelaStaff: () => <p>Tela do Staff</p> }));
+vi.mock('@/features/relatorios/components/TelaoAoVivo', () => ({ TelaoAoVivo: () => <p>Telão</p> }));
+vi.mock('@/features/auth/components/TelaRedefinirSenha', () => ({ TelaRedefinirSenha: () => <p>Tela de Redefinir Senha</p> }));
 vi.mock('@/features/auth', () => ({
   TelaLogin: () => <p>Tela de Login</p>,
-  TelaRedefinirSenha: () => <p>Tela de Redefinir Senha</p>,
   CAMINHO_REDEFINIR_SENHA: '/redefinir-senha',
   obterPerfilSessao: vi.fn(),
   lerPoliticaSeguranca: vi.fn(),
