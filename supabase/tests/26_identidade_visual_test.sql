@@ -48,7 +48,13 @@ INSERT INTO storage.objects (bucket_id, name, owner) VALUES
 -- Leitura: qualquer visitante
 -- ---------------------------------------------------------------------------
 SELECT pg_temp.como(NULL);
-SELECT is((SELECT count(*)::int FROM storage.objects WHERE bucket_id = 'identidade-visual'), 1,
+-- Conta só o objeto deste cenário, e não o bucket inteiro: no banco local de desenvolvimento o
+-- bucket já tem imagens enviadas de verdade pela tela, e a contagem absoluta fazia o teste falhar
+-- fora do CI (onde o banco nasce limpo). O que se afirma aqui é a leitura pelo `anon`.
+SELECT is(
+  (SELECT count(*)::int FROM storage.objects
+    WHERE bucket_id = 'identidade-visual'
+      AND name = 'eventos/e6000000-0000-0000-0000-000000000001/icone.png'), 1,
   'visitante lê o que está no bucket');
 
 -- ---------------------------------------------------------------------------
