@@ -251,7 +251,7 @@ export const ModelosQuestionario: React.FC<{
                   (confirmacao.modelo.is_original ? ' Este é um modelo original: dá para recriá-lo em "Restaurar originais".' : '')
                 : 'Os 7 modelos originais excluídos são recriados e os editados voltam ao texto original. Os modelos criados por você não mudam, nem as cópias nos eventos.'}
             </p>
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-wrap justify-end gap-3">
               <button
                 type="button"
                 onClick={() => set_confirmacao(null)}

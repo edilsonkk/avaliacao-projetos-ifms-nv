@@ -24,7 +24,8 @@ import { baixarPlanilhaModelo, lerPlanilhaParaJson, validarArquivoPlanilha } fro
 import { supabase } from '@/lib/supabase';
 import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { normalizarChave } from '@/lib/parsers/planilhaAvaliadoresParser';
-import { CabecalhoOrdenavel, compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { BarraDeAcoes, TabelaResponsiva, type ColunaTabela } from '@/components/ui';
 
 export interface UsuarioStaff {
   id_usuario: string;
@@ -387,6 +388,106 @@ export const GestorStaff: React.FC<{
   const totalStaffCredenciados = equipe_staff.filter((s) => s.is_credenciado).length;
   const direcao = ordemAscendente ? 'asc' : 'desc';
 
+  /** Colunas da equipe. A lista vira cartão no celular: a coluna de ações era a última de
+      uma tabela de 560px e ficava fora da área visível. */
+  const colunas_staff = useMemo<ColunaTabela<UsuarioStaff>[]>(
+    () => [
+      {
+        chave: 'is_credenciado',
+        rotulo: 'Credenciamento',
+        ordenavel: true,
+        renderizar: (usuario) =>
+          usuario.is_credenciado ? (
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 inline-flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" />
+              Credenciado
+            </span>
+          ) : (
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-300 dark:border-slate-700 inline-flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              Pendente
+            </span>
+          ),
+      },
+      {
+        chave: 'nome',
+        rotulo: 'Nome',
+        ordenavel: true,
+        className: 'font-bold text-slate-900 dark:text-white',
+        renderizar: (usuario) => usuario.nome,
+      },
+      {
+        chave: 'email',
+        rotulo: 'E-mail',
+        ordenavel: true,
+        className: 'font-mono text-slate-600 dark:text-slate-300 break-words',
+        renderizar: (usuario) => usuario.email,
+      },
+      {
+        chave: 'papel',
+        rotulo: 'Papel',
+        ordenavel: true,
+        renderizar: (usuario) => (
+          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+            {(usuario.papel || '').toUpperCase()}
+          </span>
+        ),
+      },
+      {
+        chave: 'acoes',
+        rotulo: 'Ações',
+        acoes: true,
+        renderizar: (usuario) => {
+          const processando = processando_credenciamento_id === usuario.id_usuario;
+          return (
+            <BarraDeAcoes alinhar="inicio" rotulo={`Ações de ${usuario.nome}`} className="sm:justify-end">
+              <button
+                type="button"
+                onClick={() => handle_toggle_credenciamento(usuario)}
+                disabled={processando || !idEvento}
+                aria-label={`${usuario.is_credenciado ? 'Descredenciar' : 'Credenciar'} ${usuario.nome}`}
+                className={`px-3 min-h-11 rounded-lg font-bold text-xs transition-all inline-flex items-center gap-1.5 ${
+                  usuario.is_credenciado
+                    ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600'
+                } disabled:opacity-50`}
+              >
+                {processando ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : usuario.is_credenciado ? (
+                  <UserX className="w-3.5 h-3.5" />
+                ) : (
+                  <UserCheck className="w-3.5 h-3.5" />
+                )}
+                <span>{usuario.is_credenciado ? 'Descredenciar' : 'Credenciar'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => set_usuario_em_edicao({ id_usuario: usuario.id_usuario, nome: usuario.nome, email: usuario.email })}
+                aria-label={`Editar ${usuario.nome}`}
+                title="Editar"
+                className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => set_staff_para_excluir(usuario)}
+                aria-label={`Excluir ${usuario.nome}`}
+                title="Excluir"
+                className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 text-red-600 dark:text-red-400 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </BarraDeAcoes>
+          );
+        },
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [processando_credenciamento_id, idEvento],
+  );
+
   return (
     <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 lg:p-8 border border-slate-200 dark:border-slate-700 shadow-sm space-y-6 font-sans w-full h-full overflow-y-auto">
       {mensagem_notificacao && (
@@ -602,89 +703,16 @@ export const GestorStaff: React.FC<{
       ) : (
         <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs min-w-[560px]">
-              <caption className="sr-only">Equipe Staff</caption>
-              <thead className="bg-slate-100 dark:bg-slate-900 uppercase font-black text-[10px] text-slate-600 dark:text-slate-400 tracking-wider">
-                <tr>
-                  <CabecalhoOrdenavel coluna="is_credenciado" rotulo="Credenciamento" ativa={colunaOrdenacao} direcao={direcao} aoOrdenar={alternarOrdenacao} />
-                  <CabecalhoOrdenavel coluna="nome" rotulo="Nome" ativa={colunaOrdenacao} direcao={direcao} aoOrdenar={alternarOrdenacao} />
-                  <CabecalhoOrdenavel coluna="email" rotulo="E-mail" ativa={colunaOrdenacao} direcao={direcao} aoOrdenar={alternarOrdenacao} />
-                  <CabecalhoOrdenavel coluna="papel" rotulo="Papel" ativa={colunaOrdenacao} direcao={direcao} aoOrdenar={alternarOrdenacao} />
-                  <th scope="col" className="px-4 py-3 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
-                {staff_ordenados.map((usuario) => {
-                  const processando = processando_credenciamento_id === usuario.id_usuario;
-                  return (
-                    <tr key={usuario.id_usuario} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                      <td className="px-4 py-3.5">
-                        {usuario.is_credenciado ? (
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 inline-flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" />
-                            Credenciado
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-300 dark:border-slate-700 inline-flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            Pendente
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5 font-bold text-slate-900 dark:text-white">{usuario.nome}</td>
-                      <td className="px-4 py-3.5 font-mono text-slate-600 dark:text-slate-300">{usuario.email}</td>
-                      <td className="px-4 py-3.5">
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                          {(usuario.papel || '').toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handle_toggle_credenciamento(usuario)}
-                            disabled={processando || !idEvento}
-                            aria-label={`${usuario.is_credenciado ? 'Descredenciar' : 'Credenciar'} ${usuario.nome}`}
-                            className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all inline-flex items-center gap-1.5 ${
-                              usuario.is_credenciado
-                                ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                                : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600'
-                            } disabled:opacity-50`}
-                          >
-                            {processando ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : usuario.is_credenciado ? (
-                              <UserX className="w-3.5 h-3.5" />
-                            ) : (
-                              <UserCheck className="w-3.5 h-3.5" />
-                            )}
-                            <span>{usuario.is_credenciado ? 'Descredenciar' : 'Credenciar'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => set_usuario_em_edicao({ id_usuario: usuario.id_usuario, nome: usuario.nome, email: usuario.email })}
-                            aria-label={`Editar ${usuario.nome}`}
-                            title="Editar"
-                            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => set_staff_para_excluir(usuario)}
-                            aria-label={`Excluir ${usuario.nome}`}
-                            title="Excluir"
-                            className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 text-red-600 dark:text-red-400 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <TabelaResponsiva<UsuarioStaff>
+              legenda="Equipe Staff"
+              linhas={staff_ordenados}
+              chaveLinha={(usuario) => usuario.id_usuario}
+              colunaOrdenacao={colunaOrdenacao}
+              direcao={direcao}
+              aoOrdenar={(coluna) => alternarOrdenacao(coluna as ColunaOrdenacaoStaff)}
+              larguraMinima="sm:min-w-[560px]"
+              colunas={colunas_staff}
+            />
           </div>
         </div>
       )}
@@ -710,7 +738,7 @@ export const GestorStaff: React.FC<{
               Ele perde o acesso ao painel do Staff em todos os eventos. A conta de login continua no Supabase, mas sem
               permissão; para apagá-la, use o painel do Supabase (Authentication).
             </p>
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-wrap justify-end gap-3">
               <button
                 type="button"
                 onClick={() => set_staff_para_excluir(null)}
@@ -790,7 +818,7 @@ export const GestorStaff: React.FC<{
                 </p>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-2">
+              <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => set_usuario_em_edicao(null)}
@@ -813,7 +841,7 @@ export const GestorStaff: React.FC<{
       )}
 
       {ao_fechar && (
-        <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-end">
+        <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-2 justify-end">
           <button
             type="button"
             onClick={ao_fechar}

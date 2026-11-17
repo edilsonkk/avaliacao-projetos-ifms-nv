@@ -135,7 +135,7 @@ describe('App - sessão confirmada pelo banco', () => {
     expect(await screen.findByText('Tela de Login')).toBeInTheDocument();
     expect(supabase.auth.signOut).toHaveBeenCalled();
     // O aviso é um diálogo da própria tela, não o alert() do navegador
-    expect(await screen.findByRole('dialog', { name: 'Sessão encerrada' })).toHaveTextContent(/30 minutos sem uso/);
+    expect(await screen.findByRole('alertdialog', { name: 'Sessão encerrada' })).toHaveTextContent(/30 minutos sem uso/);
     expect(alerta).not.toHaveBeenCalled();
     vi.useRealTimers();
     alerta.mockRestore();

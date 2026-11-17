@@ -48,6 +48,16 @@ Cota, avaliações, travas, média e quarentena **não são recontadas no navega
 sorteio. A **cota** é a do projeto (`cota_avaliacoes_customizada`) ou, se vazia, a padrão do evento; contam só
 avaliações ativas (não canceladas) e **de nota técnica** — voto popular não ocupa cota nem muda a cor do estande.
 
+**Filtros de status** são **predicados**, não os mesmos estados exclusivos das cores: `Não Credenciado` = sem
+check-in; `Credenciado` = **todo** projeto com check-in, inclusive os já avaliados; `Faltando Avaliações` = com
+check-in e menos avaliações que a cota (zero incluído); `Avaliado` = avaliações `>=` cota. Os conjuntos se
+sobrepõem de propósito (`atendeFiltroStatus`, em `src/features/projetos/components/MapaEstandes.tsx`), e o número
+no botão é contado pela mesma regra que o filtro aplica. Antes filtro e cor eram a mesma coisa, e um projeto
+presente com 1 de 3 notas não aparecia nem em "Credenciado" nem em "Avaliado".
+
+Se `fn_projetos_situacao` não responder (ela exige Admin e devolve vazio sem `p_id_evento`), a tela **avisa** em vez
+de mostrar todo mundo com zero avaliação e a cota padrão.
+
 Indicadores extras: ícone pulsante de **trava ativa** (só travas técnicas não vencidas: as vencidas só são apagadas
 no próximo sorteio, e a trava de um votante não trava o estande), **quarentena** (a mesma lista pendente da tela
 Quarentena, `view_projetos_quarentena`: projeto resolvido deixa de aparecer) e etiqueta **Fora da competição**.

@@ -133,7 +133,7 @@ export const PainelAuditoria: React.FC<PropriedadesPainelAuditoria> = ({ id_even
   );
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-painel border border-borda bg-superficie shadow-painel">
+    <div className="flex h-full flex-col overflow-hidden rounded-painel border border-borda bg-superficie shadow-painel print:h-auto print:overflow-visible print:rounded-none print:border-0 print:shadow-none print:static print:block">
       <header className="flex items-start justify-between gap-3 border-b border-borda p-5">
         <div>
           <h2 className="flex items-center gap-2 text-titulo-3 font-bold text-texto">

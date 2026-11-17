@@ -195,8 +195,10 @@ SELECT is((SELECT count(*)::int FROM public.fn_relatorio_voto_popular_completo('
 -- A marca não muda depois de usada, e a conferência não acusa o voto popular
 -- ---------------------------------------------------------------------------
 SELECT pg_temp.como('d3100000-0000-0000-0000-0000000000ad');
+-- P0001, e não 42501: é regra de negócio, não falta de permissão. Com 42501 o front
+-- traduzia a recusa como "sessão expirada" e escondia o motivo real (20261116020000).
 SELECT throws_ok($$ SELECT public.admin_marcar_questionario_voto_popular('a3100000-0000-0000-0000-0000000000bb', false) $$,
-  '42501', NULL, 'Questionário já usado não troca de marca (reclassificaria notas lançadas)');
+  'P0001', NULL, 'Questionário já usado não troca de marca (reclassificaria notas lançadas)');
 
 SELECT is((SELECT count(*)::int FROM public.fn_auditar_notas('e3100000-0000-0000-0000-000000000001')
            WHERE codigo IN ('C6', 'C8', 'C3', 'C4', 'C5')), 0,

@@ -68,7 +68,11 @@ Regras comuns:
 
 ## Impressão em PDF
 
-Botão **Imprimir PDF** em todas as abas (`window.print()`).
+Botão **Imprimir PDF** em todas as abas (`window.print()`). O CSS de isolamento vem de `src/lib/cssImpressao.ts`,
+compartilhado com a [folha de conferência](auditoria-de-notas.md#folha-de-conferência-pdf): esconde tudo por
+`visibility`, revela a raiz e seus descendentes e tira a raiz do fluxo. Isolar com
+`body > *:not(#raiz) { display: none }` **não** funciona — a raiz mora dentro de `#root`, e a regra escondia o
+ancestral dela.
 
 - Página: Indicadores em **A4 paisagem** (margem 8 mm); demais abas em **A4 retrato** (10 mm), via `@page` dinâmico.
 - Imprime **100% dos registros do evento**, ignorando a busca da tela e mantendo a ordenação escolhida (listas
@@ -131,8 +135,12 @@ hora em que a tela volta do segundo plano. O Telão **não** mostra o ranking (a
   contado em `votantes_credenciados`. Nos Indicadores do Admin vale o mesmo: o card "Avaliadores técnicos" exclui
   votante, que aparece numa linha própria com o total de credenciados.
 
-- Sempre o **evento ativo do banco** (não um id guardado no navegador). O título é o nome (e a edição) do evento; sem
-  evento ativo, "Nenhum evento ativo".
+- Sempre o **evento ativo do banco** (não um id guardado no navegador). O título é **só o nome** do evento; sem
+  evento ativo, "Nenhum evento ativo". A edição ficou fora: ela guardava o texto de preenchimento gravado na criação
+  do evento, e a projeção anunciava "<evento> — Nova Edição" na parede.
+- **A faixa do topo não aparece no Telão** (`App.tsx` só renderiza o `Cabecalho` fora dessa rota). O Telão abre em aba
+  nova no mesmo navegador do Admin, e o papel vem do `localStorage`: Staff, Admin, tema e tamanho de texto iam para a
+  projeção.
 - **Meta global**: soma da cota de cada projeto **presente** (check-in feito) e **na competição**, usando a cota do
   projeto ou a padrão do evento. **Concluídas**: avaliações não canceladas desses projetos, no máximo a cota de cada um
   (avaliação extra não infla o progresso). **Em andamento**: travas não vencidas do evento (o card mostra todas; na

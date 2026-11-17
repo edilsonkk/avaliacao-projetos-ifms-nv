@@ -534,7 +534,16 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
               </p>
             </div>
           ) : (
-            <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-x-auto shadow-xs">
+            /* Contêiner de rolagem focável: sem `tabIndex`, quem usa só o teclado não alcança
+               o que ficou à direita numa tabela de 900px (WCAG 2.1.1). Esta lista continua
+               tabela também no celular — tem tabela aninhada no detalhe dos critérios, e a
+               reflow para cartões não cabe aqui. */
+            <div
+              role="region"
+              aria-label="Avaliações registradas no evento"
+              tabIndex={0}
+              className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-x-auto shadow-xs"
+            >
               <table className="w-full text-left text-xs min-w-[900px]">
                 <thead className="bg-slate-100 dark:bg-slate-800/80 uppercase font-black text-[10px] text-slate-600 dark:text-slate-400 tracking-wider">
                   <tr>
@@ -817,7 +826,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
         </div>
 
         {/* Rodapé com Fechamento */}
-        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end bg-slate-50/50 dark:bg-slate-900/50">
+        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2 justify-end bg-slate-50/50 dark:bg-slate-900/50">
           <button
             type="button"
             onClick={ao_fechar}
@@ -947,7 +956,7 @@ export const ModalExclusaoAvaliacao: React.FC<ModalExclusaoAvaliacaoProps> = ({
                 )}
               </p>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex flex-wrap justify-end gap-2 pt-2">
                 <button
                   type="button"
                   disabled={processandoAcao}

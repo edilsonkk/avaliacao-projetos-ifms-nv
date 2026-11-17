@@ -89,13 +89,23 @@ describe('TelaoAoVivo', () => {
     await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith('fn_telao_resumo', { p_id_evento: null }));
   });
 
-  it('deve mostrar o nome do evento em vez de um título fixo', async () => {
+  it('deve mostrar só o nome do evento no cabeçalho, sem a edição', async () => {
     // Arrange / Act
     render(<TelaoAoVivo />);
 
-    // Assert
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Feira de Ciências — 12ª edição');
+    // Assert: a edição não vai para a parede. Em produção ela guardava o texto de
+    // preenchimento "Nova Edição", e a projeção anunciava "<evento> — Nova Edição".
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Feira de Ciências');
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveTextContent('12ª edição');
     expect(screen.queryByText(/FETEC MS 2026/)).not.toBeInTheDocument();
+  });
+
+  it('deve dizer que o voto popular corre por fora da avaliação técnica', async () => {
+    // Arrange / Act
+    render(<TelaoAoVivo />);
+
+    // Assert: quem olha de longe não deve somar os dois blocos de cabeça
+    expect(await screen.findByText(/fora da avaliação técnica/i)).toBeInTheDocument();
   });
 
   it('deve calcular o progresso sobre a meta do banco e mostrar a quarentena real', async () => {

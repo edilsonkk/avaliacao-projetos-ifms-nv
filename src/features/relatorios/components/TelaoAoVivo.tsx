@@ -158,10 +158,13 @@ export const TelaoAoVivo: React.FC = () => {
       ? `Começa às ${resumo.horario_inicio?.slice(0, 5)}`
       : `${String(Math.floor(minutos_decorridos / 60)).padStart(2, '0')}h ${String(minutos_decorridos % 60).padStart(2, '0')}min`;
 
+  /**
+   * Só o nome do evento. A edição ficava concatenada aqui, e como o cadastro de evento
+   * gravava "Nova Edição" quando o campo ficava vazio, a projeção anunciava
+   * "<nome do evento> — Nova Edição" na parede da feira.
+   */
   const titulo_evento = resumo.nome_evento
-    ? resumo.edicao && !resumo.nome_evento.toLowerCase().includes(resumo.edicao.toLowerCase())
-      ? `${resumo.nome_evento} — ${resumo.edicao}`
-      : resumo.nome_evento
+    ? resumo.nome_evento
     : ultima_atualizacao
     ? 'Nenhum evento ativo'
     : 'Telão ao Vivo';
@@ -196,7 +199,7 @@ export const TelaoAoVivo: React.FC = () => {
 
         <div className="flex items-center gap-4 bg-slate-100 dark:bg-slate-900/80 px-6 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 shrink-0">
           <div className="text-right">
-            <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 flex items-center justify-end gap-1 uppercase tracking-wider">
+            <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 flex flex-wrap items-center justify-end gap-1 uppercase tracking-wider">
               <Trophy className="w-4 h-4" aria-hidden="true" /> Monitoramento ao vivo
             </span>
             <span className="text-sm font-bold text-slate-600 dark:text-slate-300 block">
@@ -231,6 +234,9 @@ export const TelaoAoVivo: React.FC = () => {
               <span className="text-xs font-bold uppercase tracking-wider">Voto Popular</span>
               <Heart className="w-6 h-6" aria-hidden="true" />
             </div>
+            <p className="text-xs font-semibold text-fuchsia-700 dark:text-fuchsia-300">
+              Contagem por fora da avaliação técnica
+            </p>
             <div className="text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
               {resumo.votos_populares}
             </div>

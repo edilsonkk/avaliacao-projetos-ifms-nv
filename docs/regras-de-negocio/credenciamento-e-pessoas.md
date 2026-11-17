@@ -51,6 +51,10 @@ evento ativo, a tela avisa e não deixa cadastrar nem importar.
 **Credenciar/Descredenciar** grava em `avaliadores_evento.is_credenciado` do evento ativo. O status vem sempre do
 banco; erro do banco aparece na tela e o status não muda.
 
+**Aparelho** (Parear / Vinculado) abre o mesmo `PainelAparelhoAvaliador` da Tela do Staff, com a situação do celular
+vinda de `fn_situacao_vinculos`. As RPCs de vínculo usam `exigir_staff_ou_admin()`, então o Admin já tinha permissão
+no banco — faltava o botão no painel dele.
+
 **Cadastro e importação** (`admin_salvar_avaliadores`, uma transação): nome, e-mail, instituição, modalidades
 bloqueadas e áreas. Se o e-mail já existe como avaliador, a pessoa é inscrita no evento (e o nome é atualizado). Se o
 e-mail é de um Admin ou Staff, a linha é ignorada e o motivo aparece; a conta nunca é rebaixada. Importação: ver
@@ -87,7 +91,7 @@ com ordenação em todas as colunas. `Confirmar Check-in` / `Cancelar Check-in` 
 hora.
 
 **Credenciar Avaliadores**: mesma tabela do Gestor de Avaliadores, com estas diferenças:
-- Ações: `Credenciar` / `Bloquear`, `Aparelho` (Parear/Vinculado) e `Editar` (lápis).
+- Ações: `Credenciar` / `Bloquear`, `Aparelho` (Parear/Vinculado) e `Editar` (lápis) — as mesmas do Admin.
 - **Sem botão de excluir**: o Staff não pode apagar usuários.
 - Sem botão "+ Novo Avaliador": o cadastro na recepção é feito por autocadastro.
 

@@ -29,6 +29,10 @@ describe('cabeçalhos de segurança do site', () => {
     expect(csp['base-uri']).toEqual(["'self'"]);
     expect(csp['form-action']).toEqual(["'self'"]);
     expect(csp['connect-src']).toEqual(expect.arrayContaining(["'self'", 'https://*.supabase.co']));
+    // A identidade visual do evento (ícone e imagem) fica no Storage do Supabase, em outra origem.
+    // Sem o domínio aqui, o navegador bloqueia a imagem e o favicon só em produção (o Vite não
+    // envia CSP) — foi exatamente o defeito relatado: logo e ícone não carregavam no site publicado.
+    expect(csp['img-src']).toEqual(expect.arrayContaining(["'self'", 'data:', 'blob:', 'https://*.supabase.co']));
   });
 
   it('tem os demais cabeçalhos de proteção', () => {

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ModalConfiguracoesEvento } from '@/features/admin';
@@ -7,7 +7,12 @@ import { ProvedorAvisos } from '@/components/ui';
 import { ProvedorIdentidadeVisual } from '@/components/layout/IdentidadeVisual';
 
 vi.mock('@/lib/supabase', () => ({
-  supabase: { from: vi.fn(), rpc: vi.fn() },
+  // `auth.getSession`: finalizar o evento é escrita de Admin e passa por garantirSessaoAdmin()
+  supabase: {
+    from: vi.fn(),
+    rpc: vi.fn(),
+    auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'jwt' } }, error: null }) },
+  },
   verificar_conexao_configurada: () => true,
 }));
 
@@ -28,6 +33,7 @@ const eventoGravado = {
   max_tentativas_codigo: 4,
   metodos_vinculo: 'pareamento',
   fixar_questionario_primeira_avaliacao: false,
+  edicao: 'Nova Edição',
 };
 
 let updates: Record<string, unknown>[] = [];
@@ -178,11 +184,80 @@ describe('ModalConfiguracoesEvento - acesso dos avaliadores', () => {
     await screen.findByLabelText(/tamanho dos códigos/i);
     await screen.findByRole('checkbox', { name: /exigir segundo fator/i });
 
-    // Assert: 8 campos do evento (inclui a trava do questionário) + 5 de acesso
-    // + 2 de segurança das contas + zona de perigo
+    // Assert: 9 campos do evento (inclui a trava do questionário e a edição) + 5 de acesso
+    // + 2 de segurança das contas + finalizar evento + zona de perigo
     const dicas = screen.getAllByRole('button', { name: /mais informações/i });
-    expect(dicas).toHaveLength(16);
+    expect(dicas).toHaveLength(18);
     dicas.forEach((d) => expect(d).toHaveAccessibleDescription(/.{30,}/));
+  });
+
+  /**
+   * O cadastro de evento gravava "Nova Edição" quando o campo ficava vazio, e não havia
+   * campo nenhum nas Configurações para corrigir depois — o texto de preenchimento ia
+   * para a parede no Telão. Agora o campo existe e vazio grava nulo.
+   */
+  it('deve carregar a edição gravada e permitir limpá-la', async () => {
+    // Arrange
+    renderizar();
+    const campo = await screen.findByLabelText(/edição/i);
+    expect(campo).toHaveValue('Nova Edição');
+
+    // Act
+    await userEvent.clear(campo);
+    await userEvent.click(screen.getByRole('button', { name: /salvar configurações/i }));
+
+    // Assert
+    await waitFor(() => expect(updates.length).toBeGreaterThan(0));
+    expect(updates[0]).toMatchObject({ edicao: null });
+  });
+
+  /**
+   * Encerrar a feira era desmarcar "Sistema liberado para avaliadores" — o mesmo campo
+   * usado para pausar. Pausar não pode soltar os avaliadores (o celular deles só volta
+   * pelo Staff), então encerrar ganhou ação própria, com confirmação que diz quantas
+   * avaliações estão em andamento naquele instante.
+   */
+  describe('finalizar evento', () => {
+    it('deve avisar quantos estão em andamento e só finalizar após confirmação', async () => {
+      // Arrange
+      vi.mocked(supabase.rpc).mockImplementation(((funcao: string) => {
+        if (funcao === 'fn_telao_resumo') {
+          return Promise.resolve({ data: { avaliacoes_em_andamento: 2 }, error: null });
+        }
+        return Promise.resolve({ data: { ok: true, travas_liberadas: 2, aparelhos_desvinculados: 5 }, error: null });
+      }) as never);
+      renderizar();
+
+      // Act
+      await userEvent.click(await screen.findByRole('button', { name: /finalizar evento/i }));
+
+      // Assert: nada acontece antes da confirmação
+      const dialogo = await screen.findByRole('alertdialog', { name: /finalizar o evento/i });
+      expect(dialogo).toHaveTextContent(/2 avaliaç/i);
+      expect(dialogo).toHaveTextContent(/parear/i);
+      expect(vi.mocked(supabase.rpc).mock.calls.filter((c) => c[0] === 'admin_finalizar_evento')).toHaveLength(0);
+
+      // Act
+      await userEvent.click(within(dialogo).getByRole('button', { name: /finalizar evento/i }));
+
+      // Assert
+      await waitFor(() =>
+        expect(supabase.rpc).toHaveBeenCalledWith('admin_finalizar_evento', { p_id_evento: ID_EVENTO }),
+      );
+    });
+
+    it('não deve finalizar se a confirmação for recusada', async () => {
+      // Arrange
+      renderizar();
+      await userEvent.click(await screen.findByRole('button', { name: /finalizar evento/i }));
+      const dialogo = await screen.findByRole('alertdialog', { name: /finalizar o evento/i });
+
+      // Act
+      await userEvent.click(within(dialogo).getByRole('button', { name: /continuar/i }));
+
+      // Assert
+      expect(vi.mocked(supabase.rpc).mock.calls.filter((c) => c[0] === 'admin_finalizar_evento')).toHaveLength(0);
+    });
   });
 
   it('deve abrir como diálogo nomeado e fechar pelo botão', async () => {
