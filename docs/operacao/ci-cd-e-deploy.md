@@ -22,6 +22,7 @@ manual ───────────► deploy-frontend.yml (rollback para u
 | `supabase-migrations.yml` | PR com migrations (validação); chamado pelo release; manual | Validação, backup e `supabase db push` |
 | `deploy-frontend.yml` | Chamado pelo release; manual (rollback) | Lint, testes, build da tag e publicação no Firebase Hosting |
 | `backup-banco.yml` | Manual | Backup criptografado de produção, sem alterar nada (não é bloqueado pelo congelamento) |
+| `dependabot-automerge.yml` | PR do Dependabot | Liga o auto-merge quando a atualização não é major ([abaixo](#dependências-dependabot)) |
 
 ## Como uma versão é publicada
 
@@ -205,6 +206,24 @@ Criar (uma vez, na conta `edilsonkk`):
 O repositório tem *auto-merge* habilitado. PRs de código marcados com
 `gh pr merge <n> --auto --squash --delete-branch` são mergeados sozinhos quando os checks obrigatórios passam.
 **PRs de release não usam auto-merge**: publicar em produção é sempre uma decisão manual.
+
+### Dependências (Dependabot)
+
+`dependabot-automerge.yml` marca o auto-merge sozinho nos PRs do Dependabot, **exceto major**. Quem mergeia
+continua sendo o GitHub, e só com os quatro checks obrigatórios verdes — o workflow não mergeia nada por conta
+própria, só aperta o botão. `update-type` do `fetch-metadata` é a *maior* mudança semver do PR, então um PR de
+grupo que traga um major dentro também fica para revisão manual.
+
+Dois efeitos que valem saber:
+
+- **O merge é feito com o `GITHUB_TOKEN`**, e push com esse token não dispara outros workflows: `ci.yml` e
+  `release.yml` não rodam na `main` depois desses merges. Não se perde nada — `chore` é tipo oculto no
+  release-please ("No user facing commits found … skipping", nenhuma versão sai de bump de dependência), e os
+  testes já rodaram no PR. A versão nova entra em produção no próximo release com `feat`/`fix`.
+- **Conflito de `package-lock.json` entre dois PRs abertos** (um major fora do grupo `menores` e o grupo) não
+  mergeia escondido: o auto-merge fica pendente até o Dependabot rebasear o PR perdedor. Se ele não rebasear,
+  atualize a branch à mão e **regenere o lock** com `npm install` a partir do lock da `main` — não resolva o
+  conflito do lock linha a linha.
 
 ## Segurança
 
