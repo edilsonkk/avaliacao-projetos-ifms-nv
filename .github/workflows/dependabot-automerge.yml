@@ -1,0 +1,48 @@
+name: Auto-merge do Dependabot
+
+# Liga o auto-merge nos PRs do Dependabot. Quem mergeia é o GitHub, e só depois que os checks
+# obrigatórios do ruleset da `main` passam (Vitest+lint, migrations, pgTAP, CodeQL) — este workflow
+# apenas marca o PR. Atualização **major** fica de fora: alguém olha antes.
+# Guia: docs/operacao/ci-cd-e-deploy.md#merge-automático
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+# Runs disparadas pelo Dependabot recebem token de leitura quando o workflow não declara
+# permissões; estas duas são o que o `gh pr merge --auto` precisa (receita da documentação do
+# GitHub, "Automating Dependabot with GitHub Actions").
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  automerge:
+    name: Marcar para auto-merge
+    # `user.login`, e não `github.actor`: quem reabre o PR na mão vira o actor, o autor não muda.
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'edilsonkk/avaliacao-projetos-ifms-nv'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ler os metadados da atualização
+        id: dados
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # `update-type` é a **maior** mudança semver do PR, então um PR de grupo (`menores`,
+      # `acoes`) com um major dentro também fica para revisão manual.
+      - name: Ligar o auto-merge (patch e minor)
+        if: steps.dados.outputs.update-type != 'version-update:semver-major'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash --delete-branch "$PR_URL"
+
+      - name: Major fica para revisão manual
+        if: steps.dados.outputs.update-type == 'version-update:semver-major'
+        run: |
+          echo "::notice::Atualização major (${{ steps.dados.outputs.dependency-names }}: ${{ steps.dados.outputs.previous-version }} → ${{ steps.dados.outputs.new-version }}). Sem auto-merge: revise e mergeie à mão."
