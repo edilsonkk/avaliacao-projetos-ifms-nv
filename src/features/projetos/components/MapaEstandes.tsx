@@ -30,6 +30,33 @@ import { compararNatural } from '@/components/ui/CabecalhoOrdenavel';
 
 export type StatusProjetoMapa = 'nao_credenciado' | 'credenciado' | 'faltando' | 'avaliado';
 
+/** O que o filtro precisa saber de um projeto. Menos que `ProjetoMapItem`, para ser testável. */
+export interface SituacaoFiltro {
+  is_check_in_realizado: boolean;
+  qtd_avaliacoes: number;
+  cota: number;
+}
+
+/**
+ * O filtro de status é **predicado**, não estado exclusivo — ao contrário da cor do cartão.
+ *
+ * Antes os dois eram a mesma coisa (`status_mapa === filtro`): "Credenciado" trazia só quem
+ * tinha check-in e **zero** avaliações, e "Avaliado" só a cota cheia. Um projeto presente com
+ * 1 de 3 notas caía em "Faltando" e não aparecia em nenhum dos dois, de modo que filtrar
+ * "Credenciado" parecia não listar os credenciados.
+ *
+ * Agora: credenciado é ter check-in; faltando é ter check-in e menos notas que a cota (zero
+ * incluído); avaliado é ter batido a cota. Os conjuntos se sobrepõem de propósito.
+ */
+export const atendeFiltroStatus = (projeto: SituacaoFiltro, filtro: StatusProjetoMapa | 'todos'): boolean => {
+  if (filtro === 'todos') return true;
+  if (filtro === 'nao_credenciado') return !projeto.is_check_in_realizado;
+  if (!projeto.is_check_in_realizado) return false;
+  if (filtro === 'credenciado') return true;
+  if (filtro === 'faltando') return projeto.qtd_avaliacoes < projeto.cota;
+  return projeto.qtd_avaliacoes >= projeto.cota;
+};
+
 /** Uma linha de `fn_projetos_situacao`: a conta de cota, vagas, média e quarentena feita no banco. */
 interface SituacaoProjeto {
   id_projeto: string;
@@ -167,6 +194,17 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
         situacao.map((s) => [s.id_projeto, s])
       );
 
+      // `fn_projetos_situacao` exige Admin e devolve vazio quando `p_id_evento` chega nulo.
+      // Sem erro lançado, cada projeto cairia no `?? 0` e ficaria com zero avaliação e a cota
+      // padrão: "Avaliado" e "Faltando" zerados, sem nada na tela dizendo que a conta do banco
+      // não chegou. Melhor avisar do que mostrar número errado com cara de certo.
+      if (projetosData.length > 0 && situacao.length === 0) {
+        set_mensagem_erro(
+          'Não foi possível ler a situação dos projetos no banco (cota, avaliações e quarentena). ' +
+            'Os números abaixo estão incompletos — recarregue e, se persistir, entre de novo como Admin.',
+        );
+      }
+
       const processados: ProjetoMapItem[] = projetosData.map((p) => {
         const s = mapaSituacao.get(p.id_projeto);
         const notasDoProjeto = (s?.notas_tecnicas || []).map((n) => Number(n));
@@ -294,8 +332,7 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
         (e.codigo_projeto && e.codigo_projeto.toLowerCase().includes(t)) ||
         (e.nome_instituicao && e.nome_instituicao.toLowerCase().includes(t));
 
-      const atendeStatus =
-        filtro_status === 'todos' || e.status_mapa === filtro_status;
+      const atendeStatus = atendeFiltroStatus(e, filtro_status);
 
       return atendeBusca && atendeStatus;
     });
@@ -332,10 +369,11 @@ export const MapaEstandes: React.FC<MapaEstandesProps> = ({
   }, [projetos_map, termo_busca, filtro_status]);
 
   // Contadores para as legendas
-  const totalNaoCredenciados = useMemo(() => projetos_map.filter((e) => e.status_mapa === 'nao_credenciado').length, [projetos_map]);
-  const totalCredenciados = useMemo(() => projetos_map.filter((e) => e.status_mapa === 'credenciado').length, [projetos_map]);
-  const totalFaltando = useMemo(() => projetos_map.filter((e) => e.status_mapa === 'faltando').length, [projetos_map]);
-  const totalAvaliados = useMemo(() => projetos_map.filter((e) => e.status_mapa === 'avaliado').length, [projetos_map]);
+  // Contadores pela MESMA regra do filtro: o número no botão tem de bater com o que ele lista
+  const totalNaoCredenciados = useMemo(() => projetos_map.filter((e) => atendeFiltroStatus(e, 'nao_credenciado')).length, [projetos_map]);
+  const totalCredenciados = useMemo(() => projetos_map.filter((e) => atendeFiltroStatus(e, 'credenciado')).length, [projetos_map]);
+  const totalFaltando = useMemo(() => projetos_map.filter((e) => atendeFiltroStatus(e, 'faltando')).length, [projetos_map]);
+  const totalAvaliados = useMemo(() => projetos_map.filter((e) => atendeFiltroStatus(e, 'avaliado')).length, [projetos_map]);
 
   const containerClasses = modo_fullscreen
     ? 'fixed inset-0 z-[60] w-screen h-screen rounded-none p-4 sm:p-6 bg-white dark:bg-slate-900 overflow-hidden flex flex-col font-sans'

@@ -409,7 +409,7 @@ describe('Auditoria e Testes da Janela Temporal de Avaliação e Fila Vazia na T
       });
 
       // O resultado aparece em diálogo da própria tela, não no alert() do navegador
-      const confirmacao = await screen.findByRole('dialog', { name: 'Avaliação enviada' });
+      const confirmacao = await screen.findByRole('alertdialog', { name: 'Avaliação enviada' });
       expect(confirmacao).toHaveTextContent(/A nota foi gravada e a trava do projeto foi liberada\./);
       expect(within(confirmacao).getByRole('button', { name: 'Entendi' })).toHaveFocus();
     });

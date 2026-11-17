@@ -61,6 +61,13 @@ const mockarBanco = () => {
 };
 
 const chamadasDe = (tabela: string, metodo: string) => chamadas.filter((c) => c.tabela === tabela && c.metodo === metodo);
+
+/**
+ * Chamadas de uma RPC específica. A tela lê `fn_situacao_vinculos` sozinha (situação do
+ * celular de cada avaliador), então contar todas as chamadas de `rpc` não distingue mais
+ * leitura de escrita.
+ */
+const chamadasRpc = (nome: string) => vi.mocked(supabase.rpc).mock.calls.filter((c) => c[0] === nome);
 const linhaDe = (nome: string) => screen.getByText(nome).closest('tr')!;
 
 const renderizar = (props: Partial<React.ComponentProps<typeof GestorAvaliadores>> = {}) =>
@@ -233,6 +240,50 @@ describe('GestorAvaliadores', () => {
     });
   });
 
+  /**
+   * O painel de pareamento existia só na Tela do Staff, embora `fn_parear_dispositivo`,
+   * `fn_gerar_codigo_acesso` e `fn_desvincular_dispositivo` usem `exigir_staff_ou_admin()`:
+   * o Admin já tinha permissão no banco e não tinha o botão.
+   */
+  describe('aparelho do avaliador', () => {
+    it('deve oferecer o pareamento ao Admin, com a situação de cada celular', async () => {
+      // Arrange
+      vi.mocked(supabase.rpc).mockImplementation(((funcao: string) => {
+        if (funcao === 'fn_situacao_vinculos') {
+          return Promise.resolve({
+            data: [
+              { id_usuario: 'u-ana', aparelho_vinculado: true },
+              { id_usuario: 'u-bruno', aparelho_vinculado: false },
+            ],
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: { sucesso: true }, error: null });
+      }) as never);
+
+      // Act
+      renderizar();
+
+      // Assert
+      expect(await screen.findByRole('button', { name: 'Aparelho vinculado de Ana Credenciada' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Parear aparelho de Bruno Pendente' })).toBeInTheDocument();
+      expect(chamadasRpc('fn_situacao_vinculos')[0][1]).toEqual({ p_id_evento: ID_EVENTO });
+    });
+
+    it('deve abrir o painel do aparelho da pessoa escolhida', async () => {
+      // Arrange
+      const user = userEvent.setup();
+      renderizar();
+      await screen.findByText('Bruno Pendente');
+
+      // Act
+      await user.click(screen.getByRole('button', { name: 'Parear aparelho de Bruno Pendente' }));
+
+      // Assert
+      expect(await screen.findByRole('dialog', { name: /aparelho de bruno pendente/i })).toBeInTheDocument();
+    });
+  });
+
   describe('remover', () => {
     it('deve pedir confirmação e remover só do evento, sem apagar o usuário', async () => {
       // Arrange
@@ -246,7 +297,7 @@ describe('GestorAvaliadores', () => {
 
       // Assert: nada é feito antes de confirmar
       const dialogo = screen.getByRole('alertdialog', { name: 'Remover Bruno Pendente deste evento?' });
-      expect(supabase.rpc).not.toHaveBeenCalled();
+      expect(chamadasRpc('admin_remover_avaliador_evento')).toHaveLength(0);
 
       // Act
       await user.click(within(dialogo).getByRole('button', { name: /remover do evento/i }));
@@ -424,9 +475,8 @@ describe('GestorAvaliadores', () => {
       await user.upload(screen.getByLabelText('Arquivo de avaliadores (.xlsx ou .csv)'), arquivo);
 
       // Assert
-      await waitFor(() => expect(supabase.rpc).toHaveBeenCalledTimes(1));
-      const [funcao, args] = vi.mocked(supabase.rpc).mock.calls[0] as [string, { p_itens: { email: string; id_instituicao: string }[] }];
-      expect(funcao).toBe('admin_salvar_avaliadores');
+      await waitFor(() => expect(chamadasRpc('admin_salvar_avaliadores')).toHaveLength(1));
+      const [, args] = chamadasRpc('admin_salvar_avaliadores')[0] as [string, { p_itens: { email: string; id_instituicao: string }[] }];
       expect(args.p_itens.map((i) => i.email)).toEqual(['diego@ifms.edu.br', 'staff@ifms.edu.br']);
       expect(args.p_itens[0].id_instituicao).toBe('inst-1');
       expect(chamadasDe('usuarios', 'upsert')).toHaveLength(0);

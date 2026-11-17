@@ -68,6 +68,23 @@ o julgamento do público, à parte da avaliação técnica. As notas dele:
 
 Quem decide é a **marca do questionário**, não o avaliador: cada avaliação copia a marca ao ser
 gravada (`avaliacoes.is_voto_popular`, por trigger), e a marca não pode mudar depois do primeiro uso.
+
+### Marca que nasceu errada
+
+Se o questionário de voto popular foi criado **sem** a marca, os votos dados com ele nascem como nota técnica —
+por construção, já que a avaliação copia a marca do questionário. O efeito é duplo e confunde: o relatório
+"Voto Popular" fica vazio **e** os votos entram na média técnica, na cota e nos contadores do Telão.
+
+Corrigir isso era impossível: a marca não mudava porque já havia avaliações, e as avaliações só mudariam se a
+marca mudasse. O **botão de reclassificar** (Gestor de Questionários, aparece só quando o questionário já tem
+avaliação) quebra esse laço com `admin_reclassificar_questionario_voto_popular`: troca a marca do questionário e
+reclassifica as avaliações dele na mesma transação, registrando as contagens na
+[trilha](auditoria-de-notas.md#trilha-de-auditoria-log_auditoria). A confirmação avisa que médias de projeto vão
+mudar — é operação de correção, não caminho comum.
+
+> A recusa de `admin_marcar_questionario_voto_popular` (questionário já usado) usa `P0001`, não `42501`. Com
+> `42501` o front a traduzia como "sessão de administrador expirada" (é o código que `isErroPermissaoRls()`
+> reconhece), escondia o motivo real e pedia um login que não resolvia nada.
 Ver [ADR 0016](../decisoes/0016-voto-popular-separado-e-media-bayesiana.md).
 
 **Quem vota:** o Admin vincula o avaliador ao questionário de voto popular no Gestor de Avaliadores

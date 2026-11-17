@@ -29,7 +29,8 @@ import { parsePlanilhaProjetos } from '@/lib/parsers/planilhaProjetosParser';
 import { ModalDeParaMapping, ItemMapeamentoDePara, DecisaoMapeamento } from '@/components/importacao/ModalDeParaMapping';
 import { buscarMelhorCorrespondencia, CandidatoMatch } from '@/lib/parsers/fuzzyMatcher';
 import { normalizarAreaTematica } from '@/lib/parsers/areasTematicasNormalizer';
-import { CabecalhoOrdenavel, compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { BarraDeAcoes, TabelaResponsiva, type ColunaTabela } from '@/components/ui';
 
 export interface ProjetoItem {
   id_projeto: string;
@@ -1135,6 +1136,200 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
     );
   });
 
+  /** Colunas dos projetos. Vira cartão no celular, com Check-in e Priorizar alcançáveis. */
+  const colunas_projetos = useMemo<ColunaTabela<ProjetoItem>[]>(
+    () => [
+      {
+        chave: 'codigo',
+        rotulo: 'Código',
+        ordenavel: true,
+        className: 'font-mono font-bold text-slate-700 dark:text-slate-300 sm:whitespace-nowrap',
+        // Nunca o UUID na interface (regra 6 do AGENTS.md)
+        renderizar: (p) => p.codigo_projeto || 'N/I',
+      },
+      {
+        chave: 'corredor',
+        rotulo: 'Corredor',
+        ordenavel: true,
+        className: 'font-semibold text-teal-600 dark:text-teal-400 sm:whitespace-nowrap',
+        renderizar: (p) => p.corredor || '-',
+      },
+      {
+        chave: 'estande',
+        rotulo: 'Estande',
+        ordenavel: true,
+        className: 'font-mono font-bold text-emerald-600 dark:text-emerald-400 sm:whitespace-nowrap',
+        renderizar: (p) => p.estande || '-',
+      },
+      {
+        chave: 'presenca',
+        rotulo: 'Presença',
+        ordenavel: true,
+        className: 'sm:whitespace-nowrap',
+        renderizar: (p) => (
+          <span
+            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+              p.is_check_in_realizado
+                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+            }`}
+          >
+            {p.is_check_in_realizado ? (
+              <>
+                <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> Presente
+              </>
+            ) : (
+              <>
+                <XCircle className="w-3 h-3 text-slate-400" /> Pendente
+              </>
+            )}
+          </span>
+        ),
+      },
+      {
+        chave: 'titulo',
+        rotulo: 'Título e detalhes',
+        ordenavel: true,
+        className: 'sm:min-w-[16rem] sm:max-w-md',
+        renderizar: (p) => {
+          const nomeInst = p.instituicoes?.sigla || p.instituicoes?.nome_exibicao;
+          const nomeArea = p.areas_tematicas?.nome_area;
+          const nomeMod = p.modalidades?.nome_modalidade;
+          return (
+            <>
+              <span className="block font-bold text-slate-900 dark:text-white leading-snug break-words">{p.titulo}</span>
+              <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {nomeInst && (
+                  <span
+                    title={`Instituição: ${p.instituicoes?.nome_exibicao || nomeInst}`}
+                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700"
+                  >
+                    <Building2 className="w-2.5 h-2.5 text-blue-500" />
+                    {nomeInst}
+                  </span>
+                )}
+                {nomeArea && (
+                  <span
+                    title={`Área Temática: ${nomeArea}`}
+                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800"
+                  >
+                    <Tag className="w-2.5 h-2.5 text-indigo-500" />
+                    {nomeArea}
+                  </span>
+                )}
+                {nomeMod && (
+                  <span
+                    title={`Modalidade: ${nomeMod}`}
+                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-800"
+                  >
+                    <Layers className="w-2.5 h-2.5 text-purple-500" />
+                    {nomeMod}
+                  </span>
+                )}
+                {p.is_fora_da_competicao && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-md border border-rose-200 dark:border-rose-800">
+                    Fora da Competição
+                  </span>
+                )}
+                {p.forcar_topo_fila && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-950 px-2 py-0.5 rounded-md border border-amber-300 dark:border-amber-700">
+                    <Zap className="w-2.5 h-2.5 text-amber-600 fill-amber-600" />
+                    Topo da Fila
+                  </span>
+                )}
+              </span>
+            </>
+          );
+        },
+      },
+      {
+        chave: 'acoes',
+        rotulo: 'Ações',
+        acoes: true,
+        renderizar: (p) => {
+          const idProj = p.id_projeto;
+          const codigoProj = p.codigo_projeto || 'N/I';
+          const isCheckin = Boolean(p.is_check_in_realizado);
+          const isTopoFila = Boolean(p.forcar_topo_fila);
+          const isProcessingThis = processando_checkin_id === idProj;
+          const isProcessingTopo = processando_topo_fila_id === idProj;
+          return (
+            <BarraDeAcoes alinhar="inicio" rotulo={`Ações do projeto ${codigoProj}`} className="sm:justify-end">
+              <button
+                type="button"
+                onClick={() => alternar_check_in_projeto(idProj, isCheckin)}
+                disabled={isProcessingThis}
+                title={isCheckin ? 'Desmarcar presença do projeto' : 'Confirmar check-in presencial'}
+                aria-label={`${isCheckin ? 'Desmarcar presença' : 'Check-in'} do projeto ${codigoProj}`}
+                className={`px-3 min-h-11 xl:w-44 justify-center rounded-lg font-bold text-xs border transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                  isCheckin
+                    ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs'
+                }`}
+              >
+                {isProcessingThis ? (
+                  <Loader2 aria-hidden="true" className="shrink-0 w-3.5 h-3.5 animate-spin" />
+                ) : isCheckin ? (
+                  <XCircle aria-hidden="true" className="shrink-0 w-3.5 h-3.5 text-amber-700 dark:text-amber-300" />
+                ) : (
+                  <CheckCircle2 aria-hidden="true" className="shrink-0 w-3.5 h-3.5 text-white" />
+                )}
+                <span className="hidden lg:inline">{isCheckin ? 'Desmarcar Presença' : 'Check-in'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => alternar_forcar_topo_fila(idProj, isTopoFila)}
+                disabled={isProcessingTopo}
+                aria-pressed={isTopoFila}
+                aria-label={`Prioridade no sorteio do projeto ${codigoProj}`}
+                title={
+                  isTopoFila
+                    ? 'Remover do Topo da Fila (voltar à fila comum de sorteio)'
+                    : 'Forçar este projeto para o Topo da Fila de sorteio dos avaliadores'
+                }
+                className={`px-3 min-h-11 xl:w-32 justify-center rounded-lg font-bold text-xs border transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                  isTopoFila
+                    ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-sm'
+                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
+                }`}
+              >
+                {isProcessingTopo ? (
+                  <Loader2 aria-hidden="true" className="shrink-0 w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Zap className={`w-3.5 h-3.5 ${isTopoFila ? 'text-white fill-white' : 'text-amber-500'}`} />
+                )}
+                <span className="hidden lg:inline">{isTopoFila ? 'Topo da Fila' : 'Priorizar'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => abrir_edicao(p)}
+                title="Editar Projeto"
+                aria-label={`Editar projeto ${codigoProj}`}
+                className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => excluir_projeto(p)}
+                title="Excluir Projeto"
+                aria-label={`Excluir projeto ${codigoProj}`}
+                className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 text-red-600 dark:text-red-400 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </BarraDeAcoes>
+          );
+        },
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [processando_checkin_id, processando_topo_fila_id],
+  );
+
   const projetos_ordenados = useMemo(() => {
     return [...projetos_filtrados].sort((a, b) => {
       let valA: any = '';
@@ -1439,7 +1634,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
             <button
               type="button"
               onClick={limpar_form_novo}
@@ -1536,193 +1731,16 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
           </div>
         ) : (
           <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-x-auto shadow-xs">
-            <table className="w-full min-w-[760px] text-left text-xs">
-              <caption className="sr-only">Projetos do evento ativo</caption>
-              <thead className="bg-slate-100 dark:bg-slate-800 uppercase font-black text-[10px] text-slate-600 dark:text-slate-400 tracking-wider">
-                <tr>
-                  <CabecalhoOrdenavel coluna="codigo" rotulo="Código" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
-                  <CabecalhoOrdenavel coluna="corredor" rotulo="Corredor" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
-                  <CabecalhoOrdenavel coluna="estande" rotulo="Estande" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
-                  <CabecalhoOrdenavel coluna="presenca" rotulo="Presença" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
-                  <CabecalhoOrdenavel coluna="titulo" rotulo="Título e detalhes" ativa={colunaOrdenacao} direcao={direcaoOrdenacao} aoOrdenar={alternarOrdenacao} />
-                  <th scope="col" className="px-4 py-3 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
-                {projetos_ordenados.map((p) => {
-                  const idProj = p.id_projeto;
-                  const codigoProj = p.codigo_projeto || 'N/I';
-                  const tituloProj = p.titulo;
-                  const estandeProj = p.estande || '-';
-                  const corredorProj = p.corredor || '-';
-                  const isCheckin = Boolean(p.is_check_in_realizado);
-                  const isProcessingThis = processando_checkin_id === idProj;
-                  const isProcessingTopo = processando_topo_fila_id === idProj;
-                  const isTopoFila = Boolean(p.forcar_topo_fila);
-                  const isForaComp = Boolean(p.is_fora_da_competicao);
-
-                  const nomeInst = p.instituicoes?.sigla || p.instituicoes?.nome_exibicao;
-                  const nomeArea = p.areas_tematicas?.nome_area;
-                  const nomeMod = p.modalidades?.nome_modalidade;
-
-                  return (
-                    <tr
-                      key={idProj}
-                      className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${
-                        isTopoFila ? 'bg-amber-50/40 dark:bg-amber-950/20' : ''
-                      }`}
-                    >
-                      {/* BLINDAGEM VISUAL: Exibe codigo_projeto em vez de UUID */}
-                      <td className="px-4 py-3 font-mono font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                        {codigoProj}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-teal-600 dark:text-teal-400 whitespace-nowrap">
-                        {corredorProj}
-                      </td>
-                      <td className="px-4 py-3 font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                        {estandeProj}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                            isCheckin
-                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
-                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                          }`}
-                        >
-                          {isCheckin ? (
-                            <>
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> Presente
-                            </>
-                          ) : (
-                            <>
-                              <XCircle className="w-3 h-3 text-slate-400" /> Pendente
-                            </>
-                          )}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 min-w-[16rem] max-w-md">
-                        <div className="font-bold text-slate-900 dark:text-white leading-snug">
-                          {tituloProj}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                          {nomeInst && (
-                            <span
-                              title={`Instituição: ${p.instituicoes?.nome_exibicao || nomeInst}`}
-                              className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700"
-                            >
-                              <Building2 className="w-2.5 h-2.5 text-blue-500" />
-                              {nomeInst}
-                            </span>
-                          )}
-                          {nomeArea && (
-                            <span
-                              title={`Área Temática: ${nomeArea}`}
-                              className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800"
-                            >
-                              <Tag className="w-2.5 h-2.5 text-indigo-500" />
-                              {nomeArea}
-                            </span>
-                          )}
-                          {nomeMod && (
-                            <span
-                              title={`Modalidade: ${nomeMod}`}
-                              className="inline-flex items-center gap-1 text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-800"
-                            >
-                              <Layers className="w-2.5 h-2.5 text-purple-500" />
-                              {nomeMod}
-                            </span>
-                          )}
-                          {isForaComp && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-md border border-rose-200 dark:border-rose-800">
-                              Fora da Competição
-                            </span>
-                          )}
-                          {isTopoFila && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-950 px-2 py-0.5 rounded-md border border-amber-300 dark:border-amber-700">
-                              <Zap className="w-2.5 h-2.5 text-amber-600 fill-amber-600" />
-                              Topo da Fila
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
-                        {/* Botão Check-in / Desmarcar Presença */}
-                        <button
-                          type="button"
-                          onClick={() => alternar_check_in_projeto(idProj, isCheckin)}
-                          disabled={isProcessingThis}
-                          title={isCheckin ? 'Desmarcar presença do projeto' : 'Confirmar check-in presencial'}
-                          aria-label={`${isCheckin ? 'Desmarcar presença' : 'Check-in'} do projeto ${codigoProj}`}
-                          className={`px-3 py-1.5 xl:w-44 justify-center rounded-lg font-bold text-xs border transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                            isCheckin
-                              ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                              : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs'
-                          }`}
-                        >
-                          {isProcessingThis ? (
-                            <Loader2 aria-hidden="true" className="shrink-0 w-3.5 h-3.5 animate-spin" />
-                          ) : isCheckin ? (
-                            <XCircle aria-hidden="true" className="shrink-0 w-3.5 h-3.5 text-amber-700 dark:text-amber-300" />
-                          ) : (
-                            <CheckCircle2 aria-hidden="true" className="shrink-0 w-3.5 h-3.5 text-white" />
-                          )}
-                          <span className="hidden xl:inline">{isCheckin ? 'Desmarcar Presença' : 'Check-in'}</span>
-                        </button>
-
-                        {/* Botão Forçar Topo da Fila (Ao lado de Check-in) */}
-                        <button
-                          type="button"
-                          onClick={() => alternar_forcar_topo_fila(idProj, isTopoFila)}
-                          disabled={isProcessingTopo}
-                          aria-pressed={isTopoFila}
-                          aria-label={`Prioridade no sorteio do projeto ${codigoProj}`}
-                          title={
-                            isTopoFila
-                              ? 'Remover do Topo da Fila (voltar à fila comum de sorteio)'
-                              : 'Forçar este projeto para o Topo da Fila de sorteio dos avaliadores'
-                          }
-                          className={`px-3 py-1.5 xl:w-32 justify-center rounded-lg font-bold text-xs border transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                            isTopoFila
-                              ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-sm'
-                              : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
-                          }`}
-                        >
-                          {isProcessingTopo ? (
-                            <Loader2 aria-hidden="true" className="shrink-0 w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Zap className={`w-3.5 h-3.5 ${isTopoFila ? 'text-white fill-white' : 'text-amber-500'}`} />
-                          )}
-                          <span className="hidden xl:inline">{isTopoFila ? 'Topo da Fila' : 'Priorizar'}</span>
-                        </button>
-
-                        {/* Botão Editar (Ícone compacto) */}
-                        <button
-                          type="button"
-                          onClick={() => abrir_edicao(p)}
-                          title="Editar Projeto"
-                          aria-label={`Editar projeto ${codigoProj}`}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* Botão Excluir (Ícone compacto) */}
-                        <button
-                          type="button"
-                          onClick={() => excluir_projeto(p)}
-                          title="Excluir Projeto"
-                          aria-label={`Excluir projeto ${codigoProj}`}
-                          className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 text-red-600 dark:text-red-400 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <TabelaResponsiva<ProjetoItem>
+              legenda="Projetos do evento ativo"
+              linhas={projetos_ordenados}
+              chaveLinha={(p) => p.id_projeto}
+              colunaOrdenacao={colunaOrdenacao}
+              direcao={direcaoOrdenacao}
+              aoOrdenar={(c) => alternarOrdenacao(c as ColunaOrdenacao)}
+              larguraMinima="sm:min-w-[760px]"
+              colunas={colunas_projetos}
+            />
           </div>
         )}
       </div>
@@ -1877,7 +1895,7 @@ export const GestorProjetos: React.FC<GestorProjetosProps> = ({
                 </label>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex flex-wrap items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={fechar_edicao}

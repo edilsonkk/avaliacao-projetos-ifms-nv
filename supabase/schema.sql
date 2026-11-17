@@ -10,6 +10,7 @@
 
 
 
+
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -808,6 +809,89 @@ $$;
 ALTER FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_finalizar_evento"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id_evento uuid;
+  v_travas integer := 0;
+  v_aparelhos integer := 0;
+  v_codigos integer := 0;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+
+  -- Recusa rodar sem evento definido: sem isto, um p_id_evento nulo somado a um
+  -- WHERE frouxo encerraria a feira errada (foi o que aconteceu no reset global).
+  v_id_evento := coalesce(p_id_evento, public.evento_ativo_id());
+  IF v_id_evento IS NULL THEN
+    RAISE EXCEPTION 'Nenhum evento informado nem evento ativo: nada a finalizar.' USING ERRCODE = 'P0001';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.eventos e WHERE e.id_evento = v_id_evento) THEN
+    RAISE EXCEPTION 'Evento % não existe.', v_id_evento USING ERRCODE = 'P0001';
+  END IF;
+
+  PERFORM public.auditoria_marcar_origem('admin_finalizar_evento');
+
+  -- 1. Fecha o sistema para os avaliadores (a trigger auditar_eventos registra a mudança)
+  UPDATE public.eventos
+     SET sistema_liberado = false
+   WHERE id_evento = v_id_evento;
+
+  -- 2. Travas do evento. Só as dos projetos deste evento (regra 5: escopo por evento);
+  --    o id_projeto é a única ligação de locks_ativos com o evento.
+  DELETE FROM public.locks_ativos l
+   WHERE l.id_projeto IN (SELECT p.id_projeto FROM public.projetos p WHERE p.id_evento = v_id_evento);
+  GET DIAGNOSTICS v_travas = ROW_COUNT;
+
+  -- 3. Vínculo do celular. O avaliador cai para o login e, para voltar, o Staff
+  --    (ou o Admin) pareia de novo — é o que "finalizar" significa na prática.
+  UPDATE public.dispositivos_avaliador
+     SET revogado_em = now()
+   WHERE id_evento = v_id_evento
+     AND revogado_em IS NULL;
+  GET DIAGNOSTICS v_aparelhos = ROW_COUNT;
+
+  -- 4. Código de acesso pendente não deve sobreviver ao encerramento. Filtra pela
+  --    coluna de evento da própria tabela (regra 5), não pela inscrição do avaliador.
+  UPDATE public.codigos_acesso c
+     SET usado_em = now()
+   WHERE c.id_evento = v_id_evento
+     AND c.usado_em IS NULL;
+  GET DIAGNOSTICS v_codigos = ROW_COUNT;
+
+  -- 5. Uma linha de resumo na trilha, como o reset global faz
+  PERFORM public.auditoria_registrar(
+    'evento_finalizado',
+    'eventos',
+    v_id_evento,
+    jsonb_build_object(
+      'travas_liberadas', v_travas,
+      'aparelhos_desvinculados', v_aparelhos,
+      'codigos_invalidados', v_codigos
+    )
+  );
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'id_evento', v_id_evento,
+    'travas_liberadas', v_travas,
+    'aparelhos_desvinculados', v_aparelhos,
+    'codigos_invalidados', v_codigos
+  );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_finalizar_evento"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."admin_finalizar_evento"("p_id_evento" "uuid") IS 'Encerra a feira do evento: fecha o sistema para avaliadores, apaga as travas, revoga os celulares e queima os códigos pendentes. Mantém o evento ativo, porque os relatórios e a premiação leem o evento ativo.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_id_usuario" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text" DEFAULT NULL::"text", "p_motivo" "text" DEFAULT NULL::"text", "p_confirmar_acima_da_cota" boolean DEFAULT false) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -986,14 +1070,16 @@ BEGIN
   SELECT is_voto_popular INTO v_atual
   FROM public.questionarios WHERE id_questionario = p_id_questionario FOR UPDATE;
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Questionário não encontrado.';
+    RAISE EXCEPTION 'Questionário não encontrado.' USING ERRCODE = 'P0001';
   END IF;
 
   IF v_atual IS DISTINCT FROM coalesce(p_is_voto_popular, false) THEN
     v_usos := public.fn_avaliacoes_do_questionario(p_id_questionario);
     IF v_usos > 0 THEN
-      RAISE EXCEPTION 'Este questionário já foi usado em % avaliação(ões): mudar a marca de voto popular agora reclassificaria notas já lançadas e alteraria médias publicadas.', v_usos
-        USING ERRCODE = '42501';
+      -- P0001, e não 42501: isto não é falta de permissão. Com 42501 o front
+      -- traduzia a recusa como "sessão expirada" e escondia o motivo real.
+      RAISE EXCEPTION 'Este questionário já foi usado em % avaliação(ões): mudar a marca de voto popular agora reclassificaria notas já lançadas e alteraria médias publicadas. Use a reclassificação do questionário, que troca a marca e as avaliações juntas e fica registrada na trilha.', v_usos
+        USING ERRCODE = 'P0001';
     END IF;
   END IF;
 
@@ -1006,6 +1092,93 @@ $$;
 
 
 ALTER FUNCTION "public"."admin_marcar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_reclassificar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_destino    boolean := coalesce(p_is_voto_popular, false);
+  v_quest      public.questionarios;
+  v_avaliacoes integer := 0;
+  v_travas     integer := 0;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: operação restrita a administradores.' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT * INTO v_quest FROM public.questionarios
+   WHERE id_questionario = p_id_questionario FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Questionário não encontrado.' USING ERRCODE = 'P0001';
+  END IF;
+
+  IF v_quest.is_voto_popular IS NOT DISTINCT FROM v_destino THEN
+    RAISE EXCEPTION 'O questionário já está marcado assim: nada a reclassificar.' USING ERRCODE = 'P0001';
+  END IF;
+
+  PERFORM public.auditoria_marcar_origem(
+    'admin_reclassificar_questionario_voto_popular',
+    'Correção da marca de voto popular do questionário e das avaliações já lançadas com ele.'
+  );
+
+  UPDATE public.questionarios
+     SET is_voto_popular = v_destino
+   WHERE id_questionario = p_id_questionario;
+
+  -- As avaliações seguem a marca do questionário que as produziu. A trigger
+  -- trg_avaliacao_classificar_voto_popular dispara em INSERT e em UPDATE OF
+  -- id_questionario, então este UPDATE não é sobrescrito por ela.
+  UPDATE public.avaliacoes a
+     SET is_voto_popular = v_destino
+   WHERE a.id_questionario = p_id_questionario
+     AND a.is_voto_popular IS DISTINCT FROM v_destino;
+  GET DIAGNOSTICS v_avaliacoes = ROW_COUNT;
+
+  -- Travas em aberto do mesmo questionário acompanham, senão uma reserva de votante
+  -- continuaria ocupando vaga técnica (ou o contrário) até vencer.
+  UPDATE public.locks_ativos l
+     SET is_voto_popular = v_destino
+   WHERE l.is_voto_popular IS DISTINCT FROM v_destino
+     AND EXISTS (
+       SELECT 1 FROM public.avaliadores_evento ae
+        WHERE ae.id_usuario = l.id_usuario
+          AND ae.id_evento = v_quest.id_evento
+          AND ae.id_questionario = p_id_questionario
+     );
+  GET DIAGNOSTICS v_travas = ROW_COUNT;
+
+  PERFORM public.auditoria_registrar(
+    'questionario_voto_popular_reclassificado',
+    'questionarios',
+    v_quest.id_evento,
+    jsonb_build_object(
+      'id_questionario', p_id_questionario,
+      'titulo', v_quest.titulo,
+      'de', v_quest.is_voto_popular,
+      'para', v_destino,
+      'avaliacoes_reclassificadas', v_avaliacoes,
+      'travas_reclassificadas', v_travas
+    )
+  );
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'id_questionario', p_id_questionario,
+    'is_voto_popular', v_destino,
+    'avaliacoes_reclassificadas', v_avaliacoes,
+    'travas_reclassificadas', v_travas
+  );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."admin_reclassificar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."admin_reclassificar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) IS 'Corrige a marca de voto popular de um questionário E das avaliações já lançadas com ele, numa transação, registrando as contagens na trilha. Existe porque a marca errada na criação prendia o conserto: a marca não mudava por haver avaliações, e as avaliações só mudavam com a marca.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_remover_avaliador_evento"("p_id_usuario" "uuid", "p_id_evento" "uuid") RETURNS "jsonb"
@@ -7131,6 +7304,12 @@ GRANT ALL ON FUNCTION "public"."admin_excluir_staff"("p_id_usuario" "uuid") TO "
 
 
 
+REVOKE ALL ON FUNCTION "public"."admin_finalizar_evento"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_finalizar_evento"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_finalizar_evento"("p_id_evento" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_id_usuario" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_motivo" "text", "p_confirmar_acima_da_cota" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_id_usuario" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_motivo" "text", "p_confirmar_acima_da_cota" boolean) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_lancar_avaliacao"("p_id_projeto" "uuid", "p_id_usuario" "uuid", "p_id_questionario" "uuid", "p_respostas" "jsonb", "p_parecer" "text", "p_motivo" "text", "p_confirmar_acima_da_cota" boolean) TO "service_role";
@@ -7146,6 +7325,12 @@ GRANT ALL ON FUNCTION "public"."admin_listar_questionarios_reaproveitaveis"("p_i
 REVOKE ALL ON FUNCTION "public"."admin_marcar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_marcar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_marcar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_reclassificar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_reclassificar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."admin_reclassificar_questionario_voto_popular"("p_id_questionario" "uuid", "p_is_voto_popular" boolean) TO "service_role";
 
 
 

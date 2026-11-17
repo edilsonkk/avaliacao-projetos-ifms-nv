@@ -137,7 +137,11 @@ resultado final.
 ## Folha de conferência (PDF)
 
 Botão **Folha de conferência** (um projeto) e **Folha do evento** (todos, um por página), impressas por
-`window.print()` com raiz isolada, no padrão dos Relatórios. Conteúdo: cabeçalho oficial com data de
+`window.print()` com raiz isolada por `src/lib/cssImpressao.ts`, o mesmo utilitário dos
+[Relatórios](relatorios-e-monitoramento.md#impressão-em-pdf). A folha saía **em branco** enquanto isolava com
+`body > *:not(#raiz) { display: none }`: a raiz de impressão não é filha de `body` — mora dentro de `#root` —, então
+a regra escondia o ancestral do próprio documento. O modal que a envolve também precisa das classes `print:`, senão
+os ancestrais `fixed` com altura travada cortam tudo em uma página. Conteúdo: cabeçalho oficial com data de
 emissão, questionário e pesos, memorial de cada avaliação, média aberta, desempate, divergência,
 conferência automática e histórico de alterações.
 

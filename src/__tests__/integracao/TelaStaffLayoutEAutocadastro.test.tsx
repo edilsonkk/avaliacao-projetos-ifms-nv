@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TelaStaff } from '@/features/staff';
 import { TelaAutocadastroAvaliador } from '@/features/avaliacao';
@@ -101,22 +101,40 @@ describe('Validação da TelaStaff e Autocadastro de Avaliador', () => {
       expect(screen.getByText('IFMS - Campus Corumbá')).toBeInTheDocument();
     });
 
+    /**
+     * O cabeçalho agora é um `<button>` dentro do `<th>` (`CabecalhoOrdenavel`), e o estado
+     * é anunciado por `aria-sort`. Antes o `onClick` estava no próprio `<th>`, com a dica
+     * só no `title`: não dava para ordenar pelo teclado e o leitor de tela não sabia a ordem.
+     */
     it('deve alternar ordenação ao clicar nos cabeçalhos das colunas de expositores', async () => {
       render(<TelaStaff />);
 
       const user = userEvent.setup();
-      const colEstande = screen.getByRole('columnheader', { name: /Estande/i });
       const colCorredor = screen.getByRole('columnheader', { name: /Corredor/i });
+      const botaoCorredor = within(colCorredor).getByRole('button');
 
-      // Clica para ordenar por corredor
-      await user.click(colCorredor);
-      expect(colCorredor).toHaveAttribute('title', 'Clique para ordenar por Corredor');
+      // Arrange: a ordenação inicial é por estande, então corredor começa sem ordem
+      expect(colCorredor).toHaveAttribute('aria-sort', 'none');
 
-      // Clica novamente para inverter a ordem
-      await user.click(colCorredor);
+      // Act: ordena por corredor
+      await user.click(botaoCorredor);
 
-      // Clica para ordenar por estande
-      await user.click(colEstande);
+      // Assert
+      expect(colCorredor).toHaveAttribute('aria-sort', 'ascending');
+
+      // Act: clica de novo para inverter
+      await user.click(botaoCorredor);
+
+      // Assert
+      expect(colCorredor).toHaveAttribute('aria-sort', 'descending');
+
+      // Act: volta a ordenar por estande
+      const colEstande = screen.getByRole('columnheader', { name: /Estande/i });
+      await user.click(within(colEstande).getByRole('button'));
+
+      // Assert
+      expect(colEstande).toHaveAttribute('aria-sort', 'ascending');
+      expect(colCorredor).toHaveAttribute('aria-sort', 'none');
     });
 
     it('deve alternar status de check-in presencial ao clicar no botão de ação', async () => {

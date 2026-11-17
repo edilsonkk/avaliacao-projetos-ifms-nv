@@ -1,6 +1,7 @@
 /** API pública dos componentes de interface. As features importam só por `@/components/ui`. */
 export { cn, type ValorClasse } from './cn';
 export { Botao, type PropriedadesBotao, type VarianteBotao, type TamanhoBotao } from './Botao';
+export { BarraDeAcoes, type AlinhamentoBarra } from './BarraDeAcoes';
 export {
   Campo,
   CampoArea,
@@ -14,6 +15,7 @@ export { Selo, type TomSelo } from './Selo';
 export { Estado, type SituacaoEstado } from './Estado';
 export { LimiteDeErro } from './LimiteDeErro';
 export { Tabela } from './Tabela';
+export { TabelaResponsiva, type ColunaTabela } from './TabelaResponsiva';
 export { Modal, type TamanhoModal } from './Modal';
 export { Aviso, type TipoAviso } from './Aviso';
 export { ConfirmacaoPerigo } from './ConfirmacaoPerigo';

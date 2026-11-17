@@ -241,13 +241,18 @@ function ConteudoApp() {
         Pular para o conteúdo
       </a>
 
-      {/* Cabeçalho do Sistema com Seletor de Tema e Navegação */}
-      <Cabecalho
-        tela_atual={tela_atual}
-        ao_mudar_tela={handle_mudar_tela}
-        ao_sair={handle_sair}
-        papel={localStorage.getItem('usuario_perfil') || undefined}
-      />
+      {/* Cabeçalho do Sistema com Seletor de Tema e Navegação.
+          Fora do Telão: ele é projeção pública, e a faixa do topo não vai para a parede.
+          O papel vem do `localStorage`, e o Telão abre em aba nova no mesmo navegador do
+          Admin — então Staff/Admin apareciam na projeção, junto de tema e tamanho de texto. */}
+      {tela_atual !== 'telao' && (
+        <Cabecalho
+          tela_atual={tela_atual}
+          ao_mudar_tela={handle_mudar_tela}
+          ao_sair={handle_sair}
+          papel={localStorage.getItem('usuario_perfil') || undefined}
+        />
+      )}
 
       {/* Conteúdo da Tela Selecionada */}
       <div id="conteudo" tabIndex={-1} className="flex-1 py-4 sm:py-6">

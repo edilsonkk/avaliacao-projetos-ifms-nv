@@ -5,7 +5,12 @@ import { PainelAparelhoAvaliador } from '@/features/staff/components/PainelApare
 import { supabase } from '@/lib/supabase';
 
 vi.mock('@/lib/supabase', () => ({
-  supabase: { rpc: vi.fn() },
+  // `auth.getSession`: o painel confere a sessão antes de escrever (garantirSessaoAdmin),
+  // senão a chamada sairia como `anon` e voltaria só um 42501 cru do RLS.
+  supabase: {
+    rpc: vi.fn(),
+    auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'token' } }, error: null }) },
+  },
 }));
 
 // O painel pergunta ao banco qual forma de vínculo o evento libera (fn_meu_perfil)

@@ -465,7 +465,7 @@ describe('Validação de Regras de Negócio e Layout do Bloco 2', () => {
     u4();
 
     // 5. GestorQuestionarios
-    const { unmount: u5 } = render(<GestorQuestionarios id_evento_ativo="evt-2026" />);
+    const { unmount: u5 } = render(<ProvedorAvisos><GestorQuestionarios id_evento_ativo="evt-2026" /></ProvedorAvisos>);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Importar \(\.xlsx\/\.csv\)/i })).toBeDefined();
     });

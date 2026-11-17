@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { KeyRound, Link2, Loader2, Smartphone, Unlink, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { obterPerfilSessao, type MetodoVinculo } from '@/features/auth';
+import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 
 interface PropriedadesPainelAparelho {
   avaliador: { id_usuario: string; nome: string };
@@ -15,8 +16,13 @@ const formatarHora = (iso: string) =>
   new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
 /**
- * Balcão do Staff: vincula o celular do avaliador ou desvincula um aparelho perdido/trocado.
- * Tudo pelas RPCs com checagem `is_staff()`.
+ * Balcão de vínculo do celular do avaliador: pareia, gera código de acesso ou desvincula um
+ * aparelho perdido/trocado. Serve o Staff **e** o Admin — as RPCs usam
+ * `exigir_staff_ou_admin()`, então o banco aceita os dois papéis.
+ *
+ * Toda chamada confere a sessão antes (`garantirSessaoAdmin`) e traduz erro de RLS
+ * (`tratarErroEscritaAdmin`): sem sessão válida a requisição sairia como `anon` e voltaria
+ * só um 42501 cru.
  *
  * Cada evento libera **uma** forma de vínculo (`eventos.metodos_vinculo`), e o painel mostra só
  * ela: antes oferecia as duas sempre, e no evento configurado para pareamento o botão "Gerar código
@@ -57,6 +63,10 @@ export const PainelAparelhoAvaliador: React.FC<PropriedadesPainelAparelho> = ({
     setMensagem(null);
     setProcessando(acao);
     try {
+      if (!(await garantirSessaoAdmin())) {
+        setMensagem({ tipo: 'erro', texto: 'Sessão expirada. Entre de novo para vincular o aparelho.' });
+        return;
+      }
       if (acao === 'parear') {
         const { error } = await supabase.rpc('fn_parear_dispositivo', { p_codigo: codigoCelular, p_id_usuario: avaliador.id_usuario });
         if (error) throw error;
@@ -75,7 +85,7 @@ export const PainelAparelhoAvaliador: React.FC<PropriedadesPainelAparelho> = ({
         aoAlterarVinculo();
       }
     } catch (e) {
-      setMensagem({ tipo: 'erro', texto: (e as { message?: string }).message || 'Não foi possível concluir a operação.' });
+      setMensagem({ tipo: 'erro', texto: tratarErroEscritaAdmin(e) || 'Não foi possível concluir a operação.' });
     } finally {
       setProcessando(null);
     }

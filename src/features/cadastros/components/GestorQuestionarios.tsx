@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Loader2,
+  RefreshCw,
   ListOrdered,
   Sparkles,
   ArrowUp,
@@ -23,6 +24,7 @@ import { lerPlanilhaParaJson, validarArquivoPlanilha } from '@/lib/excel/excelUt
 import { supabase } from '@/lib/supabase';
 import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { normalizarChave } from '@/lib/parsers/planilhaAvaliadoresParser';
+import { useAvisos } from '@/components/ui';
 import { ModelosQuestionario, type ModeloQuestionario } from './ModelosQuestionario';
 import { ReaproveitarQuestionario } from './ReaproveitarQuestionario';
 
@@ -90,11 +92,12 @@ export const GestorQuestionarios: React.FC<{
   const [perguntas_lista, set_perguntas_lista] = useState<ItemPerguntaForm[]>([novaPergunta()]);
   const [idQuestionarioEdicao, setIdQuestionarioEdicao] = useState<string | null>(null);
   const [usos_em_edicao, set_usos_em_edicao] = useState<number>(0);
+  const [reclassificando, set_reclassificando] = useState<boolean>(false);
+  const { avisar, confirmar, notificar } = useAvisos();
 
   const [questionarios_salvos, set_questionarios_salvos] = useState<QuestionarioSalvo[]>([]);
   const [carregando_lista, set_carregando_lista] = useState<boolean>(true);
   const [salvando, set_salvando] = useState<boolean>(false);
-  const [mensagem_notificacao, set_mensagem_notificacao] = useState<string | null>(null);
   const [erroQuest, setErroQuest] = useState<string | null>(null);
 
   const [questionario_para_excluir, set_questionario_para_excluir] = useState<QuestionarioSalvo | null>(null);
@@ -117,9 +120,66 @@ export const GestorQuestionarios: React.FC<{
     set_logs_importacao((prev) => [...prev, { tipo, mensagem }]);
   };
 
-  const exibir_notificacao = (texto: string) => {
-    set_mensagem_notificacao(texto);
-    setTimeout(() => set_mensagem_notificacao(null), 3500);
+  /**
+   * Mensagem passageira pela região viva única do `ProvedorAvisos`. Esta tela mantinha a
+   * própria caixa flutuante com `role="status"`, o que deixava **duas** regiões vivas na
+   * página — leitor de tela com dois lugares para observar, e nenhum ganho.
+   */
+  const exibir_notificacao = (texto: string) => notificar(texto, 'sucesso');
+
+  /**
+   * Corrige a marca de voto popular de um questionário **que já tem avaliação**.
+   *
+   * O caminho normal (a caixa de seleção) não serve aqui, e o banco recusa, com razão:
+   * trocar a marca reclassifica nota já lançada e muda média publicada. Mas quando a
+   * marca nasceu errada isso prendia o conserto — a marca não mudava por haver
+   * avaliações, e as avaliações só mudariam com a marca. Esta ação quebra o laço
+   * explicitamente: troca as duas coisas juntas, numa transação no banco, e deixa as
+   * contagens na trilha.
+   */
+  const handleReclassificarVotoPopular = async () => {
+    if (!idQuestionarioEdicao) return;
+    const paraVotoPopular = !is_voto_popular;
+
+    const confirmado = await confirmar({
+      titulo: paraVotoPopular ? 'Reclassificar como voto popular?' : 'Reclassificar como nota técnica?',
+      mensagem: paraVotoPopular
+        ? `As ${usos_em_edicao} avaliação(ões) já lançadas com este questionário passam a contar como voto popular: `
+          + 'saem da média técnica, da cota e dos contadores do Telão, e entram na classificação do voto popular. '
+          + 'Médias de projeto vão mudar. A correção fica registrada na trilha de auditoria.'
+        : `As ${usos_em_edicao} avaliação(ões) já lançadas com este questionário passam a contar como nota técnica: `
+          + 'entram na média do projeto, na cota e na quarentena. Médias de projeto vão mudar. '
+          + 'A correção fica registrada na trilha de auditoria.',
+      rotuloConfirmar: 'Reclassificar',
+      rotuloCancelar: 'Cancelar',
+    });
+    if (!confirmado) return;
+
+    set_reclassificando(true);
+    try {
+      if (!(await garantirSessaoAdmin())) return;
+      const { data, error } = await supabase.rpc('admin_reclassificar_questionario_voto_popular', {
+        p_id_questionario: idQuestionarioEdicao,
+        p_is_voto_popular: paraVotoPopular,
+      });
+      if (error) throw error;
+      const r = data as { avaliacoes_reclassificadas?: number } | null;
+      set_is_voto_popular(paraVotoPopular);
+      await carregar_questionarios_existentes();
+      await avisar({
+        tipo: 'sucesso',
+        titulo: 'Questionário reclassificado',
+        mensagem:
+          `${r?.avaliacoes_reclassificadas ?? 0} avaliação(ões) reclassificada(s). `
+          + (paraVotoPopular
+            ? 'Os votos agora aparecem no relatório de Voto Popular e saíram da contagem técnica.'
+            : 'As notas agora entram na média técnica do projeto.'),
+      });
+    } catch (e) {
+      await avisar({ tipo: 'erro', titulo: 'Não foi possível reclassificar', mensagem: tratarErroEscritaAdmin(e) });
+    } finally {
+      set_reclassificando(false);
+    }
   };
 
   const limpar_formulario = () => {
@@ -502,13 +562,6 @@ export const GestorQuestionarios: React.FC<{
 
   return (
     <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 lg:p-8 border border-slate-200 dark:border-slate-700 shadow-sm space-y-8 font-sans">
-      {mensagem_notificacao && (
-        <div role="status" className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white dark:bg-emerald-600 px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-sm font-medium">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400 dark:text-white shrink-0" />
-          <span>{mensagem_notificacao}</span>
-        </div>
-      )}
-
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-700 pb-4">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 shadow-xs">
@@ -761,8 +814,34 @@ export const GestorQuestionarios: React.FC<{
               As notas dele não entram na média técnica do projeto, não ocupam a cota de avaliações, não
               acionam quarentena e não entram no ranking técnico: têm média, classificação e relatório
               próprios.
-              {usos_em_edicao > 0 && ' Este questionário já foi usado, então a marca não pode mais mudar.'}
             </p>
+
+            {/* Marca errada na criação prendia o conserto: ela não mudava por haver avaliações, e as
+                avaliações só mudariam com ela. A reclassificação troca as duas juntas, com confirmação
+                e registro na trilha — a caixa acima continua travada de propósito. */}
+            {usos_em_edicao > 0 && (
+              <div className="pt-1.5 border-t border-slate-200 dark:border-slate-700 space-y-2">
+                <p className="text-xs text-slate-500">
+                  Este questionário já foi usado em <strong>{usos_em_edicao} avaliação(ões)</strong>, então a marca
+                  não muda sozinha: trocá-la reclassifica nota já lançada e altera média publicada. Se a marca nasceu
+                  errada, reclassifique — o questionário e as avaliações dele mudam juntos, e a correção fica na
+                  trilha de auditoria.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleReclassificarVotoPopular}
+                  disabled={reclassificando}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 min-h-11 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 text-xs font-bold transition-colors hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                >
+                  {reclassificando ? (
+                    <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw aria-hidden="true" className="w-4 h-4" />
+                  )}
+                  {is_voto_popular ? 'Reclassificar como nota técnica' : 'Reclassificar como voto popular'}
+                </button>
+              </div>
+            )}
           </div>
         </fieldset>
 
@@ -896,7 +975,7 @@ export const GestorQuestionarios: React.FC<{
           </ol>
         </fieldset>
 
-        <div className="pt-2 flex justify-end gap-2">
+        <div className="pt-2 flex flex-wrap justify-end gap-2">
           {(idQuestionarioEdicao || modelo_edicao) && (
             <button
               type="button"
@@ -986,7 +1065,7 @@ export const GestorQuestionarios: React.FC<{
               As perguntas dele também são apagadas. Se ele já foi usado em alguma avaliação, a exclusão é recusada para não
               apagar as notas por critério.
             </p>
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-wrap justify-end gap-3">
               <button
                 type="button"
                 onClick={() => set_questionario_para_excluir(null)}

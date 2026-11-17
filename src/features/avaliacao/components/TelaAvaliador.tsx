@@ -1625,8 +1625,10 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                 /* Perguntas exibidas apenas após a escolha */
                 <div className="space-y-4">
                   {/* Cabeçalho do Questionário Ativo */}
-                  <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex items-center justify-between gap-3">
-                    <div className="truncate">
+                  {/* `flex-wrap` + `min-w-0`: título longo quebra e o botão desce para a linha de
+                      baixo, em vez de o título ser cortado com reticências ou o botão sair da tela. */}
+                  <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
                       <span className="text-legenda font-bold uppercase tracking-wider text-acao-texto block">
                         {sou_votante
                           ? 'Voto Popular'
@@ -1634,7 +1636,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                           ? 'Questionário Oficial Vinculado'
                           : 'Questionário Escolhido'}
                       </span>
-                      <h3 className="text-apoio font-extrabold text-texto truncate">
+                      <h3 className="text-apoio font-extrabold text-texto break-words">
                         {questionarios_disponiveis.find((q) => q.id_questionario === id_questionario_selecionado)?.titulo ||
                           'Questionário de Avaliação'}
                       </h3>
@@ -1660,9 +1662,14 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                     return (
                       <fieldset
                         key={criterio.id_criterio}
-                        className="bg-superficie p-4 rounded-cartao border border-borda shadow-cartao space-y-3"
+                        /* min-w-0: o Chrome aplica `min-inline-size: min-content` em fieldset pela
+                           folha do agente, e sem isto o cartão não encolhe até a largura da tela. */
+                        className="min-w-0 bg-superficie p-4 rounded-cartao border border-borda shadow-cartao space-y-3"
                       >
-                        <legend className="text-apoio font-extrabold text-texto">
+                        {/* `block w-full`: por padrão o legend é caixa especial, posicionada contra a
+                            borda do fieldset (fora do p-4) e dimensionada por fit-content — enunciado
+                            longo saía para fora do quadro no Chrome do celular. */}
+                        <legend className="block w-full break-words text-apoio font-extrabold text-texto">
                           {criterio.titulo_criterio}
                         </legend>
                         {criterio.descricao_lembrete && (
@@ -1683,10 +1690,13 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
 
                           return (
                             <>
+                              {/* `auto-fit` com mínimo de 2.75rem (44px, o alvo de toque da regra 6):
+                                  escala de 1 a 10 quebra em duas linhas no celular em vez de
+                                  comprimir cada botão abaixo do mínimo e estourar a largura. */}
                               <div
                                 className="grid gap-1.5 pt-1"
                                 style={{
-                                  gridTemplateColumns: `repeat(${posicoesEscala.length}, minmax(0, 1fr))`,
+                                  gridTemplateColumns: `repeat(auto-fit, minmax(2.75rem, 1fr))`,
                                 }}
                               >
                                 {posicoesEscala.map((valor_escala) => {

@@ -8,9 +8,11 @@ import {
   type MetodoVinculo,
   type ParametrosAcesso,
 } from '../acessoAvaliadores';
-import { Settings, X, Save, Loader2, CheckCircle2, AlertTriangle, RotateCcw, History, PlusCircle, Building2, ShieldCheck } from 'lucide-react';
+import { Settings, X, Save, Loader2, CheckCircle2, AlertTriangle, RotateCcw, History, PlusCircle, Building2, ShieldCheck, FlagOff } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { Dica } from '@/components/ui/Dica';
+import { useAvisos } from '@/components/ui';
+import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { SecaoSegurancaContas } from './SecaoSegurancaContas';
 import { SecaoIdentidadeVisual } from './SecaoIdentidadeVisual';
 
@@ -42,6 +44,8 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
 }) => {
   // Campos de estado do formulário de configurações do evento
   const [nome_evento, set_nome_evento] = useState<string>(nome_evento_atual || 'FETEC MS 2026');
+  const [edicao, set_edicao] = useState<string>('');
+  const [finalizando, set_finalizando] = useState<boolean>(false);
   const [data_evento, set_data_evento] = useState<string>(new Date().toISOString().split('T')[0]);
   const [minutos_timeout_lock, set_minutos_timeout_lock] = useState<number>(15);
   const [cota_avaliacoes_padrao, set_cota_avaliacoes_padrao] = useState<number>(3);
@@ -61,6 +65,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
   // Controle de requisição
   const [carregando_dados, set_carregando_dados] = useState<boolean>(true);
   const [salvando, set_salvando] = useState<boolean>(false);
+  const { avisar, confirmar } = useAvisos();
   const [mensagem_feedback, set_mensagem_feedback] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null);
 
   const conexao_configurada = verificar_conexao_configurada();
@@ -86,6 +91,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
 
         if (dados_evento) {
           set_nome_evento(dados_evento.nome_evento || nome_evento_atual || 'FETEC MS 2026');
+          set_edicao(dados_evento.edicao || '');
           set_data_evento(dados_evento.data_evento || new Date().toISOString().split('T')[0]);
           set_minutos_timeout_lock(dados_evento.minutos_timeout_lock || 15);
           set_cota_avaliacoes_padrao(dados_evento.cota_avaliacoes_padrao || 3);
@@ -126,6 +132,9 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
 
     const dados_atualizacao: any = {
       nome_evento,
+      // Vazio grava nulo: era aqui que o texto de preenchimento "Nova Edição" ficava preso,
+      // sem nenhum campo na interface para limpá-lo depois da criação do evento.
+      edicao: edicao.trim() || null,
       data_evento: dataFormatada,
       minutos_timeout_lock: Number(minutos_timeout_lock),
       cota_avaliacoes_padrao: Number(cota_avaliacoes_padrao),
@@ -212,6 +221,70 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
       });
     } finally {
       set_salvando(false);
+    }
+  };
+
+  /**
+   * Encerra a feira: fecha o sistema, devolve as travas e desvincula os celulares, tudo
+   * numa transação no banco (`admin_finalizar_evento`).
+   *
+   * É ação própria, separada do campo "Sistema liberado": aquele campo também serve para
+   * **pausar**, e desparear numa pausa obrigaria o Staff a vincular todos os celulares de
+   * novo. A confirmação diz quantas avaliações estão abertas naquele instante, porque
+   * finalizar devolve as travas e quem estava preenchendo perde o que não enviou.
+   */
+  const handleFinalizarEvento = async () => {
+    if (!id_evento_ativo) {
+      await avisar({ tipo: 'atencao', titulo: 'Nenhum evento ativo', mensagem: MENSAGEM_SEM_EVENTO_ATIVO });
+      return;
+    }
+
+    let emAndamento: number | null = null;
+    try {
+      const { data } = await supabase.rpc('fn_telao_resumo', { p_id_evento: id_evento_ativo });
+      const resumo = data as { avaliacoes_em_andamento?: number } | null;
+      emAndamento = Number(resumo?.avaliacoes_em_andamento ?? 0);
+    } catch {
+      // Sem o número, a confirmação sai sem ele: não é motivo para travar o encerramento
+    }
+
+    const trechoAndamento =
+      emAndamento === null
+        ? 'Não foi possível conferir quantas avaliações estão em andamento agora.'
+        : emAndamento === 0
+        ? 'Nenhuma avaliação está em andamento agora.'
+        : `Há ${emAndamento} ${emAndamento === 1 ? 'avaliação' : 'avaliações'} em andamento agora, e `
+          + `${emAndamento === 1 ? 'ela será devolvida' : 'elas serão devolvidas'} sem gravar nota.`;
+
+    const confirmado = await confirmar({
+      titulo: 'Finalizar o evento agora?',
+      mensagem:
+        `${trechoAndamento} O sistema fecha para os avaliadores e todos os celulares são desvinculados — `
+        + 'para voltar a avaliar, cada avaliador precisará parear o celular de novo com a equipe. '
+        + 'Os relatórios, a classificação e a auditoria continuam disponíveis.',
+      rotuloConfirmar: 'Finalizar evento',
+      rotuloCancelar: 'Continuar a feira',
+    });
+    if (!confirmado) return;
+
+    set_finalizando(true);
+    try {
+      if (!(await garantirSessaoAdmin())) return;
+      const { data, error } = await supabase.rpc('admin_finalizar_evento', { p_id_evento: id_evento_ativo });
+      if (error) throw error;
+      const r = data as { travas_liberadas?: number; aparelhos_desvinculados?: number } | null;
+      set_sistema_liberado(false);
+      await avisar({
+        tipo: 'sucesso',
+        titulo: 'Evento finalizado',
+        mensagem:
+          `${r?.travas_liberadas ?? 0} avaliação(ões) devolvida(s) e ${r?.aparelhos_desvinculados ?? 0} celular(es) `
+          + 'desvinculado(s). O sistema está fechado para os avaliadores.',
+      });
+    } catch (e) {
+      await avisar({ tipo: 'erro', titulo: 'Não foi possível finalizar', mensagem: tratarErroEscritaAdmin(e) });
+    } finally {
+      set_finalizando(false);
     }
   };
 
@@ -335,6 +408,13 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
                   <input id="cfg-nome-evento" type="text" value={nome_evento} onChange={(e) => set_nome_evento(e.target.value)} required className={campo} />
                 </div>
 
+                <div>
+                  <Rotulo htmlFor="cfg-edicao" dica="Opcional, para distinguir edições do mesmo evento, como “12ª edição”. Deixe em branco se não usar: o Telão mostra só o nome do evento." alinhar="inicio" lado="baixo">
+                    Edição:
+                  </Rotulo>
+                  <input id="cfg-edicao" type="text" value={edicao} onChange={(e) => set_edicao(e.target.value)} placeholder="Opcional" className={campo} />
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
                   <div className="min-w-0 col-span-2">
                     <Rotulo htmlFor="cfg-data-evento" dica="Dia da feira. Os avaliadores só conseguem avaliar nesta data, entre o horário de início e o de fim." alinhar="inicio">
@@ -406,7 +486,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
                     <span className="flex items-center gap-1 text-xs font-bold text-slate-800 dark:text-slate-200">
                       <label htmlFor="cfg-sistema-liberado" className="cursor-pointer">Sistema liberado para avaliadores</label>
                       <Dica alinhar="inicio">
-                        Desligado, nenhum avaliador sorteia projetos nem envia notas novas: use para pausar ou encerrar a feira. Admin e Staff continuam funcionando normalmente.
+                        Desligado, nenhum avaliador sorteia projetos nem envia notas novas: é a pausa da feira, e ligar de volta retoma tudo. Admin e Staff continuam funcionando normalmente. Para encerrar de vez, use “Finalizar evento”.
                       </Dica>
                     </span>
                     <span className="text-[11px] text-slate-500">Permite sortear e enviar notas.</span>
@@ -418,6 +498,37 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
                     onChange={(e) => set_sistema_liberado(e.target.checked)}
                     className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer shrink-0"
                   />
+                </div>
+
+                {/* Encerrar a feira. Separado do campo acima de propósito: aquele pausa e
+                    retoma; este solta os avaliadores, e o celular deles só volta pela equipe. */}
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 rounded-2xl flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                      <FlagOff aria-hidden="true" className="w-4 h-4 text-amber-600 shrink-0" />
+                      Finalizar evento
+                      <Dica alinhar="inicio">
+                        Fecha o sistema para os avaliadores, devolve as avaliações em andamento e desvincula todos os
+                        celulares de uma vez. Para avaliar de novo, cada avaliador precisa parear o celular com a
+                        equipe. O evento continua ativo, então relatórios, classificação, auditoria e Telão seguem
+                        funcionando. Não apaga nota nenhuma.
+                      </Dica>
+                    </span>
+                    <span className="text-[11px] text-amber-700 dark:text-amber-400">Encerra a avaliação e solta os avaliadores.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleFinalizarEvento}
+                    disabled={finalizando}
+                    className="px-3 min-h-11 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs shrink-0 cursor-pointer disabled:opacity-50"
+                  >
+                    {finalizando ? (
+                      <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <FlagOff aria-hidden="true" className="w-4 h-4" />
+                    )}
+                    Finalizar evento
+                  </button>
                 </div>
               </section>
 
@@ -543,7 +654,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
             </div>
 
             {/* Botões do Rodapé */}
-            <div className="pt-3 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700">
+            <div className="pt-3 flex flex-wrap justify-end gap-3 border-t border-slate-100 dark:border-slate-700">
               <button
                 type="button"
                 onClick={ao_fechar}

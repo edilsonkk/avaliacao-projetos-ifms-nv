@@ -3,7 +3,8 @@ import { AlertTriangle, CheckCircle2, RefreshCw, X, Loader2, ShieldCheck, Chevro
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { aoRetomarApp } from '@/lib/keepAliveSessao';
-import { CabecalhoOrdenavel, compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { BarraDeAcoes, TabelaResponsiva, type ColunaTabela } from '@/components/ui';
 import { Modal, Botao, CampoArea } from '@/components/ui';
 import { formatarNota } from '@/lib/formatoNota';
 
@@ -202,6 +203,152 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({ aoFechar
     }
   };
 
+  /** Notas do projeto, na linha de detalhe que o "Ver notas" abre. */
+  const renderizar_notas = (p: ProjetoQuarentena) => {
+    const codigo = p.codigo_projeto || 'N/I';
+    const detalhes = avaliacoes[p.id_projeto];
+    return (
+      <div id={`notas-${p.id_projeto}`}>
+        {detalhes === 'carregando' || detalhes === undefined ? (
+          <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+            <Loader2 aria-hidden="true" className="w-3.5 h-3.5 animate-spin" /> Carregando notas...
+          </p>
+        ) : detalhes === 'erro' ? (
+          <p role="alert" className="text-[11px] font-semibold text-red-600">Não foi possível carregar as notas deste projeto.</p>
+        ) : (
+          <ul aria-label={`Notas do projeto ${codigo}`} className="flex flex-wrap gap-2">
+            {detalhes.map((a) => {
+              const extremo = a.nota_final === p.nota_maxima || a.nota_final === p.nota_minima;
+              return (
+                <li
+                  key={a.id_avaliacao}
+                  className={`px-3 py-1.5 rounded-lg border text-[11px] ${
+                    extremo
+                      ? 'border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40'
+                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                  }`}
+                >
+                  <span className="font-semibold">{a.avaliador}</span>:{' '}
+                  <strong className="font-mono">{formatarNota(a.nota_final)}</strong>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    );
+  };
+
+  /** Colunas da quarentena. Vira cartão no celular; as notas abrem na linha de detalhe. */
+  const colunas_quarentena = useMemo<ColunaTabela<ProjetoQuarentena>[]>(
+    () => [
+      {
+        chave: 'codigo',
+        rotulo: 'Código',
+        ordenavel: true,
+        className: 'font-mono font-bold text-slate-700 dark:text-slate-300 sm:whitespace-nowrap',
+        renderizar: (p) => p.codigo_projeto || 'N/I',
+      },
+      {
+        chave: 'estande',
+        rotulo: 'Estande',
+        ordenavel: true,
+        className: 'font-mono font-bold text-red-600 dark:text-red-400 sm:whitespace-nowrap',
+        renderizar: (p) => (
+          <>
+            {p.estande || '-'}
+            {p.corredor && <span className="block text-[10px] font-sans font-semibold text-teal-600 dark:text-teal-400">{p.corredor}</span>}
+          </>
+        ),
+      },
+      {
+        chave: 'titulo',
+        rotulo: 'Projeto',
+        ordenavel: true,
+        className: 'sm:min-w-[16rem] sm:max-w-md',
+        renderizar: (p) => (
+          <>
+            <span className="block font-bold text-slate-900 dark:text-white break-words">{p.titulo}</span>
+            <span className="block text-[10px] text-slate-500 dark:text-slate-400 break-words">
+              {p.nome_instituicao} · {p.modalidade} · {p.area_tematica}
+            </span>
+          </>
+        ),
+      },
+      {
+        chave: 'diferenca',
+        rotulo: 'Divergência',
+        ordenavel: true,
+        className: 'sm:whitespace-nowrap',
+        renderizar: (p) => (
+          <>
+            {Number(p.diferenca_notas ?? 0) > LIMITE_DIVERGENCIA ? (
+              <span className="inline-flex items-center gap-1 font-extrabold text-red-600 dark:text-red-400">
+                <Scale aria-hidden="true" className="w-3.5 h-3.5" />
+                {formatarNota(p.diferenca_notas)} pts
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 font-bold text-amber-700 dark:text-amber-400">
+                <Flag aria-hidden="true" className="w-3.5 h-3.5" />
+                Marcado pelo sistema
+              </span>
+            )}
+            <span className="block text-[10px] text-slate-500 dark:text-slate-400">
+              Menor {formatarNota(p.nota_minima)} · Maior {formatarNota(p.nota_maxima)}
+            </span>
+          </>
+        ),
+      },
+      {
+        chave: 'avaliacoes',
+        rotulo: 'Avaliações',
+        ordenavel: true,
+        className: 'font-bold sm:whitespace-nowrap',
+        renderizar: (p) => p.total_avaliacoes,
+      },
+      {
+        chave: 'acoes',
+        rotulo: 'Ações',
+        acoes: true,
+        renderizar: (p) => {
+          const codigo = p.codigo_projeto || 'N/I';
+          const estaAberto = aberto === p.id_projeto;
+          return (
+            <BarraDeAcoes alinhar="inicio" rotulo={`Ações do projeto ${codigo}`} className="sm:justify-end">
+              <button
+                type="button"
+                onClick={() => alternar_detalhes(p)}
+                aria-expanded={estaAberto}
+                aria-controls={`notas-${p.id_projeto}`}
+                aria-label={`Ver notas do projeto ${codigo}`}
+                className="px-3 min-h-11 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs border border-slate-300 dark:border-slate-700 transition-all inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                {estaAberto ? <ChevronDown aria-hidden="true" className="w-3.5 h-3.5" /> : <ChevronRight aria-hidden="true" className="w-3.5 h-3.5" />}
+                <span>Ver notas</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => set_confirmacao({ tipo: 'um', projeto: p })}
+                disabled={processando !== null}
+                aria-label={`Aceitar divergência do projeto ${codigo}`}
+                className="px-3 min-h-11 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold text-xs border border-emerald-300 dark:border-emerald-800 transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {processando === p.id_projeto ? (
+                  <Loader2 aria-hidden="true" className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <ShieldCheck aria-hidden="true" className="w-3.5 h-3.5 text-emerald-600" />
+                )}
+                <span>Aceitar divergência</span>
+              </button>
+            </BarraDeAcoes>
+          );
+        },
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [aberto, processando],
+  );
+
   const projetos_ordenados = useMemo(() => {
     const valor = (p: ProjetoQuarentena): string | number => {
       switch (coluna) {
@@ -307,120 +454,17 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({ aoFechar
           </div>
         ) : (
           <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-x-auto shadow-xs">
-            <table className="w-full min-w-[820px] text-left text-xs">
-              <caption className="sr-only">Projetos em quarentena do evento</caption>
-              <thead className="bg-slate-100 dark:bg-slate-800 text-[10px] text-slate-600 dark:text-slate-400">
-                <tr>
-                  <CabecalhoOrdenavel coluna="codigo" rotulo="Código" ativa={coluna} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <CabecalhoOrdenavel coluna="estande" rotulo="Estande" ativa={coluna} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <CabecalhoOrdenavel coluna="titulo" rotulo="Projeto" ativa={coluna} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <CabecalhoOrdenavel coluna="diferenca" rotulo="Divergência" ativa={coluna} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <CabecalhoOrdenavel coluna="avaliacoes" rotulo="Avaliações" ativa={coluna} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <th scope="col" className="px-4 py-3 text-right uppercase font-black tracking-wider">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
-                {projetos_ordenados.map((p) => {
-                  const codigo = p.codigo_projeto || 'N/I';
-                  const divergente = Number(p.diferenca_notas ?? 0) > LIMITE_DIVERGENCIA;
-                  const detalhes = avaliacoes[p.id_projeto];
-                  const estaAberto = aberto === p.id_projeto;
-                  return (
-                    <React.Fragment key={p.id_projeto}>
-                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors align-top">
-                        <td className="px-4 py-3 font-mono font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{codigo}</td>
-                        <td className="px-4 py-3 font-mono font-bold text-red-600 dark:text-red-400 whitespace-nowrap">
-                          {p.estande || '-'}
-                          {p.corredor && <div className="text-[10px] font-sans font-semibold text-teal-600 dark:text-teal-400">{p.corredor}</div>}
-                        </td>
-                        <td className="px-4 py-3 min-w-[16rem] max-w-md">
-                          <div className="font-bold text-slate-900 dark:text-white">{p.titulo}</div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            {p.nome_instituicao} · {p.modalidade} · {p.area_tematica}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {divergente ? (
-                            <span className="inline-flex items-center gap-1 font-extrabold text-red-600 dark:text-red-400">
-                              <Scale aria-hidden="true" className="w-3.5 h-3.5" />
-                              {formatarNota(p.diferenca_notas)} pts
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 font-bold text-amber-700 dark:text-amber-400">
-                              <Flag aria-hidden="true" className="w-3.5 h-3.5" />
-                              Marcado pelo sistema
-                            </span>
-                          )}
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            Menor {formatarNota(p.nota_minima)} · Maior {formatarNota(p.nota_maxima)}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap font-bold">{p.total_avaliacoes}</td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap space-x-1.5">
-                          <button
-                            type="button"
-                            onClick={() => alternar_detalhes(p)}
-                            aria-expanded={estaAberto}
-                            aria-controls={`notas-${p.id_projeto}`}
-                            aria-label={`Ver notas do projeto ${codigo}`}
-                            className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs border border-slate-300 dark:border-slate-700 transition-all inline-flex items-center gap-1.5 cursor-pointer"
-                          >
-                            {estaAberto ? <ChevronDown aria-hidden="true" className="w-3.5 h-3.5" /> : <ChevronRight aria-hidden="true" className="w-3.5 h-3.5" />}
-                            <span>Ver notas</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => set_confirmacao({ tipo: 'um', projeto: p })}
-                            disabled={processando !== null}
-                            aria-label={`Aceitar divergência do projeto ${codigo}`}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold text-xs border border-emerald-300 dark:border-emerald-800 transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                          >
-                            {processando === p.id_projeto ? (
-                              <Loader2 aria-hidden="true" className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <ShieldCheck aria-hidden="true" className="w-3.5 h-3.5 text-emerald-600" />
-                            )}
-                            <span>Aceitar divergência</span>
-                          </button>
-                        </td>
-                      </tr>
-                      {estaAberto && (
-                        <tr id={`notas-${p.id_projeto}`} className="bg-slate-50/70 dark:bg-slate-800/40">
-                          <td colSpan={6} className="px-6 py-3">
-                            {detalhes === 'carregando' || detalhes === undefined ? (
-                              <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
-                                <Loader2 aria-hidden="true" className="w-3.5 h-3.5 animate-spin" /> Carregando notas...
-                              </p>
-                            ) : detalhes === 'erro' ? (
-                              <p role="alert" className="text-[11px] font-semibold text-red-600">Não foi possível carregar as notas deste projeto.</p>
-                            ) : (
-                              <ul aria-label={`Notas do projeto ${codigo}`} className="flex flex-wrap gap-2">
-                                {detalhes.map((a) => {
-                                  const extremo = a.nota_final === p.nota_maxima || a.nota_final === p.nota_minima;
-                                  return (
-                                    <li
-                                      key={a.id_avaliacao}
-                                      className={`px-3 py-1.5 rounded-lg border text-[11px] ${
-                                        extremo
-                                          ? 'border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40'
-                                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
-                                      }`}
-                                    >
-                                      <span className="font-semibold">{a.avaliador}</span>:{' '}
-                                      <strong className="font-mono">{formatarNota(a.nota_final)}</strong>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            )}
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
+            <TabelaResponsiva<ProjetoQuarentena>
+              legenda="Projetos em quarentena do evento"
+              linhas={projetos_ordenados}
+              chaveLinha={(p) => p.id_projeto}
+              colunaOrdenacao={coluna}
+              direcao={direcao}
+              aoOrdenar={(c) => alternar_ordenacao(c as Coluna)}
+              larguraMinima="sm:min-w-[820px]"
+              colunas={colunas_quarentena}
+              detalhe={(p) => (aberto === p.id_projeto ? renderizar_notas(p) : null)}
+            />
           </div>
         )}
       </div>
@@ -474,7 +518,7 @@ export const ProjetosQuarentena: React.FC<ProjetosQuarentenaProps> = ({ aoFechar
       </Modal>
 
       {/* Rodapé */}
-      <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end bg-slate-50/50 dark:bg-slate-900/50">
+      <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2 justify-end bg-slate-50/50 dark:bg-slate-900/50">
         {aoFechar && (
           <button
             type="button"

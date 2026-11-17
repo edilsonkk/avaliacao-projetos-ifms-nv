@@ -23,6 +23,7 @@ import {
   Plus,
   Save,
   Download,
+  Smartphone,
 } from 'lucide-react';
 import { baixarPlanilhaModelo, validarArquivoPlanilha } from '@/lib/excel/excelUtils';
 import { supabase } from '@/lib/supabase';
@@ -31,7 +32,9 @@ import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { parsePlanilhaAvaliadores, normalizarChave, AvaliadorLinhaPlanilha } from '@/lib/parsers/planilhaAvaliadoresParser';
 import { ModalDeParaMapping, ItemMapeamentoDePara, DecisaoMapeamento } from '@/components/importacao/ModalDeParaMapping';
 import { buscarMelhorCorrespondencia, CandidatoMatch } from '@/lib/parsers/fuzzyMatcher';
-import { CabecalhoOrdenavel, compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { BarraDeAcoes, TabelaResponsiva, type ColunaTabela } from '@/components/ui';
+import { PainelAparelhoAvaliador } from '@/features/staff';
 
 export interface UsuarioAvaliador {
   id_usuario: string;
@@ -149,6 +152,10 @@ export const GestorAvaliadores: React.FC<{
   const [removendo, set_removendo] = useState<boolean>(false);
 
   const [processando_credenciamento_id, set_processando_credenciamento_id] = useState<string | null>(null);
+  // Vínculo do celular de cada avaliador. O painel de pareamento era só da Tela do Staff, embora
+  // as RPCs usem `exigir_staff_ou_admin()` — o Admin já tinha permissão no banco, faltava a tela.
+  const [aparelhos_vinculados, set_aparelhos_vinculados] = useState<Record<string, boolean>>({});
+  const [avaliador_aparelho, set_avaliador_aparelho] = useState<{ id_usuario: string; nome: string } | null>(null);
 
   // Importação por arquivo
   const [processando_arquivo, set_processando_arquivo] = useState<boolean>(false);
@@ -286,6 +293,21 @@ export const GestorAvaliadores: React.FC<{
   useEffect(() => {
     carregar_avaliadores();
   }, [carregar_avaliadores]);
+
+  const carregar_situacao_aparelhos = useCallback(async () => {
+    if (!idEvento) return;
+    const { data, error } = await supabase.rpc('fn_situacao_vinculos', { p_id_evento: idEvento });
+    if (error || !Array.isArray(data)) return;
+    set_aparelhos_vinculados(
+      Object.fromEntries(
+        data.map((linha: { id_usuario: string; aparelho_vinculado: boolean }) => [linha.id_usuario, linha.aparelho_vinculado]),
+      ),
+    );
+  }, [idEvento]);
+
+  useEffect(() => {
+    void carregar_situacao_aparelhos();
+  }, [carregar_situacao_aparelhos]);
 
   /** Grava avaliadores pela função do banco (uma transação). Retorna null em caso de erro. */
   const salvarAvaliadores = async (itens: ItemAvaliadorRpc[]): Promise<ResultadoSalvarAvaliadores | null> => {
@@ -792,6 +814,194 @@ export const GestorAvaliadores: React.FC<{
   const totalAvaliadoresCredenciados = avaliadores.filter((a) => a.is_credenciado).length;
   const direcao = ordemAscendente ? 'asc' : 'desc';
 
+  /**
+   * Colunas da lista. A tabela virava cartões no celular (`TabelaResponsiva`), e por isso o
+   * conteúdo de cada célula vive aqui em vez de solto no JSX: a coluna "Ações" precisa saber
+   * que é de ações para ir ao fim do cartão, sem o rótulo "Ações:" na frente.
+   */
+  const colunas_avaliadores = useMemo<ColunaTabela<UsuarioAvaliador>[]>(
+    () => [
+      {
+        chave: 'is_credenciado',
+        rotulo: 'Credenciamento',
+        ordenavel: true,
+        renderizar: (usuario) =>
+          usuario.is_credenciado ? (
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 inline-flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+              Credenciado
+            </span>
+          ) : (
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-300 dark:border-slate-700 inline-flex items-center gap-1">
+              <Clock className="w-3 h-3 text-slate-400" />
+              Pendente
+            </span>
+          ),
+      },
+      {
+        chave: 'nome',
+        rotulo: 'Nome',
+        ordenavel: true,
+        renderizar: (usuario) => <span className="font-bold text-slate-900 dark:text-white">{usuario.nome}</span>,
+      },
+      {
+        chave: 'nome_instituicao',
+        rotulo: 'Instituição',
+        ordenavel: true,
+        renderizar: (usuario) =>
+          usuario.nome_instituicao ? (
+            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span>{usuario.nome_instituicao}</span>
+            </span>
+          ) : (
+            <span className="text-[11px] text-slate-400 dark:text-slate-500 italic">Não informada</span>
+          ),
+      },
+      {
+        chave: 'email',
+        rotulo: 'E-mail',
+        ordenavel: true,
+        className: 'font-mono text-slate-600 dark:text-slate-300 break-words',
+        renderizar: (usuario) => usuario.email,
+      },
+      {
+        chave: 'modalidades_bloqueadas',
+        rotulo: 'Modalidades',
+        ordenavel: true,
+        renderizar: (usuario) =>
+          lista_modalidades.length === 0 ? (
+            <span className="text-[11px] text-slate-400 italic">Nenhuma modalidade</span>
+          ) : (
+            <div className="flex flex-wrap gap-1.5 sm:max-w-sm">
+              {lista_modalidades.map((m) => {
+                const estaBloqueada = (usuario.modalidades_bloqueadas || []).includes(m.id_modalidade);
+                const processando = processando_modalidade_id === `${usuario.id_usuario}_${m.id_modalidade}`;
+                return (
+                  <button
+                    key={m.id_modalidade}
+                    type="button"
+                    onClick={() => handle_toggle_modalidade_bloqueio(usuario, m)}
+                    disabled={processando}
+                    aria-pressed={estaBloqueada}
+                    aria-label={`${estaBloqueada ? 'Liberar' : 'Bloquear'} ${m.nome_modalidade} para ${usuario.nome}`}
+                    title={estaBloqueada ? 'Bloqueada. Clique para liberar.' : 'Liberada. Clique para bloquear.'}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all inline-flex items-center gap-1 cursor-pointer disabled:opacity-50 select-none shadow-2xs ${
+                      estaBloqueada
+                        ? 'bg-red-50 hover:bg-red-100 text-red-700 border-red-300 dark:bg-red-950/60 dark:hover:bg-red-900/60 dark:text-red-300 dark:border-red-800'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-700'
+                    }`}
+                  >
+                    {processando ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : estaBloqueada ? (
+                      <ShieldOff className="w-3 h-3 text-red-600 dark:text-red-400 shrink-0" />
+                    ) : (
+                      <Shield className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />
+                    )}
+                    <span>{estaBloqueada ? `Bloq: ${m.nome_modalidade}` : m.nome_modalidade}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ),
+      },
+      {
+        chave: 'areas',
+        rotulo: 'Áreas',
+        ordenavel: true,
+        renderizar: (usuario) =>
+          usuario.nomes_areas && usuario.nomes_areas.length > 0 ? (
+            <div className="flex flex-wrap gap-1 sm:max-w-xs">
+              {usuario.nomes_areas.map((nomeArea) => (
+                <span
+                  key={nomeArea}
+                  className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md inline-flex items-center gap-1 shadow-2xs"
+                >
+                  <Database className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                  {nomeArea}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 italic">Geral (todas as áreas)</span>
+          ),
+      },
+      {
+        chave: 'acoes',
+        rotulo: 'Ações',
+        acoes: true,
+        renderizar: (usuario) => {
+          const processandoCredenciamento = processando_credenciamento_id === usuario.id_usuario;
+          const vinculado = Boolean(aparelhos_vinculados[usuario.id_usuario]);
+          return (
+            <BarraDeAcoes alinhar="inicio" rotulo={`Ações de ${usuario.nome}`} className="sm:justify-end">
+              <button
+                type="button"
+                onClick={() => handle_toggle_credenciamento(usuario)}
+                disabled={processandoCredenciamento}
+                aria-label={`${usuario.is_credenciado ? 'Descredenciar' : 'Credenciar'} ${usuario.nome}`}
+                className={`px-3 min-h-11 rounded-lg font-bold text-xs transition-all inline-flex items-center gap-1.5 ${
+                  usuario.is_credenciado
+                    ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600'
+                } disabled:opacity-50`}
+              >
+                {processandoCredenciamento ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : usuario.is_credenciado ? (
+                  <UserX className="w-3.5 h-3.5" />
+                ) : (
+                  <UserCheck className="w-3.5 h-3.5" />
+                )}
+                <span>{usuario.is_credenciado ? 'Descredenciar' : 'Credenciar'}</span>
+              </button>
+
+              {/* Aparelho: pareia, gera código ou desvincula o celular. Antes só existia na
+                  Tela do Staff, embora o banco já aceitasse o Admin nessas RPCs. */}
+              <button
+                type="button"
+                onClick={() => set_avaliador_aparelho({ id_usuario: usuario.id_usuario, nome: usuario.nome })}
+                aria-label={`${vinculado ? 'Aparelho vinculado de' : 'Parear aparelho de'} ${usuario.nome}`}
+                title={vinculado ? 'Celular vinculado. Abrir para desvincular.' : 'Vincular o celular do avaliador'}
+                className={`px-3 min-h-11 rounded-lg font-bold text-xs border transition-colors inline-flex items-center gap-1.5 ${
+                  vinculado
+                    ? 'bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800'
+                    : 'bg-white text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600'
+                }`}
+              >
+                <Smartphone aria-hidden="true" className="w-3.5 h-3.5" />
+                <span>{vinculado ? 'Vinculado' : 'Parear'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handle_abrir_edicao(usuario)}
+                aria-label={`Editar ${usuario.nome}`}
+                title="Editar"
+                className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => set_avaliador_para_remover(usuario)}
+                aria-label={`Remover ${usuario.nome} do evento`}
+                title="Remover do evento"
+                className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 text-red-600 dark:text-red-400 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </BarraDeAcoes>
+          );
+        },
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lista_modalidades, processando_modalidade_id, processando_credenciamento_id, aparelhos_vinculados],
+  );
+
   const listaCheckboxes = (
     itens: { id: string; nome: string }[],
     selecionados: string[],
@@ -1041,7 +1251,7 @@ export const GestorAvaliadores: React.FC<{
             </div>
           )}
 
-          <div className="flex justify-end pt-1">
+          <BarraDeAcoes empilhar className="pt-1">
             <button
               type="submit"
               disabled={salvando_manual || !novo_nome.trim() || !novo_email.trim()}
@@ -1050,7 +1260,7 @@ export const GestorAvaliadores: React.FC<{
               {salvando_manual ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Cadastrar Avaliador
             </button>
-          </div>
+          </BarraDeAcoes>
         </form>
       )}
 
@@ -1096,164 +1306,16 @@ export const GestorAvaliadores: React.FC<{
           )}
         </div>
       ) : (
-        <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs min-w-[640px]">
-              <caption className="sr-only">Avaliadores do evento</caption>
-              <thead className="bg-slate-100 dark:bg-slate-900 uppercase font-black text-[10px] text-slate-600 dark:text-slate-400 tracking-wider">
-                <tr>
-                  <CabecalhoOrdenavel coluna="is_credenciado" rotulo="Credenciamento" ativa={colunaOrdenacao} direcao={direcao} aoOrdenar={alternarOrdenacao} />
-                  <CabecalhoOrdenavel coluna="nome" rotulo="Nome" ativa={colunaOrdenacao} direcao={direcao} aoOrdenar={alternarOrdenacao} />
-                  <CabecalhoOrdenavel coluna="nome_instituicao" rotulo="Instituição" ativa={colunaOrdenacao} direcao={direcao} aoOrdenar={alternarOrdenacao} />
-                  <CabecalhoOrdenavel coluna="email" rotulo="E-mail" ativa={colunaOrdenacao} direcao={direcao} aoOrdenar={alternarOrdenacao} />
-                  <CabecalhoOrdenavel coluna="modalidades_bloqueadas" rotulo="Modalidades" ativa={colunaOrdenacao} direcao={direcao} aoOrdenar={alternarOrdenacao} />
-                  <CabecalhoOrdenavel coluna="areas" rotulo="Áreas" ativa={colunaOrdenacao} direcao={direcao} aoOrdenar={alternarOrdenacao} />
-                  <th scope="col" className="px-4 py-3 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
-                {avaliadores_ordenados.map((usuario) => {
-                  const processandoCredenciamento = processando_credenciamento_id === usuario.id_usuario;
-                  return (
-                    <tr key={usuario.id_usuario} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                      <td className="px-4 py-3.5">
-                        {usuario.is_credenciado ? (
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 inline-flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                            Credenciado
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-300 dark:border-slate-700 inline-flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-slate-400" />
-                            Pendente
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        <div className="font-bold text-slate-900 dark:text-white">{usuario.nome}</div>
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        {usuario.nome_instituicao ? (
-                          <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5">
-                            <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                            <span>{usuario.nome_instituicao}</span>
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-slate-400 dark:text-slate-500 italic">Não informada</span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3.5 font-mono text-slate-600 dark:text-slate-300">{usuario.email}</td>
-
-                      <td className="px-4 py-3.5">
-                        {lista_modalidades.length === 0 ? (
-                          <span className="text-[11px] text-slate-400 italic">Nenhuma modalidade</span>
-                        ) : (
-                          <div className="flex flex-wrap gap-1.5 max-w-sm">
-                            {lista_modalidades.map((m) => {
-                              const estaBloqueada = (usuario.modalidades_bloqueadas || []).includes(m.id_modalidade);
-                              const processando = processando_modalidade_id === `${usuario.id_usuario}_${m.id_modalidade}`;
-                              return (
-                                <button
-                                  key={m.id_modalidade}
-                                  type="button"
-                                  onClick={() => handle_toggle_modalidade_bloqueio(usuario, m)}
-                                  disabled={processando}
-                                  aria-pressed={estaBloqueada}
-                                  aria-label={`${estaBloqueada ? 'Liberar' : 'Bloquear'} ${m.nome_modalidade} para ${usuario.nome}`}
-                                  title={estaBloqueada ? `Bloqueada. Clique para liberar.` : `Liberada. Clique para bloquear.`}
-                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all inline-flex items-center gap-1 cursor-pointer disabled:opacity-50 select-none shadow-2xs ${
-                                    estaBloqueada
-                                      ? 'bg-red-50 hover:bg-red-100 text-red-700 border-red-300 dark:bg-red-950/60 dark:hover:bg-red-900/60 dark:text-red-300 dark:border-red-800'
-                                      : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-700'
-                                  }`}
-                                >
-                                  {processando ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                  ) : estaBloqueada ? (
-                                    <ShieldOff className="w-3 h-3 text-red-600 dark:text-red-400 shrink-0" />
-                                  ) : (
-                                    <Shield className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />
-                                  )}
-                                  <span>{estaBloqueada ? `Bloq: ${m.nome_modalidade}` : m.nome_modalidade}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        {usuario.nomes_areas && usuario.nomes_areas.length > 0 ? (
-                          <div className="flex flex-wrap gap-1 max-w-xs">
-                            {usuario.nomes_areas.map((nomeArea) => (
-                              <span
-                                key={nomeArea}
-                                className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md inline-flex items-center gap-1 shadow-2xs"
-                              >
-                                <Database className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
-                                {nomeArea}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 italic">Geral (todas as áreas)</span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3.5 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handle_toggle_credenciamento(usuario)}
-                            disabled={processandoCredenciamento}
-                            aria-label={`${usuario.is_credenciado ? 'Descredenciar' : 'Credenciar'} ${usuario.nome}`}
-                            className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all inline-flex items-center gap-1.5 ${
-                              usuario.is_credenciado
-                                ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                                : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600'
-                            } disabled:opacity-50`}
-                          >
-                            {processandoCredenciamento ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : usuario.is_credenciado ? (
-                              <UserX className="w-3.5 h-3.5" />
-                            ) : (
-                              <UserCheck className="w-3.5 h-3.5" />
-                            )}
-                            <span>{usuario.is_credenciado ? 'Descredenciar' : 'Credenciar'}</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handle_abrir_edicao(usuario)}
-                            aria-label={`Editar ${usuario.nome}`}
-                            title="Editar"
-                            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => set_avaliador_para_remover(usuario)}
-                            aria-label={`Remover ${usuario.nome} do evento`}
-                            title="Remover do evento"
-                            className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 text-red-600 dark:text-red-400 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <TabelaResponsiva<UsuarioAvaliador>
+          legenda="Avaliadores do evento"
+          linhas={avaliadores_ordenados}
+          chaveLinha={(usuario) => usuario.id_usuario}
+          colunaOrdenacao={colunaOrdenacao}
+          direcao={direcao}
+          aoOrdenar={(coluna) => alternarOrdenacao(coluna as ColunaOrdenacaoAvaliador)}
+          larguraMinima="sm:min-w-[640px]"
+          colunas={colunas_avaliadores}
+        />
       )}
 
       {/* CONFIRMAÇÃO DE REMOÇÃO */}
@@ -1278,7 +1340,7 @@ export const GestorAvaliadores: React.FC<{
               Ele sai da lista do evento e perde as travas e a fila de projetos. Se ele já avaliou algum projeto, a remoção é
               recusada: nesse caso use <strong>Descredenciar</strong>, e as notas continuam valendo.
             </p>
-            <div className="flex justify-end gap-3">
+            <BarraDeAcoes empilhar>
               <button
                 type="button"
                 onClick={() => set_avaliador_para_remover(null)}
@@ -1296,7 +1358,7 @@ export const GestorAvaliadores: React.FC<{
                 {removendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                 Remover do evento
               </button>
-            </div>
+            </BarraDeAcoes>
           </div>
         </div>
       )}
@@ -1427,7 +1489,7 @@ export const GestorAvaliadores: React.FC<{
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-3 pt-2">
+              <BarraDeAcoes empilhar className="pt-2">
                 <button
                   type="button"
                   onClick={fechar_edicao}
@@ -1443,14 +1505,14 @@ export const GestorAvaliadores: React.FC<{
                   {salvando_edicao ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                   <span>Salvar Alterações</span>
                 </button>
-              </div>
+              </BarraDeAcoes>
             </form>
           </div>
         </div>
       )}
 
       {ao_fechar && (
-        <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-end">
+        <BarraDeAcoes empilhar className="pt-4 border-t border-slate-100 dark:border-slate-700">
           <button
             type="button"
             onClick={ao_fechar}
@@ -1458,7 +1520,7 @@ export const GestorAvaliadores: React.FC<{
           >
             Fechar Janela
           </button>
-        </div>
+        </BarraDeAcoes>
       )}
 
       {modalDeParaAberto && (
@@ -1475,6 +1537,17 @@ export const GestorAvaliadores: React.FC<{
             setModalDeParaAberto(false);
             await executarGravacaoFinalAvaliadores(linhasArquivoPendente, decisoes);
           }}
+        />
+      )}
+
+      {/* Vínculo do celular do avaliador. Mesmo painel da Tela do Staff: as RPCs usam
+          `exigir_staff_ou_admin()`, então não há nada a duplicar para o Admin. */}
+      {avaliador_aparelho && (
+        <PainelAparelhoAvaliador
+          avaliador={avaliador_aparelho}
+          aparelhoVinculado={Boolean(aparelhos_vinculados[avaliador_aparelho.id_usuario])}
+          aoFechar={() => set_avaliador_aparelho(null)}
+          aoAlterarVinculo={() => void carregar_situacao_aparelhos()}
         />
       )}
     </div>

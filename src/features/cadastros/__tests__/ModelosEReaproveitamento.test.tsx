@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GestorQuestionarios } from '@/features/cadastros';
 import { supabase } from '@/lib/supabase';
+import { ProvedorAvisos } from '@/components/ui';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -47,7 +48,13 @@ const mockarBanco = () => {
     Promise.resolve(respostasRpc[nome] ?? { data: null, error: null })) as never);
 };
 
-const renderizar = () => render(<GestorQuestionarios id_evento_ativo={ID_EVENTO} />);
+// A tela usa useAvisos() para confirmar a reclassificação da marca de voto popular
+const renderizar = () =>
+  render(
+    <ProvedorAvisos>
+      <GestorQuestionarios id_evento_ativo={ID_EVENTO} />
+    </ProvedorAvisos>,
+  );
 
 describe('Questionários prontos e reaproveitamento', () => {
   beforeEach(() => {

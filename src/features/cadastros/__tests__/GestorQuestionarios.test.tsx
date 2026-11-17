@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GestorQuestionarios, extrairLinhaPergunta } from '@/features/cadastros/components/GestorQuestionarios';
 import { supabase } from '@/lib/supabase';
+import { ProvedorAvisos } from '@/components/ui';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -41,8 +42,13 @@ const mockarBanco = () => {
 
 const chamadasDe = (tabela: string, metodo: string) => chamadas.filter((c) => c.tabela === tabela && c.metodo === metodo);
 
+// A tela usa useAvisos() para confirmar a reclassificação da marca de voto popular
 const renderizar = (props: Partial<React.ComponentProps<typeof GestorQuestionarios>> = {}) =>
-  render(<GestorQuestionarios id_evento_ativo={ID_EVENTO} {...props} />);
+  render(
+    <ProvedorAvisos>
+      <GestorQuestionarios id_evento_ativo={ID_EVENTO} {...props} />
+    </ProvedorAvisos>,
+  );
 
 describe('GestorQuestionarios', () => {
   beforeEach(() => {
@@ -138,7 +144,76 @@ describe('GestorQuestionarios', () => {
 
     // Assert
     expect(await screen.findByRole('checkbox', { name: /questionário de voto popular/i })).toBeDisabled();
-    expect(screen.getByText(/a marca não pode mais mudar/i)).toBeInTheDocument();
+    expect(screen.getByText(/não muda sozinha/i)).toBeInTheDocument();
+  });
+
+  /**
+   * O conserto do laço: a marca errada na criação não podia ser corrigida, porque mudá-la
+   * exigia não haver avaliações e as avaliações só mudariam com a marca. Quem tentava
+   * marcar a caixa recebia um erro traduzido como "sessão expirada" (a recusa vinha com
+   * ERRCODE 42501) e via a caixa voltar desmarcada, sem saber por quê.
+   */
+  describe('reclassificação da marca de voto popular', () => {
+    it('deve oferecer a reclassificação quando o questionário já tem avaliação', async () => {
+      // Arrange
+      usos = 4;
+      const user = userEvent.setup();
+      renderizar();
+      await screen.findByText('Pesquisa Aplicada');
+
+      // Act
+      await user.click(screen.getByRole('button', { name: /editar pesquisa aplicada/i }));
+
+      // Assert
+      const botao = await screen.findByRole('button', { name: /reclassificar/i });
+      expect(botao).toBeInTheDocument();
+      expect(screen.getByText(/a marca não muda sozinha/i)).toHaveTextContent('4 avaliação(ões)');
+    });
+
+    it('não deve oferecer a reclassificação para questionário sem avaliação', async () => {
+      // Arrange
+      usos = 0;
+      const user = userEvent.setup();
+      renderizar();
+      await screen.findByText('Pesquisa Aplicada');
+
+      // Act
+      await user.click(screen.getByRole('button', { name: /editar pesquisa aplicada/i }));
+
+      // Assert: aqui a caixa resolve, e reclassificar seria um caminho perigoso sem motivo
+      expect(await screen.findByRole('checkbox', { name: /questionário de voto popular/i })).toBeEnabled();
+      expect(screen.queryByRole('button', { name: /reclassificar/i })).not.toBeInTheDocument();
+    });
+
+    it('deve avisar o que será reclassificado e só gravar após confirmação', async () => {
+      // Arrange
+      usos = 4;
+      const user = userEvent.setup();
+      renderizar();
+      await screen.findByText('Pesquisa Aplicada');
+      await user.click(screen.getByRole('button', { name: /editar pesquisa aplicada/i }));
+
+      // Act
+      await user.click(await screen.findByRole('button', { name: /reclassificar/i }));
+
+      // Assert: nada é gravado antes de confirmar
+      const dialogo = await screen.findByRole('alertdialog');
+      expect(dialogo).toHaveTextContent(/4 avaliaç/i);
+      expect(
+        vi.mocked(supabase.rpc).mock.calls.filter((c) => c[0] === 'admin_reclassificar_questionario_voto_popular'),
+      ).toHaveLength(0);
+
+      // Act
+      await user.click(within(dialogo).getByRole('button', { name: /reclassificar/i }));
+
+      // Assert
+      await waitFor(() =>
+        expect(supabase.rpc).toHaveBeenCalledWith('admin_reclassificar_questionario_voto_popular', {
+          p_id_questionario: 'q-1',
+          p_is_voto_popular: true,
+        }),
+      );
+    });
   });
 
   it('deve mostrar o erro do banco e não limpar o formulário', async () => {
@@ -156,7 +231,9 @@ describe('GestorQuestionarios', () => {
     // Assert
     expect(await screen.findByRole('alert')).toHaveTextContent('Escala inválida');
     expect(screen.getByLabelText('Título')).toHaveValue('Feira');
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // A região viva existe sempre (é assim que leitor de tela a observa); o que não pode
+    // haver é mensagem de sucesso dentro dela
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 
   it('deve recusar escala mínima maior ou igual à máxima antes de enviar', async () => {

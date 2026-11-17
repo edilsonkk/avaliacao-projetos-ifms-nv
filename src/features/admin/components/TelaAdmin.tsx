@@ -311,7 +311,9 @@ export const TelaAdmin: React.FC = () => {
 
         const payloadCompleto: any = {
           nome_evento: nomeLimpo,
-          edicao: novo_evento_edicao.trim() || 'Nova Edição',
+          // Sem edição informada, fica nula: o texto de preenchimento "Nova Edição"
+          // acabava gravado e aparecia como se fosse o nome da edição real.
+          edicao: novo_evento_edicao.trim() || null,
           data_evento: dataFormatada,
           horario_inicio: novo_evento_horario_inicio || '08:00',
           horario_fim: novo_evento_horario_fim || '18:00',
@@ -366,7 +368,7 @@ export const TelaAdmin: React.FC = () => {
           ...metricas_iniciais_zeradas,
           evento_ativo_id: idCriado || '',
           evento_ativo_nome: nomeLimpo,
-          evento_ativo_edicao: novo_evento_edicao.trim() || 'Nova Edição',
+          evento_ativo_edicao: novo_evento_edicao.trim() || '',
         }));
         exibir_notificacao(`Evento "${nomeLimpo}" criado e ativado com sucesso!`);
         await fetchDashboardData();
@@ -469,14 +471,17 @@ export const TelaAdmin: React.FC = () => {
       )}
 
       {/* 1. CABEÇALHO DO PAINEL DE CONTROLE ADMIN: Mantém APENAS Título, Nome do Evento (com Lápis) e Engrenagem à direita */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 flex-wrap">
+      {/* `flex-wrap` na faixa e `min-w-0` à esquerda: sem isso, nome de evento longo empurrava
+          "Novo Evento" e a engrenagem para fora da tela, e o `overflow-x: clip` da camada base
+          os cortava sem deixar rolagem. A Tela do Staff já fazia assim. */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-3 flex-wrap">
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
             Painel de Controle
           </h1>
           <span className="text-slate-300 dark:text-slate-600 text-xl font-light">|</span>
           <div className="flex items-center gap-2">
-            <span className="text-lg sm:text-xl font-bold text-emerald-700 dark:text-emerald-400">
+            <span className="text-lg sm:text-xl font-bold text-emerald-700 dark:text-emerald-400 break-words">
               {nomeEvento}
             </span>
             <button
@@ -496,7 +501,7 @@ export const TelaAdmin: React.FC = () => {
         </div>
 
         {/* Ações do Header: Novo Evento e Configurações (o Telão abre pelo cabeçalho, em aba nova) */}
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           {/* Botão Novo Evento */}
           <button
             type="button"
@@ -798,7 +803,7 @@ export const TelaAdmin: React.FC = () => {
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex flex-wrap justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => set_mostrar_modal_editar_nome_evento(false)}
@@ -996,7 +1001,7 @@ export const TelaAdmin: React.FC = () => {
               />
             </div>
 
-            <div className="flex justify-end gap-3 pt-2">
+            <div className="flex flex-wrap justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => {
@@ -1035,7 +1040,7 @@ export const TelaAdmin: React.FC = () => {
               Você está prestes a disparar a Stored Procedure <code className="font-mono bg-white/60 dark:bg-black/30 px-1 py-0.5 rounded">admin_reset_global(p_id_evento = '{metricas_admin.evento_ativo_id}')</code>. Esta operação é atômica e irreversível no Supabase.
             </div>
 
-            <div className="flex justify-end gap-3 pt-2">
+            <div className="flex flex-wrap justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => {
@@ -1144,8 +1149,8 @@ export const TelaAdmin: React.FC = () => {
 
       {/* MODAL AUDITORIA DE NOTAS: conferência, memorial de cálculo, trilha e ajustes */}
       {mostrar_modal_auditoria && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-          <div className="w-[98vw] max-w-[98vw] h-[95vh] max-h-[95vh] my-auto flex flex-col">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:static print:inset-auto print:z-auto print:bg-transparent print:backdrop-blur-none print:p-0 print:m-0 print:overflow-visible print:block print:w-full print:h-auto">
+          <div className="w-[98vw] max-w-[98vw] h-[95vh] max-h-[95vh] my-auto flex flex-col print:w-full print:max-w-none print:h-auto print:max-h-none print:overflow-visible print:m-0 print:static print:block">
             <PainelAuditoria
               id_evento_ativo={metricas_admin.evento_ativo_id}
               aoFechar={() => set_mostrar_modal_auditoria(false)}
@@ -1331,7 +1336,7 @@ export const TelaAdmin: React.FC = () => {
               </div>
 
               {/* Ações */}
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+              <div className="flex flex-wrap justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
                 <button
                   type="button"
                   onClick={() => set_mostrar_modal_novo_evento(false)}
