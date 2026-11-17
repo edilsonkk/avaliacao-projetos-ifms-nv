@@ -23,6 +23,10 @@ const ICONES: Record<TipoAviso, React.ReactNode> = {
 /**
  * Substitui o `alert()` do navegador: mesma tipografia, cores e botões da tela,
  * e acompanha o tema e o tamanho de texto escolhidos pela pessoa.
+ *
+ * É `alertdialog`, não `dialog`: o aviso pede ciência, então só o botão fecha. Como
+ * `dialog`, um toque fora da caixa dispensava a mensagem sem que ninguém a lesse —
+ * justamente o que o `alert()` nunca deixou acontecer.
  */
 export const Aviso: React.FC<PropriedadesAviso> = ({
   aberto,
@@ -32,12 +36,12 @@ export const Aviso: React.FC<PropriedadesAviso> = ({
   rotuloFechar = 'Entendi',
   aoFechar,
 }) => (
-  <Modal aberto={aberto} aoFechar={aoFechar} titulo={titulo} tamanho="pequeno">
+  <Modal aberto={aberto} aoFechar={aoFechar} titulo={titulo} tamanho="pequeno" papel="alertdialog">
     <div className="flex items-start gap-3">
       {ICONES[tipo]}
       {mensagem && <p className="text-corpo text-texto">{mensagem}</p>}
     </div>
-    <div className="flex justify-end">
+    <div className="flex flex-wrap gap-2 justify-end">
       <Botao data-foco-inicial onClick={aoFechar}>
         {rotuloFechar}
       </Botao>

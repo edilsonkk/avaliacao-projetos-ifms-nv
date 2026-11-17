@@ -20,7 +20,8 @@ import { supabase } from '@/lib/supabase';
 import { buscarTodas } from '@/lib/buscarTodas';
 import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { normalizarChave } from '@/lib/parsers/planilhaAvaliadoresParser';
-import { CabecalhoOrdenavel, compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { BarraDeAcoes, TabelaResponsiva, type ColunaTabela } from '@/components/ui';
 
 interface InstituicaoRegistro {
   id_instituicao: string;
@@ -288,6 +289,67 @@ export const GestorInstituicoes: React.FC<{ id_evento_ativo?: string; ao_fechar?
     else reader.readAsArrayBuffer(file);
   };
 
+  /** Colunas das instituições: vira cartão no celular, com as ações alcançáveis. */
+  const colunas_instituicoes = useMemo<ColunaTabela<InstituicaoRegistro>[]>(
+    () => [
+      {
+        chave: 'nome_exibicao',
+        rotulo: 'Instituição',
+        ordenavel: true,
+        className: 'font-bold text-slate-900 dark:text-white break-words',
+        renderizar: (inst) => inst.nome_exibicao,
+      },
+      {
+        chave: 'sigla',
+        rotulo: 'Sigla',
+        ordenavel: true,
+        renderizar: (inst) =>
+          inst.sigla ? (
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              {inst.sigla}
+            </span>
+          ) : (
+            <span className="text-[11px] text-slate-400 italic">Sem sigla</span>
+          ),
+      },
+      {
+        chave: 'campus',
+        rotulo: 'Câmpus',
+        ordenavel: true,
+        className: 'text-slate-600 dark:text-slate-300',
+        renderizar: (inst) => inst.campus || <span className="text-[11px] text-slate-400 italic">Não informado</span>,
+      },
+      {
+        chave: 'acoes',
+        rotulo: 'Ações',
+        acoes: true,
+        renderizar: (inst) => (
+          <BarraDeAcoes alinhar="inicio" rotulo={`Ações de ${inst.nome_exibicao}`} className="sm:justify-end">
+            <button
+              type="button"
+              onClick={() => set_instituicao_em_edicao({ ...inst })}
+              aria-label={`Editar ${inst.nome_exibicao}`}
+              title="Editar"
+              className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => set_instituicao_para_excluir(inst)}
+              aria-label={`Excluir ${inst.nome_exibicao}`}
+              title="Excluir"
+              className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 text-red-600 dark:text-red-400"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </BarraDeAcoes>
+        ),
+      },
+    ],
+    [],
+  );
+
   const alternar_ordenacao = (coluna: ColunaOrdenacao) => {
     if (coluna_ordenacao === coluna) {
       set_ordem_ascendente(!ordem_ascendente);
@@ -532,56 +594,16 @@ export const GestorInstituicoes: React.FC<{ id_evento_ativo?: string; ao_fechar?
       ) : (
         <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs min-w-[520px]">
-              <caption className="sr-only">Instituições do evento</caption>
-              <thead className="bg-slate-100 dark:bg-slate-900 uppercase font-black text-[10px] text-slate-600 dark:text-slate-400 tracking-wider">
-                <tr>
-                  <CabecalhoOrdenavel coluna="nome_exibicao" rotulo="Instituição" ativa={coluna_ordenacao} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <CabecalhoOrdenavel coluna="sigla" rotulo="Sigla" ativa={coluna_ordenacao} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <CabecalhoOrdenavel coluna="campus" rotulo="Câmpus" ativa={coluna_ordenacao} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <th scope="col" className="px-4 py-3 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
-                {instituicoes_ordenadas.map((inst) => (
-                  <tr key={inst.id_instituicao} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <td className="px-4 py-3 font-bold text-slate-900 dark:text-white">{inst.nome_exibicao}</td>
-                    <td className="px-4 py-3">
-                      {inst.sigla ? (
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                          {inst.sigla}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-slate-400 italic">Sem sigla</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{inst.campus || <span className="text-[11px] text-slate-400 italic">Não informado</span>}</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => set_instituicao_em_edicao({ ...inst })}
-                          aria-label={`Editar ${inst.nome_exibicao}`}
-                          title="Editar"
-                          className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => set_instituicao_para_excluir(inst)}
-                          aria-label={`Excluir ${inst.nome_exibicao}`}
-                          title="Excluir"
-                          className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 text-red-600 dark:text-red-400"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <TabelaResponsiva<InstituicaoRegistro>
+              legenda="Instituições do evento"
+              linhas={instituicoes_ordenadas}
+              chaveLinha={(inst) => inst.id_instituicao}
+              colunaOrdenacao={coluna_ordenacao}
+              direcao={direcao}
+              aoOrdenar={(coluna) => alternar_ordenacao(coluna as ColunaOrdenacao)}
+              larguraMinima="sm:min-w-[520px]"
+              colunas={colunas_instituicoes}
+            />
           </div>
         </div>
       )}
@@ -639,7 +661,7 @@ export const GestorInstituicoes: React.FC<{ id_evento_ativo?: string; ao_fechar?
                   />
                 </div>
               </div>
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="flex flex-wrap justify-end gap-3 pt-2">
                 <button type="button" onClick={() => set_instituicao_em_edicao(null)} className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300">
                   Cancelar
                 </button>
@@ -673,7 +695,7 @@ export const GestorInstituicoes: React.FC<{ id_evento_ativo?: string; ao_fechar?
               Se houver projeto ou avaliador desta instituição, a exclusão é recusada: sem a instituição, a regra que impede o
               avaliador de julgar a própria escola deixaria de valer para eles.
             </p>
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-wrap justify-end gap-3">
               <button type="button" onClick={() => set_instituicao_para_excluir(null)} disabled={excluindo} className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300">
                 Cancelar
               </button>

@@ -268,7 +268,7 @@ describe('MapaEstandes: Visualização Expandida, Cores e Badges de Notas', () =
       expect(screen.getByText('Robô Pantaneiro Autônomo')).toBeDefined();
     });
 
-    // Clica no filtro "Avaliado (1)"
+    // Clica no filtro "Avaliado (1)": só p-01 bateu a cota
     const btnFiltroAvaliado = screen.getByRole('button', { name: /Avaliado \(1\)/i });
     fireEvent.click(btnFiltroAvaliado);
 
@@ -282,6 +282,42 @@ describe('MapaEstandes: Visualização Expandida, Cores e Badges de Notas', () =
     fireEvent.click(btnTodos);
 
     expect(screen.getByText('Extratos Botânicos Medicinais')).toBeDefined();
+  });
+
+  /**
+   * Os filtros eram os mesmos estados exclusivos das cores: "Credenciado" só trazia quem
+   * tinha check-in e **zero** avaliações, e "Avaliado" só a cota cheia. Um projeto presente
+   * com 1 de 3 notas não aparecia em nenhum dos dois — era o relato de que o filtro "não
+   * funciona para credenciado e avaliado". Agora o filtro é predicado, e a cor segue exclusiva.
+   */
+  it('5b. FILTRO ACUMULATIVO: "Credenciado" traz todo projeto com check-in, inclusive já avaliado', async () => {
+    render(<MapaEstandes id_evento_ativo="evt-2026" cota_padrao_evento={3} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Robô Pantaneiro Autônomo')).toBeDefined();
+    });
+
+    // Credenciado = p-01 (3/3), p-03 (1/3) e p-04 (0/3); fora fica só p-02, sem check-in
+    fireEvent.click(screen.getByRole('button', { name: /Credenciado \(3\)/i }));
+    expect(screen.getByText('Robô Pantaneiro Autônomo')).toBeDefined();
+    expect(screen.getByText('Sistema IoT para Monitoramento de Queimadas')).toBeDefined();
+    expect(screen.getByText('Tratamento de Efluentes com Moringa')).toBeDefined();
+    expect(screen.queryByText('Extratos Botânicos Medicinais')).toBeNull();
+  });
+
+  it('5c. FILTRO ACUMULATIVO: "Faltando" inclui quem está com zero avaliações', async () => {
+    render(<MapaEstandes id_evento_ativo="evt-2026" cota_padrao_evento={3} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Robô Pantaneiro Autônomo')).toBeDefined();
+    });
+
+    // Faltando = p-03 (1/3) e p-04 (0/3). p-01 bateu a cota; p-02 não tem check-in
+    fireEvent.click(screen.getByRole('button', { name: /Faltando Avaliações \(2\)/i }));
+    expect(screen.getByText('Sistema IoT para Monitoramento de Queimadas')).toBeDefined();
+    expect(screen.getByText('Tratamento de Efluentes com Moringa')).toBeDefined();
+    expect(screen.queryByText('Robô Pantaneiro Autônomo')).toBeNull();
+    expect(screen.queryByText('Extratos Botânicos Medicinais')).toBeNull();
   });
 
   it('6. BUSCA TEXTUAL: filtra por estande, código ou título do projeto', async () => {

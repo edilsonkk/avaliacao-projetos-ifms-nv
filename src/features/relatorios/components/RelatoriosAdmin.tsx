@@ -43,6 +43,10 @@ import { MemorialAvaliacao, MemorialMediaProjeto, buscarMemorialProjeto, type Me
 import { tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { CabecalhoOrdenavel, compararNatural } from '@/components/ui/CabecalhoOrdenavel';
 import { ImagemEvento } from '@/components/layout/IdentidadeVisual';
+import { cssImpressao } from '@/lib/cssImpressao';
+
+/** Raiz isolada na impressão. O CSS e o JSX leem daqui, para não divergirem. */
+const RAIZ_IMPRESSAO = 'relatorio-print-root';
 
 // ==============================================================================
 // INTERFACES DOS RELATÓRIOS
@@ -1532,76 +1536,24 @@ export const RelatoriosAdmin: React.FC<{
 
   return (
     <div
-      id="relatorio-print-root"
+      id={RAIZ_IMPRESSAO}
       className="bg-white dark:bg-slate-800 rounded-3xl p-4 sm:p-6 lg:p-8 border border-slate-200 dark:border-slate-700 shadow-sm space-y-6 font-sans print:p-0 print:border-none print:shadow-none print:rounded-none print:space-y-4 print:static print:w-full print:bg-white print:m-0 print:overflow-visible"
     >
-      {/* ESTILOS CSS EXCLUSIVOS PARA IMPRESSÃO EM PDF */}
+      {/* ESTILOS CSS EXCLUSIVOS PARA IMPRESSÃO EM PDF.
+          O isolamento vem de `cssImpressao`, o mesmo utilitário da Folha de Conferência:
+          uma estratégia só para as duas telas que imprimem. Aqui ficam apenas as regras
+          próprias dos Relatórios. */}
       <style
         dangerouslySetInnerHTML={{
-          __html: `
-            @media print {
-              @page {
-                size: ${aba_ativa === 'indicadores' ? 'A4 landscape' : 'A4 portrait'};
-                margin: ${aba_ativa === 'indicadores' ? '8mm' : '10mm'};
-              }
-              html, body {
-                margin: 0 !important;
-                padding: 0 !important;
-                background: white !important;
-                color: black !important;
-                overflow: visible !important;
-                height: auto !important;
-                min-height: 100% !important;
-              }
-              /* Isola completamente o relatório e oculta tudo o mais no documento (janelas modais, barras de rolagem, backdrop) */
-              body * {
-                visibility: hidden;
-              }
-              #relatorio-print-root,
-              #relatorio-print-root * {
-                visibility: visible;
-              }
-              #relatorio-print-root {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                border: none !important;
-                box-shadow: none !important;
-                background: transparent !important;
-                border-radius: 0 !important;
-                overflow: visible !important;
-                height: auto !important;
-              }
-              body {
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-                background: white !important;
-                color: black !important;
-              }
-              .print\\:hidden {
-                display: none !important;
-              }
-              .print\\:block {
-                display: block !important;
-              }
-              .print\\:table-row {
-                display: table-row !important;
-              }
-              .print\\:p-0 {
-                padding: 0 !important;
-              }
-              .print\\:p-4 {
-                padding: 1rem !important;
-              }
-              .print-avoid-break {
-                page-break-inside: avoid !important;
-                break-inside: avoid !important;
-              }
-            }
-          `,
+          __html: cssImpressao(RAIZ_IMPRESSAO, {
+            orientacao: aba_ativa === 'indicadores' ? 'paisagem' : 'retrato',
+            margem: aba_ativa === 'indicadores' ? '8mm' : '10mm',
+            extra: `  .print\\:block { display: block !important; }
+  .print\\:table-row { display: table-row !important; }
+  .print\\:p-0 { padding: 0 !important; }
+  .print\\:p-4 { padding: 1rem !important; }
+  .print-avoid-break { page-break-inside: avoid !important; break-inside: avoid !important; }`,
+          }),
         }}
       />
 

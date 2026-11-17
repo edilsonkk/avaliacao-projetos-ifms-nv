@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
+import { BarraDeAcoes, TabelaResponsiva, type ColunaTabela } from '@/components/ui';
 import { PainelAparelhoAvaliador } from './PainelAparelhoAvaliador';
 
 export interface ProjetoStaff {
@@ -813,6 +814,291 @@ export const TelaStaff: React.FC = () => {
   };
 
   // Alternância de Ordenação - Avaliadores
+  /**
+   * Colunas do balcão de expositores. Como a lista de avaliadores, virou cartão no celular:
+   * o botão de check-in era a última coluna de uma tabela de 760px e nascia fora da tela.
+   */
+  const colunas_balcao_expositores = useMemo<ColunaTabela<ProjetoStaff>[]>(
+    () => [
+      {
+        chave: 'corredor',
+        rotulo: 'Corredor',
+        ordenavel: true,
+        renderizar: (item) => (
+          <span className="font-semibold text-slate-900 dark:text-white">{item.corredor || '-'}</span>
+        ),
+      },
+      {
+        chave: 'estande',
+        rotulo: 'Estande',
+        ordenavel: true,
+        renderizar: (item) => (
+          <span className="px-2.5 py-1 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-mono text-xs font-bold rounded-lg tracking-wider">
+            {item.estande || '-'}
+          </span>
+        ),
+      },
+      {
+        chave: 'titulo',
+        rotulo: 'Projeto',
+        ordenavel: true,
+        className: 'sm:max-w-md',
+        renderizar: (item) => (
+          <>
+            <span className="block font-bold text-slate-900 dark:text-white leading-snug break-words">{item.titulo}</span>
+            {item.codigo_projeto && (
+              <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">{item.codigo_projeto}</span>
+            )}
+          </>
+        ),
+      },
+      {
+        chave: 'nome_instituicao',
+        rotulo: 'Instituição',
+        ordenavel: true,
+        renderizar: (item) => (
+          <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+            <Building className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+            <span className="break-words">{item.nome_instituicao || '-'}</span>
+          </span>
+        ),
+      },
+      {
+        chave: 'expositores',
+        rotulo: 'Expositores',
+        className: 'sm:max-w-xs',
+        renderizar: (item) =>
+          item.expositores ? (
+            <span className="font-medium text-slate-700 dark:text-slate-300 break-words">{item.expositores}</span>
+          ) : (
+            <span className="text-slate-400 italic">-</span>
+          ),
+      },
+      {
+        chave: 'is_check_in_realizado',
+        rotulo: 'Check-in / Status',
+        acoes: true,
+        ordenavel: true,
+        renderizar: (item) => {
+          const isProc = processando_checkin_id === item.id_projeto;
+          return (
+            <BarraDeAcoes alinhar="inicio" className="sm:justify-end">
+              <button
+                type="button"
+                onClick={() => alternar_check_in_projeto(item.id_projeto, item.is_check_in_realizado)}
+                disabled={isProc}
+                className={`px-3 min-h-11 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                  item.is_check_in_realizado
+                    ? 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 border border-slate-300 dark:border-slate-600'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                }`}
+              >
+                {isProc ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : item.is_check_in_realizado ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Presente (Cancelar)</span>
+                  </>
+                ) : (
+                  <>
+                    <Clock className="w-3.5 h-3.5 text-white" />
+                    <span>Confirmar Check-in</span>
+                  </>
+                )}
+              </button>
+            </BarraDeAcoes>
+          );
+        },
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [processando_checkin_id],
+  );
+
+  /**
+   * Colunas do balcão de avaliadores. Ficam aqui porque a lista virou `TabelaResponsiva`:
+   * no celular cada linha é um cartão, e a coluna de ações precisa se identificar como tal
+   * para ir ao fim do cartão sem o rótulo "Ações:" na frente. Antes a tabela tinha
+   * `min-w-[760px]` e a coluna de ações era a última: num celular ela nascia fora da área
+   * visível, e era preciso descobrir que aquele trecho rola para o lado.
+   */
+  const colunas_balcao_avaliadores = useMemo<ColunaTabela<AvaliadorStaff>[]>(
+    () => [
+      {
+        chave: 'is_credenciado',
+        rotulo: 'Credenciamento',
+        ordenavel: true,
+        renderizar: (usuario) =>
+          usuario.is_credenciado ? (
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 inline-flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+              Liberado
+            </span>
+          ) : (
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800 inline-flex items-center gap-1">
+              <Clock className="w-3 h-3 text-amber-500" />
+              Aguardando
+            </span>
+          ),
+      },
+      {
+        chave: 'nome',
+        rotulo: 'Nome',
+        ordenavel: true,
+        renderizar: (usuario) => <span className="font-bold text-slate-900 dark:text-white">{usuario.nome}</span>,
+      },
+      {
+        chave: 'nome_instituicao',
+        rotulo: 'Instituição',
+        ordenavel: true,
+        renderizar: (usuario) =>
+          usuario.nome_instituicao ? (
+            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span>{usuario.nome_instituicao}</span>
+            </span>
+          ) : (
+            <span className="text-[11px] text-slate-400 italic">Não informada</span>
+          ),
+      },
+      {
+        chave: 'email',
+        rotulo: 'E-mail',
+        ordenavel: true,
+        className: 'font-mono text-slate-600 dark:text-slate-300 break-words',
+        renderizar: (usuario) => usuario.email,
+      },
+      {
+        chave: 'modalidades_bloqueadas',
+        rotulo: 'Modalidades',
+        ordenavel: true,
+        renderizar: (usuario) =>
+          lista_modalidades.length === 0 ? (
+            <span className="text-[11px] text-slate-400 italic">Nenhuma modalidade</span>
+          ) : (
+            <div className="flex flex-wrap gap-1.5 sm:max-w-sm">
+              {lista_modalidades.map((m) => {
+                const estaBloqueada = (usuario.modalidades_bloqueadas || []).includes(m.id_modalidade);
+                const isProcMod = processando_modalidade_id === `${usuario.id_usuario}_${m.id_modalidade}`;
+                return (
+                  <button
+                    key={m.id_modalidade}
+                    type="button"
+                    onClick={() => handle_toggle_modalidade_bloqueio(usuario, m)}
+                    disabled={isProcMod}
+                    aria-pressed={estaBloqueada}
+                    aria-label={`${estaBloqueada ? 'Liberar' : 'Bloquear'} ${m.nome_modalidade} para ${usuario.nome}`}
+                    title={
+                      estaBloqueada
+                        ? `Modalidade "${m.nome_modalidade}" está BLOQUEADA. Clique para LIBERAR.`
+                        : `Modalidade "${m.nome_modalidade}" está LIBERADA. Clique para BLOQUEAR.`
+                    }
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all inline-flex items-center gap-1 cursor-pointer disabled:opacity-50 select-none shadow-2xs ${
+                      estaBloqueada
+                        ? 'bg-red-50 hover:bg-red-100 text-red-700 border-red-300 dark:bg-red-950/60 dark:hover:bg-red-900/60 dark:text-red-300 dark:border-red-800'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-700'
+                    }`}
+                  >
+                    {isProcMod ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : estaBloqueada ? (
+                      <ShieldOff className="w-3 h-3 text-red-600 dark:text-red-400 shrink-0" />
+                    ) : (
+                      <Shield className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />
+                    )}
+                    <span>{estaBloqueada ? `Bloq: ${m.nome_modalidade}` : m.nome_modalidade}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ),
+      },
+      {
+        chave: 'areas',
+        rotulo: 'Áreas',
+        ordenavel: true,
+        renderizar: (usuario) =>
+          usuario.nomes_areas && usuario.nomes_areas.length > 0 ? (
+            <div className="flex flex-wrap gap-1 sm:max-w-xs">
+              {usuario.nomes_areas.map((nomeArea) => (
+                <span
+                  key={nomeArea}
+                  className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md inline-flex items-center gap-1 shadow-2xs"
+                >
+                  <Database className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                  {nomeArea}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 italic">Geral (todas as áreas)</span>
+          ),
+      },
+      {
+        chave: 'acoes',
+        rotulo: 'Ações',
+        acoes: true,
+        renderizar: (usuario) => {
+          const isProcCred = processando_credenciamento_id === usuario.id_usuario;
+          const vinculado = Boolean(aparelhos_vinculados[usuario.id_usuario]);
+          return (
+            <BarraDeAcoes alinhar="inicio" rotulo={`Ações de ${usuario.nome}`} className="sm:justify-end">
+              <button
+                type="button"
+                onClick={() => alternar_credenciamento_avaliador(usuario.id_usuario, usuario.is_credenciado)}
+                disabled={isProcCred}
+                aria-label={`${usuario.is_credenciado ? 'Bloquear' : 'Credenciar'} ${usuario.nome}`}
+                title={usuario.is_credenciado ? 'Suspender credenciamento' : 'Credenciar e liberar acesso'}
+                className={`px-3 min-h-11 rounded-lg font-bold text-xs transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                  usuario.is_credenciado
+                    ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 shadow-xs'
+                }`}
+              >
+                {isProcCred ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : usuario.is_credenciado ? (
+                  <UserX className="w-3.5 h-3.5" />
+                ) : (
+                  <UserCheck className="w-3.5 h-3.5" />
+                )}
+                <span>{usuario.is_credenciado ? 'Bloquear' : 'Credenciar'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => set_avaliador_aparelho({ id_usuario: usuario.id_usuario, nome: usuario.nome })}
+                aria-label={`Aparelho de ${usuario.nome}`}
+                title={vinculado ? 'Celular vinculado' : 'Parear celular'}
+                className={`px-3 min-h-11 rounded-lg font-bold text-xs inline-flex items-center gap-1 border cursor-pointer ${
+                  vinculado
+                    ? 'bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800'
+                    : 'bg-white text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600'
+                }`}
+              >
+                <Smartphone aria-hidden="true" className="w-3.5 h-3.5" />
+                <span>{vinculado ? 'Vinculado' : 'Parear'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handle_abrir_edicao(usuario)}
+                aria-label={`Editar ${usuario.nome}`}
+                title="Editar Avaliador"
+                className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            </BarraDeAcoes>
+          );
+        },
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lista_modalidades, processando_modalidade_id, processando_credenciamento_id, aparelhos_vinculados],
+  );
+
   const alternar_ordenacao_av = (coluna: ColunaOrdenacaoAvaliador) => {
     if (coluna_ordenacao_av === coluna) {
       set_ordem_asc_av(!ordem_asc_av);
@@ -1146,166 +1432,16 @@ export const TelaStaff: React.FC = () => {
           ) : (
             <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs min-w-[760px]">
-                  <thead className="bg-slate-100 dark:bg-slate-900 uppercase font-black text-[10px] text-slate-600 dark:text-slate-400 tracking-wider select-none">
-                    <tr>
-                      <th
-                        onClick={() => alternar_ordenacao_exp('corredor')}
-                        className="px-4 py-3.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                        title="Clique para ordenar por Corredor"
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Corredor</span>
-                          {renderIconeOrdenacaoExp('corredor')}
-                        </div>
-                      </th>
-
-                      <th
-                        onClick={() => alternar_ordenacao_exp('estande')}
-                        className="px-4 py-3.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                        title="Clique para ordenar por Estande"
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Estande</span>
-                          {renderIconeOrdenacaoExp('estande')}
-                        </div>
-                      </th>
-
-                      <th
-                        onClick={() => alternar_ordenacao_exp('titulo')}
-                        className="px-4 py-3.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                        title="Clique para ordenar por Projeto"
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Projeto</span>
-                          {renderIconeOrdenacaoExp('titulo')}
-                        </div>
-                      </th>
-
-                      <th
-                        onClick={() => alternar_ordenacao_exp('nome_instituicao')}
-                        className="px-4 py-3.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                        title="Clique para ordenar por Instituição"
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Instituição</span>
-                          {renderIconeOrdenacaoExp('nome_instituicao')}
-                        </div>
-                      </th>
-
-                      <th
-                        onClick={() => alternar_ordenacao_exp('expositores')}
-                        className="px-4 py-3.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                        title="Clique para ordenar por Expositores"
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Expositores</span>
-                          {renderIconeOrdenacaoExp('expositores')}
-                        </div>
-                      </th>
-
-                      <th
-                        onClick={() => alternar_ordenacao_exp('is_check_in_realizado')}
-                        className="px-4 py-3.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors text-right"
-                        title="Clique para ordenar por Check-in"
-                      >
-                        <div className="flex items-center justify-end gap-1">
-                          <span>Check-in / Status</span>
-                          {renderIconeOrdenacaoExp('is_check_in_realizado')}
-                        </div>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
-                    {projetos_processados.map((item) => {
-                      const isProc = processando_checkin_id === item.id_projeto;
-
-                      return (
-                        <tr
-                          key={item.id_projeto}
-                          className={`hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors ${
-                            item.is_check_in_realizado
-                              ? 'bg-emerald-50/20 dark:bg-emerald-950/10'
-                              : ''
-                          }`}
-                        >
-                          {/* Corredor */}
-                          <td className="px-4 py-3.5">
-                            <span className="font-semibold text-slate-900 dark:text-white inline-flex items-center gap-1">
-                              {item.corredor || '-'}
-                            </span>
-                          </td>
-
-                          {/* Estande */}
-                          <td className="px-4 py-3.5">
-                            <span className="px-2.5 py-1 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-mono text-xs font-bold rounded-lg tracking-wider">
-                              {item.estande || '-'}
-                            </span>
-                          </td>
-
-                          {/* Título do Projeto */}
-                          <td className="px-4 py-3.5 max-w-xs sm:max-w-md">
-                            <div className="font-bold text-slate-900 dark:text-white leading-snug">
-                              {item.titulo}
-                            </div>
-                            {item.codigo_projeto && (
-                              <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
-                                {item.codigo_projeto}
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Instituição */}
-                          <td className="px-4 py-3.5">
-                            <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
-                              <Building className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                              <span>{item.nome_instituicao || '-'}</span>
-                            </div>
-                          </td>
-
-                          {/* Expositores */}
-                          <td className="px-4 py-3.5 max-w-xs">
-                            {item.expositores ? (
-                              <span className="font-medium text-slate-700 dark:text-slate-300">
-                                {item.expositores}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 italic">-</span>
-                            )}
-                          </td>
-
-                          {/* Ação de Check-in */}
-                          <td className="px-4 py-3.5 text-right">
-                            <button
-                              type="button"
-                              onClick={() => alternar_check_in_projeto(item.id_projeto, item.is_check_in_realizado)}
-                              disabled={isProc}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                                item.is_check_in_realizado
-                                  ? 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 border border-slate-300 dark:border-slate-600'
-                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                              }`}
-                            >
-                              {isProc ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : item.is_check_in_realizado ? (
-                                <>
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                                  <span>Presente (Cancelar)</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Clock className="w-3.5 h-3.5 text-white" />
-                                  <span>Confirmar Check-in</span>
-                                </>
-                              )}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <TabelaResponsiva<ProjetoStaff>
+                  legenda="Projetos do evento para credenciamento de expositores"
+                  linhas={projetos_processados}
+                  chaveLinha={(item) => item.id_projeto}
+                  colunaOrdenacao={coluna_ordenacao_exp}
+                  direcao={ordem_asc_exp ? 'asc' : 'desc'}
+                  aoOrdenar={(coluna) => alternar_ordenacao_exp(coluna as ColunaOrdenacaoExpositor)}
+                  larguraMinima="sm:min-w-[760px]"
+                  colunas={colunas_balcao_expositores}
+                />
               </div>
             </div>
           )}
@@ -1437,252 +1573,16 @@ export const TelaStaff: React.FC = () => {
           ) : (
             <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs min-w-[760px]">
-                  <thead className="bg-slate-100 dark:bg-slate-900 uppercase font-black text-[10px] text-slate-600 dark:text-slate-400 tracking-wider select-none">
-                    <tr>
-                      <th
-                        onClick={() => alternar_ordenacao_av('is_credenciado')}
-                        className="px-4 py-3.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                        title="Clique para ordenar por Credenciamento"
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Credenciamento</span>
-                          {renderIconeOrdenacaoAv('is_credenciado')}
-                        </div>
-                      </th>
-
-                      <th
-                        onClick={() => alternar_ordenacao_av('nome')}
-                        className="px-4 py-3.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                        title="Clique para ordenar por Nome"
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Nome</span>
-                          {renderIconeOrdenacaoAv('nome')}
-                        </div>
-                      </th>
-
-                      <th
-                        onClick={() => alternar_ordenacao_av('nome_instituicao')}
-                        className="px-4 py-3.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                        title="Clique para ordenar por Instituição"
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Instituição</span>
-                          {renderIconeOrdenacaoAv('nome_instituicao')}
-                        </div>
-                      </th>
-
-                      <th
-                        onClick={() => alternar_ordenacao_av('email')}
-                        className="px-4 py-3.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                        title="Clique para ordenar por E-mail"
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>E-mail</span>
-                          {renderIconeOrdenacaoAv('email')}
-                        </div>
-                      </th>
-
-                      <th
-                        onClick={() => alternar_ordenacao_av('modalidades_bloqueadas')}
-                        className="px-4 py-3.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                        title="Clique para ordenar por Modalidades Bloqueadas"
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Modalidades</span>
-                          {renderIconeOrdenacaoAv('modalidades_bloqueadas')}
-                        </div>
-                      </th>
-
-                      <th
-                        onClick={() => alternar_ordenacao_av('areas')}
-                        className="px-4 py-3.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                        title="Clique para ordenar por Áreas"
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Áreas</span>
-                          {renderIconeOrdenacaoAv('areas')}
-                        </div>
-                      </th>
-
-                      <th className="px-4 py-3.5 text-right">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
-                    {avaliadores_processados.map((usuario) => {
-                      const isProcCred = processando_credenciamento_id === usuario.id_usuario;
-
-                      return (
-                        <tr
-                          key={usuario.id_usuario}
-                          className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                        >
-                          {/* Status de Credenciamento */}
-                          <td className="px-4 py-3.5">
-                            {usuario.is_credenciado ? (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 inline-flex items-center gap-1">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                                Liberado
-                              </span>
-                            ) : (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800 inline-flex items-center gap-1">
-                                <Clock className="w-3 h-3 text-amber-500" />
-                                Aguardando
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Nome */}
-                          <td className="px-4 py-3.5">
-                            <div className="font-bold text-slate-900 dark:text-white">
-                              {usuario.nome}
-                            </div>
-                          </td>
-
-                          {/* Instituição */}
-                          <td className="px-4 py-3.5">
-                            {usuario.nome_instituicao ? (
-                              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5">
-                                <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                                <span>{usuario.nome_instituicao}</span>
-                              </span>
-                            ) : (
-                              <span className="text-[11px] text-slate-400 italic">
-                                Não informada
-                              </span>
-                            )}
-                          </td>
-
-                          {/* E-mail */}
-                          <td className="px-4 py-3.5 font-mono text-slate-600 dark:text-slate-300">
-                            {usuario.email}
-                          </td>
-
-                          {/* Modalidades (com botões de Bloquear/Liberar) */}
-                          <td className="px-4 py-3.5">
-                            {lista_modalidades.length === 0 ? (
-                              <span className="text-[11px] text-slate-400 italic">
-                                Nenhuma modalidade
-                              </span>
-                            ) : (
-                              <div className="flex flex-wrap gap-1.5 max-w-sm">
-                                {lista_modalidades.map((m) => {
-                                  const estaBloqueada = (usuario.modalidades_bloqueadas || []).includes(m.id_modalidade);
-                                  const chaveProc = `${usuario.id_usuario}_${m.id_modalidade}`;
-                                  const isProcMod = processando_modalidade_id === chaveProc;
-
-                                  return (
-                                    <button
-                                      key={m.id_modalidade}
-                                      type="button"
-                                      onClick={() => handle_toggle_modalidade_bloqueio(usuario, m)}
-                                      disabled={isProcMod}
-                                      title={
-                                        estaBloqueada
-                                          ? `Modalidade "${m.nome_modalidade}" está BLOQUEADA. Clique para LIBERAR.`
-                                          : `Modalidade "${m.nome_modalidade}" está LIBERADA. Clique para BLOQUEAR.`
-                                      }
-                                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all inline-flex items-center gap-1 cursor-pointer disabled:opacity-50 select-none shadow-2xs ${
-                                        estaBloqueada
-                                          ? 'bg-red-50 hover:bg-red-100 text-red-700 border-red-300 dark:bg-red-950/60 dark:hover:bg-red-900/60 dark:text-red-300 dark:border-red-800'
-                                          : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-700'
-                                      }`}
-                                    >
-                                      {isProcMod ? (
-                                        <Loader2 className="w-3 h-3 animate-spin" />
-                                      ) : estaBloqueada ? (
-                                        <ShieldOff className="w-3 h-3 text-red-600 dark:text-red-400 shrink-0" />
-                                      ) : (
-                                        <Shield className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />
-                                      )}
-                                      <span>{estaBloqueada ? `Bloq: ${m.nome_modalidade}` : m.nome_modalidade}</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Áreas de Avaliação */}
-                          <td className="px-4 py-3.5">
-                            {usuario.nomes_areas && usuario.nomes_areas.length > 0 ? (
-                              <div className="flex flex-wrap gap-1 max-w-xs">
-                                {usuario.nomes_areas.map((nomeArea, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md inline-flex items-center gap-1 shadow-2xs"
-                                  >
-                                    <Database className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
-                                    {nomeArea}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 italic">
-                                Geral (todas as áreas)
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Ações (Credenciar e Editar - Sem Botão de Excluir / Lixeira) */}
-                          <td className="px-4 py-3.5 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              {/* Botão Credenciar / Descredenciar */}
-                              <button
-                                type="button"
-                                onClick={() => alternar_credenciamento_avaliador(usuario.id_usuario, usuario.is_credenciado)}
-                                disabled={isProcCred}
-                                title={usuario.is_credenciado ? 'Suspender credenciamento' : 'Credenciar e liberar acesso'}
-                                className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                                  usuario.is_credenciado
-                                    ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 shadow-xs'
-                                }`}
-                              >
-                                {isProcCred ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : usuario.is_credenciado ? (
-                                  <UserX className="w-3.5 h-3.5" />
-                                ) : (
-                                  <UserCheck className="w-3.5 h-3.5" />
-                                )}
-                                <span>{usuario.is_credenciado ? 'Bloquear' : 'Credenciar'}</span>
-                              </button>
-
-                              {/* Botão Aparelho (pareamento / código de acesso) */}
-                              <button
-                                type="button"
-                                onClick={() => set_avaliador_aparelho({ id_usuario: usuario.id_usuario, nome: usuario.nome })}
-                                aria-label={`Aparelho de ${usuario.nome}`}
-                                title={aparelhos_vinculados[usuario.id_usuario] ? 'Celular vinculado' : 'Parear celular'}
-                                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs inline-flex items-center gap-1 border cursor-pointer ${
-                                  aparelhos_vinculados[usuario.id_usuario]
-                                    ? 'bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800'
-                                    : 'bg-white text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600'
-                                }`}
-                              >
-                                <Smartphone aria-hidden="true" className="w-3.5 h-3.5" />
-                                <span>{aparelhos_vinculados[usuario.id_usuario] ? 'Vinculado' : 'Parear'}</span>
-                              </button>
-
-                              {/* Botão Editar (Modal) */}
-                              <button
-                                type="button"
-                                onClick={() => handle_abrir_edicao(usuario)}
-                                aria-label={`Editar ${usuario.nome}`}
-                                title="Editar Avaliador"
-                                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <TabelaResponsiva<AvaliadorStaff>
+                  legenda="Avaliadores do evento para credenciamento"
+                  linhas={avaliadores_processados}
+                  chaveLinha={(usuario) => usuario.id_usuario}
+                  colunaOrdenacao={coluna_ordenacao_av}
+                  direcao={ordem_asc_av ? 'asc' : 'desc'}
+                  aoOrdenar={(coluna) => alternar_ordenacao_av(coluna as ColunaOrdenacaoAvaliador)}
+                  larguraMinima="sm:min-w-[760px]"
+                  colunas={colunas_balcao_avaliadores}
+                />
               </div>
             </div>
           )}
@@ -1842,7 +1742,7 @@ export const TelaStaff: React.FC = () => {
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
                 <button
                   type="button"
                   onClick={() => {

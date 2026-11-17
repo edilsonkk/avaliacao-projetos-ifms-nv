@@ -34,7 +34,7 @@ describe('ProvedorAvisos', () => {
     await user.click(screen.getByRole('button', { name: 'Enviar nota' }));
 
     // Assert
-    expect(screen.getByRole('dialog', { name: 'Avaliação enviada' })).toBeInTheDocument();
+    expect(screen.getByRole('alertdialog', { name: 'Avaliação enviada' })).toBeInTheDocument();
     expect(screen.getByText('A nota foi gravada.')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Entendi' })).toHaveFocus();
 
@@ -43,7 +43,32 @@ describe('ProvedorAvisos', () => {
 
     // Assert
     await waitFor(() => expect(aoResultado).toHaveBeenCalledWith('fechado'));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  /**
+   * O aviso pede ciência: quem precisa ler a mensagem não deve dispensá-la sem querer,
+   * com um toque fora da caixa. Só o botão fecha — e não há X no canto.
+   */
+  it('não deve fechar o aviso ao clicar no fundo, nem oferecer o X', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    const aoResultado = vi.fn();
+    render(
+      <ProvedorAvisos>
+        <TelaDeTeste aoResultado={aoResultado} />
+      </ProvedorAvisos>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Enviar nota' }));
+    const caixa = screen.getByRole('alertdialog', { name: 'Avaliação enviada' });
+
+    // Act
+    await user.click(caixa.parentElement as HTMLElement);
+
+    // Assert
+    expect(screen.getByRole('alertdialog', { name: 'Avaliação enviada' })).toBeInTheDocument();
+    expect(aoResultado).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Fechar' })).not.toBeInTheDocument();
   });
 
   it('deve confirmar a ação destrutiva com o caminho seguro em primeiro lugar', async () => {

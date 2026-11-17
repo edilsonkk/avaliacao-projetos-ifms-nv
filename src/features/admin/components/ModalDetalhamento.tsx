@@ -725,7 +725,7 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
                               {u.id_usuario}
                             </td>
                             <td className="px-4 py-2 text-right">
-                              <div className="inline-flex items-center gap-1.5 justify-end">
+                              <div className="inline-flex flex-wrap items-center gap-1.5 justify-end">
                                 <button
                                   type="button"
                                   onClick={handle_salvar_edicao_admin}
@@ -761,7 +761,7 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
                           </td>
                           <td className="px-4 py-3 font-mono text-xs text-slate-400">{u.id_usuario}</td>
                           <td className="px-4 py-3 text-right">
-                            <div className="inline-flex items-center gap-1.5 justify-end">
+                            <div className="inline-flex flex-wrap items-center gap-1.5 justify-end">
                               <button
                                 type="button"
                                 onClick={() => iniciar_edicao_admin(u)}
@@ -819,7 +819,7 @@ export const ModalDetalhamento: React.FC<ModalDetalhamentoProps> = ({
         </div>
 
         {/* Rodapé com Fechamento */}
-        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end bg-slate-50/50 dark:bg-slate-900/50">
+        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2 justify-end bg-slate-50/50 dark:bg-slate-900/50">
           <button
             type="button"
             onClick={ao_fechar}

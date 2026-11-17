@@ -200,8 +200,13 @@ ignorados pelo Auth. Fluxo em [configuração](configuracao.md#trocar-a-senha).
   quando o navegador está com a conta da equipe). No balcão:
   `src/features/staff/components/PainelAparelhoAvaliador.tsx`.
 - **Cabeçalhos HTTP** (Firebase, `firebase.json`): CSP restritiva (`script-src 'self'`, sem inline nem `eval`;
-  `connect-src` só o Supabase; `frame-ancestors 'none'`), `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`,
-  `Permissions-Policy`, `Cross-Origin-Opener-Policy`. Validada no Chrome com o build local: nenhuma violação.
+  `connect-src` e `img-src` só o próprio site e o Supabase; `frame-ancestors 'none'`), `nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`. Validada no Chrome
+  com o build local: nenhuma violação.
+  > `img-src` precisa de `https://*.supabase.co` porque a identidade visual do evento fica no Storage, em outra
+  > origem. Sem isso, o ícone e a imagem do evento (e o favicon trocado em runtime) são bloqueados **só em
+  > produção** — em `vite dev` não há CSP nenhuma. O teste `src/__tests__/configuracao/cabecalhosSeguranca.test.ts`
+  > cobre as duas diretivas; antes afirmava só `connect-src`, e foi por aí que a falha passou no CI.
 - **Sem terceiros**: o QR Code do autocadastro é gerado no navegador; nenhum script, fonte ou imagem vem de outro
   domínio (teste `cabecalhosSeguranca.test.ts`).
 - **Sem dados de avaliação no navegador**: sem internet, a nota não é guardada nem enviada depois (a antiga fila

@@ -23,7 +23,7 @@ O evento (feira) é a unidade de isolamento de todos os dados. Código: `src/fea
 
 ## Configurações do evento
 
-`ModalConfiguracoesEvento` grava as colunas oficiais de `eventos`: `nome_evento`, `data_evento`, `horario_inicio`,
+`ModalConfiguracoesEvento` grava as colunas oficiais de `eventos`: `nome_evento`, `edicao`, `data_evento`, `horario_inicio`,
 `horario_fim`, `minutos_timeout_lock`, `cota_avaliacoes_padrao` e `sistema_liberado`, mais os parâmetros de acesso
 dos avaliadores (`minutos_validade_pareamento`, `minutos_validade_codigo_acesso`, `tamanho_codigo`,
 `max_tentativas_codigo` e `metodos_vinculo`).
@@ -72,7 +72,23 @@ Função pura `validarJanelaAvaliacao(info, dataHoraReferencia)` (`TelaAvaliador
 Exceção: quem tem avaliação em andamento (trava ativa) conclui normalmente após o fim. O servidor só recusa se
 `sistema_liberado = false`.
 
-Para encerrar a feira, o Admin define `sistema_liberado = false`.
+Para **pausar** a feira (almoço, rede caindo, atraso na programação), o Admin desmarca
+`sistema_liberado`; marcar de novo retoma tudo, sem mexer em vínculo de celular.
+
+Para **encerrar**, o botão **Finalizar evento** (Configurações do evento) chama
+`admin_finalizar_evento(p_id_evento)`, que numa transação: fecha `sistema_liberado`, apaga as travas dos projetos
+do evento, revoga o vínculo de celular dos avaliadores do evento, queima os códigos de acesso pendentes e grava um
+resumo na [trilha](auditoria-de-notas.md#trilha-de-auditoria-log_auditoria) com as três contagens.
+
+- **O evento continua ativo** (`is_ativo`): relatórios, classificação, auditoria e Telão leem o evento ativo, e é
+  deles que a comissão precisa depois do encerramento.
+- **Nenhuma nota é apagada** — finalizar não é reset; trava não é nota.
+- A confirmação informa **quantas avaliações estão em andamento** naquele instante (de `fn_telao_resumo`): elas são
+  devolvidas sem gravar nota.
+- Depois de finalizar, o avaliador precisa **parear o celular de novo** com a equipe, porque o vínculo é uma sessão
+  anônima sem senha ([troubleshooting](../operacao/troubleshooting.md#avaliador-saiu-e-o-código-de-acesso-não-serve-mais)).
+- **Não há encerramento automático**, nem por horário nem ao desmarcar a pausa: não existe agendador no projeto e o
+  efeito é destrutivo demais para gatilho indireto ([ADR 0017](../decisoes/0017-finalizar-evento-como-acao-propria.md)).
 
 ## Identidade visual
 

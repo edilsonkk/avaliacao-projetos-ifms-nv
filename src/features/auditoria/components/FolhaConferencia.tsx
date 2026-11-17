@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Printer, X } from 'lucide-react';
 import { Botao } from '@/components/ui';
+import { cssImpressao } from '@/lib/cssImpressao';
 import { formatarAjuste, formatarNota, formatarPeso } from '@/lib/formatoNota';
 import { dataHoraBr, ROTULO_SEVERIDADE } from '../rotulos';
 import type { MemorialProjeto } from '../tipos';
@@ -9,23 +10,27 @@ import { MemorialAvaliacao } from './MemorialAvaliacao';
 /**
  * Folha de conferência: o documento que a comissão leva para a mesa e que instrui um recurso.
  *
- * Impressa por `window.print()` com uma raiz isolada (`#auditoria-print-root`), como os
- * Relatórios já fazem. Dois interruptores decidem o que sai no papel:
+ * Impressa por `window.print()` com a raiz isolada `#auditoria-print-raiz`, pelo mesmo
+ * utilitário dos Relatórios (`cssImpressao`). Dois interruptores decidem o que sai no papel:
  *   * **Ocultar identidade dos avaliadores** — troca o nome por "Avaliador 1, 2, 3…". É o que
  *     se entrega a participante ou instituição.
  *   * **Incluir ajustes manuais** — a marca de ajuste sai do documento externo por padrão, mas
  *     ligar é um clique: num recurso sobre a nota ajustada, omitir trabalha contra a coordenação.
  */
 
-const CSS_IMPRESSAO = `
-@media print {
-  @page { size: A4 portrait; margin: 10mm; }
-  body > *:not(#auditoria-print-raiz) { display: none !important; }
-  #auditoria-print-raiz { position: static !important; inset: auto !important; overflow: visible !important; background: #fff !important; }
-  #auditoria-print-raiz .folha-projeto { break-inside: avoid; page-break-inside: avoid; }
-  #auditoria-print-raiz .folha-projeto + .folha-projeto { break-before: page; page-break-before: always; }
-}
-`;
+const RAIZ_IMPRESSAO = 'auditoria-print-raiz';
+
+/**
+ * Um projeto por página, sem quebrar a folha no meio.
+ *
+ * O isolamento vem de `cssImpressao`. Antes era `body > *:not(#raiz) { display: none }`, que
+ * não funciona: a folha mora dentro de `#root`, então a regra escondia o ancestral dela e o
+ * PDF saía em branco.
+ */
+const CSS_IMPRESSAO = cssImpressao(RAIZ_IMPRESSAO, {
+  extra: `  #${RAIZ_IMPRESSAO} .folha-projeto { break-inside: avoid; page-break-inside: avoid; }
+  #${RAIZ_IMPRESSAO} .folha-projeto + .folha-projeto { break-before: page; page-break-before: always; }`,
+});
 
 interface PropriedadesFolha {
   /** Uma folha por projeto, ou a consolidada do evento. */
@@ -45,7 +50,7 @@ export const FolhaConferencia: React.FC<PropriedadesFolha> = ({ projeto, projeto
 
   return (
     <div
-      id="auditoria-print-raiz"
+      id={RAIZ_IMPRESSAO}
       className="fixed inset-0 z-[60] overflow-y-auto bg-superficie p-6 print:p-0"
       role="dialog"
       aria-label={consolidada ? 'Folha de conferência do evento' : 'Folha de conferência do projeto'}

@@ -69,13 +69,31 @@ Importe sempre pelo índice: `import { Botao, Campo } from '@/components/ui'`.
 | `Selo` | etiqueta de situação | piso de 12px, não quebra linha |
 | `Estado` | carregando / vazio / erro | `role="status"` ao carregar, `role="alert"` no erro |
 | `Modal` | qualquer diálogo | `role="dialog"`/`alertdialog`, `aria-modal`, foco inicial (`data-foco-inicial`), foco preso, `Esc`, foco devolvido a quem abriu, rolagem do fundo travada |
-| `Aviso` | o que antes era `alert()` | diálogo com a tipografia da tela, foco no botão de ciência |
+| `Aviso` | o que antes era `alert()` | `alertdialog` com a tipografia da tela, foco no botão de ciência; **só o botão fecha** (nem o fundo, nem o X), porque o aviso pede ciência |
 | `ConfirmacaoPerigo` | o que antes era `confirm()` | `alertdialog`; o caminho seguro é o primário, recebe o foco e responde ao `Esc` |
 | `ProvedorAvisos` + `useAvisos()` | `avisar`, `confirmar` e `notificar` | uma única região viva (`aria-live`), `assertive` só no erro |
 | `Abas` + `PainelAba` | navegação por abas | `role="tablist"/"tab"/"tabpanel"`, tabulação só na aba ativa, setas e Home/End |
-| `Tabela` | listagem | `<caption>` para leitor de tela, `scope="col"` e contêiner de rolagem focável (sem isso, quem usa teclado não rola a tabela) |
+| `Tabela` | listagem simples | `<caption>` para leitor de tela, `scope="col"` e contêiner de rolagem focável (sem isso, quem usa teclado não rola a tabela) |
+| `TabelaResponsiva` | listagem com ações | o mesmo da `Tabela`, e **vira cartões no celular**: um só DOM, com os elementos passando a `display: block` abaixo de `sm:` e cada um declarando o `role` que o navegador descarta nessa troca. O rótulo do campo no cartão sai por pseudo-elemento (`data-rotulo` + `content: attr()`), fora do `textContent` |
+| `BarraDeAcoes` | barra de botões | `flex-wrap` com `gap`, e `empilhar` para largura cheia no celular (o rodapé do `Modal`) |
 | `Dica` | explicação curta | `role="tooltip"`, abre no toque e fecha com `Esc` |
 | `CabecalhoOrdenavel` | coluna de tabela | `aria-sort` e ordenação pelo teclado |
+
+### Por que a `TabelaResponsiva` existe
+
+As listagens eram `<table>` escritas à mão com `min-w-[520px]`…`min-w-[900px]`, e a coluna **Ações** era a
+última. Num celular ela nascia fora da área visível: só aparecia para quem descobrisse que aquele trecho rola
+para o lado. Somado ao `overflow-x: clip` do `<html>` (guarda contra rolagem lateral da página), o relato era
+"os botões somem".
+
+Dois cuidados que valem ao usar:
+
+- **Um só DOM.** Renderizar tabela e cartões em paralelo (`hidden sm:block` em duas árvores) duplicaria cada
+  botão para o leitor de tela e tornaria ambíguo qualquer `getByRole` nos testes.
+- **Coluna de ações se declara** (`acoes: true`): vai para o fim do cartão e **sem** rótulo — "Ações:
+  [Credenciar]" não ajuda ninguém.
+- Linha de detalhe (as notas de um projeto na Quarentena) entra por `detalhe`, que a tela abre e fecha; o
+  componente não guarda esse estado.
 
 ## Esqueleto da página
 

@@ -3,7 +3,8 @@ import { Lock, Unlock, RefreshCw, X, Loader2, AlertTriangle, CheckCircle2, User,
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { aoRetomarApp } from '@/lib/keepAliveSessao';
-import { CabecalhoOrdenavel, compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { compararNatural } from '@/components/ui/CabecalhoOrdenavel';
+import { BarraDeAcoes, TabelaResponsiva, type ColunaTabela } from '@/components/ui';
 
 /**
  * Projetos Bloqueados: travas ativas (locks_ativos) do evento ativo.
@@ -197,6 +198,107 @@ export const ProjetosBloqueados: React.FC<ProjetosBloqueadosProps> = ({ aoFechar
     }
   };
 
+  /**
+   * Colunas das travas. `agora` entra nas dependências porque a coluna "Expira em" conta
+   * minutos a partir dele — sem isso o tempo congelaria na tela.
+   */
+  const colunas_travas = useMemo<ColunaTabela<TravaAtiva>[]>(
+    () => [
+      {
+        chave: 'codigo',
+        rotulo: 'Código',
+        ordenavel: true,
+        className: 'font-mono font-bold text-slate-700 dark:text-slate-300 sm:whitespace-nowrap',
+        renderizar: (trava) => trava.codigo_projeto || 'N/I',
+      },
+      {
+        chave: 'estande',
+        rotulo: 'Estande',
+        ordenavel: true,
+        className: 'font-mono font-bold text-amber-600 dark:text-amber-400 sm:whitespace-nowrap',
+        renderizar: (trava) => trava.projeto_estande,
+      },
+      {
+        chave: 'corredor',
+        rotulo: 'Corredor',
+        ordenavel: true,
+        className: 'font-semibold text-teal-600 dark:text-teal-400 sm:whitespace-nowrap',
+        renderizar: (trava) => trava.projeto_corredor,
+      },
+      {
+        chave: 'titulo',
+        rotulo: 'Projeto',
+        ordenavel: true,
+        className: 'font-bold sm:min-w-[14rem] sm:max-w-xs break-words',
+        renderizar: (trava) => trava.projeto_titulo,
+      },
+      {
+        chave: 'avaliador',
+        rotulo: 'Avaliador',
+        ordenavel: true,
+        renderizar: (trava) => (
+          <span className="inline-flex items-center gap-2">
+            <span aria-hidden="true" className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0">
+              <User className="w-3.5 h-3.5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block font-bold text-slate-900 dark:text-white text-xs break-words">{trava.avaliador_nome}</span>
+              {trava.avaliador_email && (
+                <span className="block text-[10px] text-slate-500 dark:text-slate-400 font-mono break-all">
+                  <Mail aria-hidden="true" className="inline w-2.5 h-2.5 shrink-0 mr-1" />
+                  {trava.avaliador_email}
+                </span>
+              )}
+            </span>
+          </span>
+        ),
+      },
+      {
+        chave: 'restante',
+        rotulo: 'Expira em',
+        ordenavel: true,
+        className: 'sm:whitespace-nowrap',
+        renderizar: (trava) => {
+          const restantes = minutosRestantes(trava.expira_em, agora);
+          return (
+            <span
+              className={`inline-flex items-center gap-1 font-bold ${restantes <= 5 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-slate-300'}`}
+              title={`Expira às ${new Date(trava.expira_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
+            >
+              <Clock aria-hidden="true" className="w-3.5 h-3.5" />
+              {restantes <= 1 ? 'menos de 1 min' : `${restantes} min`}
+            </span>
+          );
+        },
+      },
+      {
+        chave: 'acoes',
+        rotulo: 'Ação',
+        acoes: true,
+        renderizar: (trava) => (
+          <BarraDeAcoes alinhar="inicio" className="sm:justify-end">
+            <button
+              type="button"
+              onClick={() => liberar_trava(trava)}
+              disabled={liberando !== null}
+              aria-label={`Liberar trava de ${trava.avaliador_nome} no projeto ${trava.codigo_projeto || 'N/I'}`}
+              className="px-3 min-h-11 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-bold text-xs border border-amber-300 dark:border-amber-800 transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {liberando === trava.id_lock ? (
+                <Loader2 aria-hidden="true" className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Unlock aria-hidden="true" className="w-3.5 h-3.5 text-amber-600" />
+              )}
+              <span>Liberar trava</span>
+            </button>
+          </BarraDeAcoes>
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [agora, liberando],
+  );
+
   const travas_ordenadas = useMemo(() => {
     const valor = (t: TravaAtiva): string | number => {
       switch (coluna) {
@@ -305,75 +407,16 @@ export const ProjetosBloqueados: React.FC<ProjetosBloqueadosProps> = ({ aoFechar
           </div>
         ) : (
           <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-x-auto shadow-xs">
-            <table className="w-full min-w-[760px] text-left text-xs">
-              <caption className="sr-only">Travas ativas do evento</caption>
-              <thead className="bg-slate-100 dark:bg-slate-800 text-[10px] text-slate-600 dark:text-slate-400">
-                <tr>
-                  <CabecalhoOrdenavel coluna="codigo" rotulo="Código" ativa={coluna} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <CabecalhoOrdenavel coluna="estande" rotulo="Estande" ativa={coluna} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <CabecalhoOrdenavel coluna="corredor" rotulo="Corredor" ativa={coluna} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <CabecalhoOrdenavel coluna="titulo" rotulo="Projeto" ativa={coluna} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <CabecalhoOrdenavel coluna="avaliador" rotulo="Avaliador" ativa={coluna} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <CabecalhoOrdenavel coluna="restante" rotulo="Expira em" ativa={coluna} direcao={direcao} aoOrdenar={alternar_ordenacao} />
-                  <th scope="col" className="px-4 py-3 text-right uppercase font-black tracking-wider">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
-                {travas_ordenadas.map((trava) => {
-                  const restantes = minutosRestantes(trava.expira_em, agora);
-                  const codigo = trava.codigo_projeto || 'N/I';
-                  return (
-                    <tr key={trava.id_lock} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                      <td className="px-4 py-3 font-mono font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{codigo}</td>
-                      <td className="px-4 py-3 font-mono font-bold text-amber-600 dark:text-amber-400 whitespace-nowrap">{trava.projeto_estande}</td>
-                      <td className="px-4 py-3 font-semibold text-teal-600 dark:text-teal-400 whitespace-nowrap">{trava.projeto_corredor}</td>
-                      <td className="px-4 py-3 font-bold min-w-[14rem] max-w-xs">{trava.projeto_titulo}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0">
-                            <User aria-hidden="true" className="w-3.5 h-3.5" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-bold text-slate-900 dark:text-white text-xs">{trava.avaliador_nome}</div>
-                            {trava.avaliador_email && (
-                              <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1">
-                                <Mail aria-hidden="true" className="w-2.5 h-2.5 shrink-0" />
-                                <span className="truncate">{trava.avaliador_email}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center gap-1 font-bold ${restantes <= 5 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-slate-300'}`}
-                          title={`Expira às ${new Date(trava.expira_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
-                        >
-                          <Clock aria-hidden="true" className="w-3.5 h-3.5" />
-                          {restantes <= 1 ? 'menos de 1 min' : `${restantes} min`}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => liberar_trava(trava)}
-                          disabled={liberando !== null}
-                          aria-label={`Liberar trava de ${trava.avaliador_nome} no projeto ${codigo}`}
-                          className="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-bold text-xs border border-amber-300 dark:border-amber-800 transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                        >
-                          {liberando === trava.id_lock ? (
-                            <Loader2 aria-hidden="true" className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Unlock aria-hidden="true" className="w-3.5 h-3.5 text-amber-600" />
-                          )}
-                          <span>Liberar trava</span>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <TabelaResponsiva<TravaAtiva>
+              legenda="Travas ativas do evento"
+              linhas={travas_ordenadas}
+              chaveLinha={(trava) => trava.id_lock}
+              colunaOrdenacao={coluna}
+              direcao={direcao}
+              aoOrdenar={(c) => alternar_ordenacao(c as Coluna)}
+              larguraMinima="sm:min-w-[760px]"
+              colunas={colunas_travas}
+            />
           </div>
         )}
       </div>

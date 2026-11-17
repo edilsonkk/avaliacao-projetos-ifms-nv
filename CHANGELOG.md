@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.12.2...v0.13.0) (2026-11-17)
+
+
+### Funcionalidades
+
+* finalizar evento, correção do voto popular e ajustes de produção da feira ([#115](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/115)) ([363769a](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/363769a05b791016dab6e6439e6a80785dc20416))
+
 ## [0.12.2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.12.1...v0.12.2) (2026-11-15)
 
 

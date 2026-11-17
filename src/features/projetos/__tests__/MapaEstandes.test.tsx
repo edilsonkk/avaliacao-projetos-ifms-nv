@@ -174,6 +174,24 @@ describe('MapaEstandes', () => {
     expect(screen.queryByText('Corredor E')).not.toBeInTheDocument();
   });
 
+  /**
+   * `fn_projetos_situacao` exige Admin e **devolve vazio** quando `p_id_evento` chega nulo
+   * (`schema.sql:4009-4011`). Como o mapa lê `s?.avaliacoes_tecnicas ?? 0`, a resposta vazia
+   * não lançava erro: todo projeto ficava com 0 avaliação e cota padrão, os filtros "Avaliado"
+   * e "Faltando" zeravam e nada na tela dizia que a conta não tinha vindo do banco.
+   */
+  it('deve avisar quando a situação dos projetos não vem do banco, em vez de zerar as contas em silêncio', async () => {
+    // Arrange
+    respostas = { projetos: [projeto({ codigo_projeto: 'P-1', estande: 'A-1' })] };
+    situacao = [];
+
+    // Act
+    render(<MapaEstandes id_evento_ativo={ID_EVENTO} cota_padrao_evento={3} />);
+
+    // Assert
+    expect(await screen.findByRole('alert')).toHaveTextContent(/situação dos projetos/i);
+  });
+
   it('deve avisar e não consultar nada sem evento ativo', async () => {
     // Arrange / Act
     render(<MapaEstandes id_evento_ativo="" />);

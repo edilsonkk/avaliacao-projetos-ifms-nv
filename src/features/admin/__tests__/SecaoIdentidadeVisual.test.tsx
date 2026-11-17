@@ -88,7 +88,7 @@ describe('SecaoIdentidadeVisual', () => {
         { upsert: true, contentType: 'image/png' },
       ),
     );
-    expect(await screen.findByRole('dialog', { name: 'Ícone atualizado' })).toBeInTheDocument();
+    expect(await screen.findByRole('alertdialog', { name: 'Ícone atualizado' })).toBeInTheDocument();
   });
 
   it('deve oferecer remover só quando já existe imagem', async () => {

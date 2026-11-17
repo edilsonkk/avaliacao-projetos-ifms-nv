@@ -50,6 +50,10 @@ describe('Rotinas 3 e 4: Auto-Cadastro de Instituições, Modalidades e Áreas T
     localStorage.clear();
     localStorage.setItem('evento_ativo_id', EVENTO_ID);
     mockFrom = supabase.from;
+    // Resposta neutra para qualquer RPC: as telas leem RPCs próprias (ex.: `fn_situacao_vinculos`,
+    // situação do pareamento) que estes casos não exercitam, e sem implementação o mock devolveria
+    // `undefined` — a tela quebraria fora do teste.
+    (supabase.rpc as any).mockResolvedValue({ data: [], error: null });
   });
 
   it('1. ÁREAS TEMÁTICAS: mapeia variações para grandes áreas do CNPq em MAIÚSCULO com acento e aplica fallback sem acentos', () => {
