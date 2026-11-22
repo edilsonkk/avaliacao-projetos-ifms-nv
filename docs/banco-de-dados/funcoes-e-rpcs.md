@@ -162,8 +162,8 @@ chama. Duas armadilhas que esse teste cobre:
 | `fn_relatorio_ausencias_completo` | Avaliadores com `ausencias` (de `historico_impedimentos` com `tipo = 'ausencia'`) |
 | `fn_relatorio_devolucoes_completo` | Avaliadores com `devolucoes` (de `historico_impedimentos` com `tipo = 'conflito'`: o botão "Devolver (Conflito de Interesse)") |
 | `fn_relatorio_voto_popular_completo` | Voto popular por projeto: votos, média simples, **média bayesiana**, âncora (`media_evento`), peso (`peso_ancora`) e posição. Fonte única do relatório e da classificação do voto popular |
-| `fn_relatorio_instituicoes_completo` | Instituições com `projetos`, status e médias. Sem vínculo, usa `Geral` / `Multidisciplinar` / `Instituição Não Informada`. `plpgsql`; não chamada pelo front |
-| `fn_relatorio_indicadores_gerenciais` | Métricas globais do evento (presença, comparecimento, conclusão, tempo médio, média geral, quarentena). Com `p_id_evento` nulo, resolve o evento ativo. `plpgsql`; não chamada pelo front |
+| `fn_relatorio_instituicoes_completo` | Instituições com `projetos`, status e médias. Sem vínculo, usa `Geral` / `Multidisciplinar` / `Instituição Não Informada`. `plpgsql`; não chamada pelo front. Medida em 601 projetos: **80 ms** (teto do papel: 8 s) |
+| `fn_relatorio_indicadores_gerenciais` | Métricas globais do evento (presença, comparecimento, conclusão, tempo médio, média geral, quarentena). Com `p_id_evento` nulo, resolve o evento ativo. `plpgsql`; não chamada pelo front. Medida em 601 projetos: **61 ms** (teto do papel: 8 s) |
 
 ## Rotinas
 

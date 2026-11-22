@@ -193,6 +193,25 @@ Nota por critério: `id_resposta`, `id_avaliacao`, `id_pergunta`, `nota_atribuid
 respostas de uma avaliação varre a tabela inteira, e como `fn_chave_desempate` é chamada **uma vez por projeto** em
 `view_ranking_top3`, a Classificação estourava o `statement_timeout` de 8 s (110 s em 601 projetos). É também o
 índice da FK `ON DELETE CASCADE`. Ver [ADR 0018](../decisoes/0018-indice-em-respostas-avaliacao.md).
+Índice `idx_respostas_avaliacao_pergunta` em `id_pergunta` (migration `20261122213930`): lado filho de uma FK
+`ON DELETE RESTRICT` na maior tabela do banco — sem ele, cada pergunta removida ao editar um questionário a varre
+inteira.
+
+### Índices de chave estrangeira
+
+O PostgreSQL **não** indexa o lado filho de uma FK. Sem índice, toda ação referencial (`CASCADE`, `SET NULL`,
+`RESTRICT`) varre a tabela filha a cada linha do pai apagada e, numa sessão `authenticated`, a policy de RLS entra
+como filtro de linha nessa varredura — `is_admin()` é `STABLE` e não `IMMUTABLE`, então roda **uma vez por linha
+varrida**. A varredura do schema achou 15 FKs sem cobertura; cinco foram indexadas (`20261122210113` e
+`20261122213930`) e dez ficaram de fora por serem tabelas pequenas com delete raro, com o motivo de cada uma no
+cabeçalho da migration.
+
+**Qual padrão é perigoso, medido:** subconsulta correlacionada por projeto **não** é. O planejador converte
+`EXISTS (… WHERE filho.id = pai.id)` em *SubPlan hasheado* — varre a tabela uma vez e sonda o hash (`loops=1`), e o
+ganho do índice em `historico_impedimentos` ficou em ~9% mesmo com 3.005 linhas. O que o planejador **não** otimiza é
+**chamada de função por linha**: em `view_ranking_top3` cada uma das 601 invocações de `fn_chave_desempate` planeja e
+executa a própria consulta, e é daí que vinham os 110 s. Ao investigar lentidão, procure a função por linha antes da
+subconsulta.
 
 ### `locks_ativos`
 Travas de avaliação em andamento: `id_lock`, `id_usuario` (**único**: um projeto por vez por avaliador),

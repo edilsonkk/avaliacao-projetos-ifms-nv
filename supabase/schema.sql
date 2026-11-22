@@ -4490,22 +4490,30 @@ BEGIN
   FROM public.avaliadores_evento ae
   WHERE (v_id_evento IS NULL OR ae.id_evento = v_id_evento);
 
-  -- Avaliações válidas
+  -- Avaliações válidas. tempo_presenca é texto: a duração sai do mesmo tratamento de
+  -- fn_relatorio_avaliadores_completo — só converte o que tem cara de data ISO, e um
+  -- valor ruim vale 0 naquela avaliação em vez de derrubar o relatório. A média
+  -- considera apenas as avaliações com duração medida, para os zeros não diluírem.
+  WITH avaliacoes_validas AS (
+    SELECT
+      a.nota_final,
+      CASE
+        WHEN a.tempo_presenca ~ '^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}'
+         AND COALESCE(a.tempo_submissao, a.created_at) > a.tempo_presenca::timestamptz
+        THEN EXTRACT(EPOCH FROM (COALESCE(a.tempo_submissao, a.created_at) - a.tempo_presenca::timestamptz))::int
+        ELSE 0
+      END AS duracao_segundos
+    FROM public.avaliacoes a
+    JOIN public.projetos p ON p.id_projeto = a.id_projeto
+    WHERE (a.status IS NULL OR a.status != 'CANCELADA')
+      AND (v_id_evento IS NULL OR p.id_evento = v_id_evento)
+  )
   SELECT
     COUNT(*)::int,
-    COALESCE(ROUND(AVG(a.nota_final)::numeric, 2), 0.00),
-    COALESCE(
-      ROUND(
-        AVG(EXTRACT(EPOCH FROM (COALESCE(a.tempo_submissao, a.created_at) - a.tempo_presenca)))
-        FILTER (WHERE a.tempo_presenca IS NOT NULL AND COALESCE(a.tempo_submissao, a.created_at) > a.tempo_presenca)
-      )::int,
-      0
-    )
+    COALESCE(ROUND(AVG(av.nota_final)::numeric, 2), 0.00),
+    COALESCE(ROUND(AVG(av.duracao_segundos) FILTER (WHERE av.duracao_segundos > 0))::int, 0)
   INTO v_total_avaliacoes, v_media_geral_notas, v_tempo_medio_seg
-  FROM public.avaliacoes a
-  JOIN public.projetos p ON p.id_projeto = a.id_projeto
-  WHERE (a.status IS NULL OR a.status != 'CANCELADA')
-    AND (v_id_evento IS NULL OR p.id_evento = v_id_evento);
+  FROM avaliacoes_validas av;
 
   -- Quarentena
   SELECT COUNT(*)::int INTO v_quarentena_count
@@ -4540,6 +4548,10 @@ $$;
 ALTER FUNCTION "public"."fn_relatorio_indicadores_gerenciais"("p_id_evento" "uuid") OWNER TO "postgres";
 
 
+COMMENT ON FUNCTION "public"."fn_relatorio_indicadores_gerenciais"("p_id_evento" "uuid") IS 'Indicadores gerenciais do evento (presença, comparecimento, conclusão, tempo médio, média geral, quarentena). A duração usa tempo_presenca, que é texto: só converte o que casa com data ISO, senão conta 0 naquela avaliação. Sem SECURITY DEFINER: a RLS do invocador é que limita as linhas.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_relatorio_instituicoes_completo"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id_instituicao" "uuid", "nome_instituicao" "text", "total_projetos" integer, "total_credenciados" integer, "total_avaliados" integer, "media_geral_escola" numeric, "projetos" "jsonb")
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public', 'pg_temp'
@@ -4552,10 +4564,12 @@ BEGIN
       p.id_evento,
       p.codigo_projeto,
       p.titulo,
-      COALESCE(m.nome_modalidade, p.modalidade, 'Geral') AS modalidade,
-      COALESCE(ar.nome_area, p.area_conhecimento, 'Multidisciplinar') AS area_conhecimento,
+      -- projetos não tem coluna textual de modalidade/área/instituição: o nome vem
+      -- do relacionamento, e o texto padrão entra quando o projeto não tem o vínculo
+      COALESCE(m.nome_modalidade, 'Geral') AS modalidade,
+      COALESCE(ar.nome_area, 'Multidisciplinar') AS area_conhecimento,
       COALESCE(inst.id_instituicao, p.id_instituicao, '00000000-0000-0000-0000-000000000000'::uuid) AS id_instituicao_norm,
-      COALESCE(inst.nome_exibicao, p.nome_instituicao, 'Instituição Não Informada') AS nome_instituicao_norm,
+      COALESCE(inst.nome_exibicao, 'Instituição Não Informada') AS nome_instituicao_norm,
       COALESCE(p.is_check_in_realizado, true) AS is_check_in_realizado,
       (
         SELECT COUNT(*)::int
@@ -4583,7 +4597,7 @@ BEGIN
   )
   SELECT
     dbp.id_instituicao_norm AS id_instituicao,
-    dbp.nome_instituicao_norm AS nome_instituicao,
+    dbp.nome_instituicao_norm::text AS nome_instituicao,
     COUNT(dbp.id_projeto)::int AS total_projetos,
     COUNT(dbp.id_projeto) FILTER (WHERE dbp.is_check_in_realizado = true)::int AS total_credenciados,
     COUNT(dbp.id_projeto) FILTER (WHERE dbp.total_avaliacoes > 0)::int AS total_avaliados,
@@ -4615,6 +4629,10 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_relatorio_instituicoes_completo"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_relatorio_instituicoes_completo"("p_id_evento" "uuid") IS 'Projetos agrupados por instituição no evento, com total, credenciados, avaliados e média da escola. Modalidade, área e nome da instituição vêm dos relacionamentos (projetos não tem essas colunas textuais); sem vínculo, usa Geral / Multidisciplinar / Instituição Não Informada. Sem SECURITY DEFINER: a RLS do invocador é que limita as linhas.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_relatorio_projetos_completo"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id_projeto" "uuid", "id_evento" "uuid", "codigo_projeto" "text", "titulo" "text", "estande" "text", "corredor" "text", "modalidade" "text", "area_conhecimento" "text", "nome_instituicao" "text", "id_instituicao" "uuid", "is_check_in_realizado" boolean, "is_fora_da_competicao" boolean, "total_avaliacoes" integer, "media_geral" numeric, "notas" numeric[], "detalhes_avaliacoes" "jsonb", "cota_avaliacoes" integer, "ajuste_media" numeric, "media_final" numeric, "tem_ajuste_manual" boolean, "total_votos_populares" integer, "media_voto_popular" numeric, "votos_populares" "jsonb")
@@ -6535,6 +6553,14 @@ CREATE INDEX "idx_avaliacoes_projeto" ON "public"."avaliacoes" USING "btree" ("i
 
 
 
+CREATE INDEX "idx_avaliacoes_questionario" ON "public"."avaliacoes" USING "btree" ("id_questionario");
+
+
+
+COMMENT ON INDEX "public"."idx_avaliacoes_questionario" IS 'Lado filho da FK ON DELETE SET NULL para questionarios. Sem ele, apagar um questionário varre avaliacoes inteira para anular as referências.';
+
+
+
 CREATE INDEX "idx_avaliacoes_usuario" ON "public"."avaliacoes" USING "btree" ("id_usuario");
 
 
@@ -6556,6 +6582,14 @@ CREATE INDEX "idx_fila_atribuicoes_projeto" ON "public"."fila_atribuicoes_direci
 
 
 CREATE INDEX "idx_fila_atribuicoes_usuario" ON "public"."fila_atribuicoes_direcionadas" USING "btree" ("id_usuario", "status", "ordem");
+
+
+
+CREATE INDEX "idx_historico_impedimentos_projeto" ON "public"."historico_impedimentos" USING "btree" ("id_projeto");
+
+
+
+COMMENT ON INDEX "public"."idx_historico_impedimentos_projeto" IS 'Lado filho da FK ON DELETE CASCADE para projetos. fn_relatorio_instituicoes_completo também consulta a tabela por EXISTS correlacionado por projeto, mas isso NÃO é o caso do ranking: o planejador converte esse EXISTS em SubPlan hasheado (uma varredura, loops=1), e o ganho medido foi de ~9% com 3.005 linhas. O que o planejador não consegue otimizar é chamada de função por linha, como em view_ranking_top3.';
 
 
 
@@ -6599,6 +6633,14 @@ CREATE INDEX "idx_modalidades_evento" ON "public"."modalidades" USING "btree" ("
 
 
 
+CREATE INDEX "idx_perguntas_questionario_questionario" ON "public"."perguntas_questionario" USING "btree" ("id_questionario");
+
+
+
+COMMENT ON INDEX "public"."idx_perguntas_questionario_questionario" IS 'TelaAvaliador lê as perguntas por id_questionario direto da tabela, como o avaliador, então a policy de leitura é avaliada por linha varrida. Também é o índice da FK ON DELETE CASCADE.';
+
+
+
 CREATE INDEX "idx_projetos_area" ON "public"."projetos" USING "btree" ("id_area");
 
 
@@ -6616,6 +6658,22 @@ CREATE INDEX "idx_projetos_modalidade" ON "public"."projetos" USING "btree" ("id
 
 
 CREATE INDEX "idx_registro_autocadastro_criado_em" ON "public"."registro_autocadastro" USING "btree" ("criado_em");
+
+
+
+CREATE INDEX "idx_respostas_avaliacao_avaliacao" ON "public"."respostas_avaliacao" USING "btree" ("id_avaliacao");
+
+
+
+COMMENT ON INDEX "public"."idx_respostas_avaliacao_avaliacao" IS 'Busca das respostas de uma avaliação. Sem ele, fn_chave_desempate (uma chamada por projeto em view_ranking_top3) varre respostas_avaliacao inteira e a RLS reavalia is_admin() por linha, o que fazia a Classificação estourar o statement_timeout. Também é o índice da FK ON DELETE CASCADE.';
+
+
+
+CREATE INDEX "idx_respostas_avaliacao_pergunta" ON "public"."respostas_avaliacao" USING "btree" ("id_pergunta");
+
+
+
+COMMENT ON INDEX "public"."idx_respostas_avaliacao_pergunta" IS 'Lado filho da FK ON DELETE RESTRICT para perguntas_questionario, na maior tabela do banco. Sem ele, cada pergunta removida (admin_salvar_questionario ao editar, admin_excluir_questionario) varre respostas_avaliacao inteira.';
 
 
 
