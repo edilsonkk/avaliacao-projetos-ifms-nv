@@ -40,12 +40,15 @@ Card **Relatórios** no Bloco 3, com sete abas:
    projetos que receberam voto. Ver [voto popular](avaliacao-e-quarentena.md#voto-popular) e
    [ADR 0016](../decisoes/0016-voto-popular-separado-e-media-bayesiana.md).
 6. **Instituições e Projetos Submetidos**: agrupado por escola com total de trabalhos. Ao expandir: código, nome,
-   área, modalidade e média (ou "Ausente"/"Não Credenciado").
+   área, modalidade e média (ou "Ausente"/"Não Credenciado"). O agrupamento é feito **no front**, a partir do
+   relatório de projetos já carregado; `fn_relatorio_instituicoes_completo` é a versão equivalente no banco e não é
+   chamada por esta tela (ver [funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#relatórios)).
 7. **Indicadores do evento: NOME DO EVENTO**: horário inicial e final, status, barra de conclusão global, KPIs de
    projetos (total, presentes, ausentes, não credenciados), de avaliadores (cadastrados, credenciados, ausentes) e de
    eficiência (avaliações, média geral, tempo médio por projeto). Inclui distribuição por cota (sem avaliação,
    abaixo da cota, cota concluída), quarentena, top 5 avaliadores mais produtivos e distribuição por modalidade e
-   grande área.
+   grande área. Como na aba de Instituições, os números são calculados **no front** com os dados já carregados;
+   `fn_relatorio_indicadores_gerenciais` é a versão equivalente no banco e não é chamada por esta tela.
 
 Regras comuns:
 - Na aba Projetos, a coluna **Código do Projeto** ordena pelo código em ordem natural (PROJ-2 antes de PROJ-10); os

@@ -134,9 +134,26 @@ Desenho completo em [auditoria de notas](../regras-de-negocio/auditoria-de-notas
 
 ## Relatórios
 
-Todas recebem `p_id_evento uuid` (nulo não devolve nada) e são `SECURITY INVOKER`. As três primeiras são
-`LANGUAGE sql` (colunas conferidas ao criar a função) e são as únicas fontes de `RelatoriosAdmin.tsx`, que não tem
-consultas alternativas e mostra o erro se uma falhar.
+Todas recebem `p_id_evento uuid` e são `SECURITY INVOKER` — quem limita as linhas é a RLS de quem chama.
+
+**`sql` x `plpgsql`, e por que isso importa:** as cinco primeiras são `LANGUAGE sql`, então o Postgres confere as
+colunas **ao criar a função**; uma coluna inexistente derruba a migration. As duas últimas são `LANGUAGE plpgsql`,
+que planeja cada comando só na primeira execução — e, como `RelatoriosAdmin.tsx` não as chama (as abas
+**Instituições** e **Indicadores** são calculadas no front a partir do relatório de projetos), as duas passaram anos
+levantando exceção em **toda** chamada sem ninguém notar: `column p.modalidade does not exist` e `operator does not
+exist: timestamp with time zone - character varying`. Foram corrigidas em
+`20261122201657_corrigir_relatorios_instituicoes_e_indicadores.sql`, depois de um
+simulador de carga local chamá-las contra um evento com volume real.
+
+Desde então, `supabase/tests/36_contrato_rpcs_do_front_test.sql` **chama** todas as `fn_relatorio_*` e todas as RPCs
+que `src/` invoca contra uma fixture mínima, reprovando SQLSTATE de classe 42 (coluna, função, tabela ou tipo que não
+existe) e tolerando recusa de regra, de permissão e de dado. É a única cobertura de uma função que o front-end não
+chama. Duas armadilhas que esse teste cobre:
+
+- `projetos` **não tem** as colunas textuais `modalidade`, `area_conhecimento` e `nome_instituicao`: o nome vem de
+  `modalidades`, `areas_tematicas` e `instituicoes` pelos `LEFT JOIN` (regra das armadilhas do `AGENTS.md`);
+- `avaliacoes.tempo_presenca` é **texto**: toda duração precisa da guarda por regex de data ISO e do cast
+  `::timestamptz`, com `ELSE 0`, como em `fn_relatorio_avaliadores_completo` e `fn_relatorio_indicadores_gerenciais`.
 
 | Função | Retorna |
 |---|---|
@@ -145,8 +162,8 @@ consultas alternativas e mostra o erro se uma falhar.
 | `fn_relatorio_ausencias_completo` | Avaliadores com `ausencias` (de `historico_impedimentos` com `tipo = 'ausencia'`) |
 | `fn_relatorio_devolucoes_completo` | Avaliadores com `devolucoes` (de `historico_impedimentos` com `tipo = 'conflito'`: o botão "Devolver (Conflito de Interesse)") |
 | `fn_relatorio_voto_popular_completo` | Voto popular por projeto: votos, média simples, **média bayesiana**, âncora (`media_evento`), peso (`peso_ancora`) e posição. Fonte única do relatório e da classificação do voto popular |
-| `fn_relatorio_instituicoes_completo` | Instituições com `projetos`, status e médias |
-| `fn_relatorio_indicadores_gerenciais` | Métricas globais e distribuições do evento |
+| `fn_relatorio_instituicoes_completo` | Instituições com `projetos`, status e médias. Sem vínculo, usa `Geral` / `Multidisciplinar` / `Instituição Não Informada`. `plpgsql`; não chamada pelo front |
+| `fn_relatorio_indicadores_gerenciais` | Métricas globais do evento (presença, comparecimento, conclusão, tempo médio, média geral, quarentena). Com `p_id_evento` nulo, resolve o evento ativo. `plpgsql`; não chamada pelo front |
 
 ## Rotinas
 
