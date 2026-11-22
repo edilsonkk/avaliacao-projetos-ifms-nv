@@ -98,7 +98,7 @@ português; `fn_vincular_com_codigo` devolve `{ok, erro}` para que a tentativa e
 | `admin_salvar_questionario_como_modelo(p_id_questionario)` → `uuid` | Cria um modelo a partir de um questionário do evento |
 | `admin_restaurar_modelos_originais()` → `integer` | Recria/restaura os 7 modelos originais; modelos do Admin não mudam |
 | `admin_listar_questionarios_reaproveitaveis(p_id_evento)` | Questionários dos outros eventos, com evento, data, perguntas, avaliações e se já estão no evento |
-| `fn_chave_desempate(p_id_projeto)` → `numeric[]` | Médias do projeto por pergunta, na ordem de `peso_desempate` (usada por `view_ranking_top3`) |
+| `fn_chave_desempate(p_id_projeto)` → `numeric[]` | Médias do projeto por pergunta, na ordem de `peso_desempate` (usada por `view_ranking_top3`). **`SECURITY INVOKER` de propósito**: a RLS de quem lê é que limita as linhas, então um avaliador obtém `{}`. Não a torne `DEFINER` para resolver lentidão — [ADR 0018](../decisoes/0018-indice-em-respostas-avaliacao.md) |
 | `fn_avaliacoes_do_questionario(p_id_questionario)` → `integer` | Quantas avaliações usaram o questionário (trava a edição na tela) |
 | `admin_salvar_instituicoes(p_id_evento uuid, p_itens jsonb)` → `jsonb` | Cadastro manual e importação de instituições por `(id_evento, nome_normalizado)`. Devolve `{cadastradas, atualizadas, ignoradas}` |
 | `admin_excluir_instituicao(p_id_instituicao)` | Exclui instituição sem projeto nem avaliador vinculado |

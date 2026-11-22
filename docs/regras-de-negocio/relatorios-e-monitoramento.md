@@ -102,6 +102,9 @@ não consulta nada). Os dados vêm de `view_ranking_top3`:
   pergunta **em texto** (antes elas ficavam só no `title`, e a comissão precisa ler, não passar o mouse). Se tudo empatar, a posição é dividida (1º, 1º, 3º), o card mostra "(empate)" e a comissão decide. Projetos
   com questionários diferentes na mesma modalidade/área são comparados posição a posição da prioridade.
 - O pódio de cada modalidade/área mostra todos com posição até 3 (um empate pode colocar mais de três).
+- A tela lê a view **direto**, como usuário logado, então a RLS vale na leitura. O desempate custa uma chamada de
+  `fn_chave_desempate` por projeto; o índice `idx_respostas_avaliacao_avaliacao` é o que mantém isso dentro do
+  `statement_timeout` (ver [ADR 0018](../decisoes/0018-indice-em-respostas-avaliacao.md)).
 - Projeto com notas divergentes ainda não resolvidas na Quarentena (`em_quarentena`) aparece marcado, e a tela avisa
   para resolver antes de homologar.
 - Se a [conferência de notas](auditoria-de-notas.md#conferência-o-que-é-verificado) achar algo **grave** no evento,

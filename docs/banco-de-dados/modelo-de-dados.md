@@ -189,6 +189,10 @@ soft delete nunca apaga a avaliação); `respostas_avaliacao → perguntas_quest
 
 ### `respostas_avaliacao`
 Nota por critério: `id_resposta`, `id_avaliacao`, `id_pergunta`, `nota_atribuida`.
+Índice `idx_respostas_avaliacao_avaliacao` em `id_avaliacao` (migration `20261122210113`): sem ele, buscar as
+respostas de uma avaliação varre a tabela inteira, e como `fn_chave_desempate` é chamada **uma vez por projeto** em
+`view_ranking_top3`, a Classificação estourava o `statement_timeout` de 8 s (110 s em 601 projetos). É também o
+índice da FK `ON DELETE CASCADE`. Ver [ADR 0018](../decisoes/0018-indice-em-respostas-avaliacao.md).
 
 ### `locks_ativos`
 Travas de avaliação em andamento: `id_lock`, `id_usuario` (**único**: um projeto por vez por avaliador),
