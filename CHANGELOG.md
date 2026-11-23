@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.3](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.14.2...v0.14.3) (2026-11-23)
+
+
+### Correções
+
+* **autocadastro:** o link do QR deixa de prender a tela no recarregamento ([1bb6f2b](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/1bb6f2b34cfeee3b671b9d38a21dbfa2e0431207))
+
 ## [0.14.2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.14.1...v0.14.2) (2026-11-23)
 
 
