@@ -150,13 +150,23 @@ evento acumulado, onde avaliações antigas já haviam fixado um questionário d
 
 **Recomendado para a feira:**
 
-- **um questionário técnico por evento, de uma escala só**, mais o de voto popular. É a configuração em que as
-  rodadas fecharam a cota sem nenhum impedimento;
-- **vincule apenas os votantes do voto popular.** O vínculo existe para separar a pista do voto popular; usá-lo em
-  avaliador técnico cria o descasamento acima, porque o sorteio não sabe do vínculo ao escolher o projeto. Avaliador
-  técnico com `id_questionario` nulo sempre cai no questionário fixado do projeto e nunca é recusado por isso;
-- se instrumentos diferentes por modalidade forem inevitáveis, mantenha os técnicos **sem vínculo** e aceite que
-  cada projeto fica preso ao primeiro questionário usado nele;
+- **vincule apenas os votantes do voto popular.** É a regra que mais importa, e vale com **qualquer** número de
+  questionários técnicos. O vínculo existe para separar a pista do voto popular; usá-lo em avaliador técnico cria o
+  descasamento acima, porque o sorteio não sabe do vínculo ao escolher o projeto. Avaliador técnico com
+  `id_questionario` nulo sempre cai no questionário fixado do projeto e nunca é recusado por isso;
+- **mais de um questionário técnico por evento é suportado** e fecha a cota — o que custa é o vínculo, não a
+  quantidade. Medido em drenagem com 3 técnicos de mesma escala, 300 projetos e 120 avaliadores:
+
+  | Vínculo dos técnicos | Impedimentos | Varreduras até fechar | Cota |
+  |---|---|---|---|
+  | metade vinculada (48 de 96) | **255** | 6 | fecha, 0 incompletos |
+  | nenhum vinculado | **0** | 4 | fecha, 0 incompletos |
+
+  Os 255 impedimentos não são erro do sistema — são o caminho correto sendo exercitado —, mas na feira cada um é um
+  avaliador que andou até o estande, sorteou e teve de devolver o projeto. Reproduza com
+  `npm run local:simular -- --questionarios=existentes --ate-concluir --tecnicos-vinculados=0`;
+- **um questionário técnico só** continua sendo a configuração mais simples, e torna a questão do vínculo
+  irrelevante para os técnicos;
 - **mantenha a trava do primeiro avaliador ligada**: é o que faz as três notas de um projeto serem comparáveis;
 - **decida o conjunto antes da primeira avaliação.** Depois dela o banco recusa alterar questionário em uso
   ("já foi usado em N avaliação(ões)") e o fixado do projeto não é trocado;

@@ -5,8 +5,9 @@
 
 ## Contexto
 
-A configuração combinada para a feira é **um questionário técnico por evento, numa escala só**, com vínculo de
-questionário reservado aos votantes do voto popular. Nada no banco cobrava isso. Em particular, dois questionários
+A regra passada no resumo da auditoria era **um questionário técnico por evento, numa escala só**, com vínculo de
+questionário reservado aos votantes do voto popular. (A configuração real da feira tem **três** técnicos; ver a
+revisão no fim desta página — a parte do vínculo é que se confirmou, e com número.) Nada no banco cobrava isso. Em particular, dois questionários
 técnicos de escalas diferentes no mesmo evento produziam notas que entram na **mesma** média e no **mesmo** ranking:
 a posição do projeto passava a depender da escala de quem o avaliou, e nenhuma linha de código reclamava.
 
@@ -111,3 +112,16 @@ mas não havia motivo para manter a exceção: o único chamador é `fn_auditar_
 
 As duas mudanças foram validadas por mutação, e o teste 44 passou a cobrar a postura das **três** funções de
 conferência no mesmo lugar, junto da linha de base que elas respeitam (a RLS não entrega avaliação alheia).
+
+**O que custa, medido nos dois sentidos.** A mesma drenagem foi rodada com 3 técnicos de mesma escala, 300 projetos
+e 120 avaliadores, variando só o vínculo dos técnicos:
+
+| Vínculo dos técnicos | Impedimentos | Varreduras até fechar | Cota |
+|---|---|---|---|
+| metade vinculada (48 de 96) | 255 | 6 | fecha, 0 incompletos |
+| nenhum vinculado (`--tecnicos-vinculados=0`) | **0** | 4 | fecha, 0 incompletos |
+
+Ou seja: o custo de vários técnicos não está na quantidade, está no **vínculo**. Com os técnicos livres, a feira
+fecha sem um único impedimento. Isso confirma, com número, a recomendação que já estava em
+[avaliação e quarentena](../regras-de-negocio/avaliacao-e-quarentena.md) — e é o motivo de C15 ser informativo e
+C17 existir: é o C17 que mostra quem está vinculado.
