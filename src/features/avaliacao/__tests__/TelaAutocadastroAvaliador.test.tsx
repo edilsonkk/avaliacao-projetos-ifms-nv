@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TelaAutocadastroAvaliador } from '@/features/avaliacao';
 import { supabase } from '@/lib/supabase';
+import { autocadastroEmCurso } from '@/lib/rotaAutocadastro';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: { from: vi.fn(), rpc: vi.fn() },
@@ -44,6 +45,7 @@ const preencherFormulario = async (user: ReturnType<typeof userEvent.setup>) => 
 describe('TelaAutocadastroAvaliador', () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     window.history.replaceState({}, '', `/?cadastro=avaliador&evento=${ID_EVENTO}`);
     mockarCatalogos();
   });
@@ -116,5 +118,68 @@ describe('TelaAutocadastroAvaliador', () => {
     expect(await screen.findByText(/não há evento ativo/i)).toBeInTheDocument();
     expect(vi.mocked(supabase.from).mock.calls.map((c) => c[0])).not.toContain('instituicoes');
     tabelas.eventos = eventoAtivo;
+  });
+
+  // ---------------------------------------------------------------------------
+  // A instrução do QR Code é de uma vez: enquanto morava só na URL, toda atualização
+  // de página reentrava aqui — inclusive a de quem já estava logado.
+  // ---------------------------------------------------------------------------
+
+  it('deve tirar a instrução do QR Code da URL assim que a tela abre', async () => {
+    // Arrange: a URL do QR está na barra de endereço (ver beforeEach)
+    expect(window.location.search).toContain('cadastro=avaliador');
+
+    // Act
+    render(<TelaAutocadastroAvaliador aoConcluir={vi.fn()} />);
+    await screen.findByPlaceholderText(/Prof\. Dr\. Carlos Silva/i);
+
+    // Assert: a URL fica limpa, e a intenção passa a viver na aba
+    expect(window.location.search).toBe('');
+    expect(autocadastroEmCurso()).toBe(true);
+  });
+
+  it('deve manter a intenção na aba enquanto o formulário está em preenchimento', async () => {
+    // Arrange
+    render(<TelaAutocadastroAvaliador aoConcluir={vi.fn()} />);
+    await screen.findByPlaceholderText(/Prof\. Dr\. Carlos Silva/i);
+
+    // Act: é o F5 de quem está digitando em rede ruim — a URL já está limpa
+    window.history.replaceState({}, '', '/');
+
+    // Assert: quem recarregar volta ao formulário, não ao login
+    expect(autocadastroEmCurso()).toBe(true);
+  });
+
+  it('deve encerrar a intenção no sucesso do cadastro, antes de qualquer clique', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: { ok: true, situacao: 'cadastrado' }, error: null } as never);
+    render(<TelaAutocadastroAvaliador aoConcluir={vi.fn()} />);
+
+    // Act: cadastra e NÃO clica no botão de concluir da tela de sucesso
+    await preencherFormulario(user);
+    await waitFor(() => expect(supabase.rpc).toHaveBeenCalled());
+
+    // Assert: atualizar a página agora cai no login, e não num formulário já enviado
+    await waitFor(() => expect(autocadastroEmCurso()).toBe(false));
+    expect(window.location.search).toBe('');
+  });
+
+  it('não deve quebrar quando a aba recusa armazenamento (aba privada)', async () => {
+    // Arrange: sessionStorage que lança em toda operação
+    const original = window.sessionStorage;
+    Object.defineProperty(window, 'sessionStorage', {
+      configurable: true,
+      get: () => { throw new Error('acesso negado ao armazenamento'); },
+    });
+
+    try {
+      // Act + Assert: a tela abre, e a leitura da intenção não propaga erro
+      render(<TelaAutocadastroAvaliador aoConcluir={vi.fn()} />);
+      await screen.findByPlaceholderText(/Prof\. Dr\. Carlos Silva/i);
+      expect(() => autocadastroEmCurso()).not.toThrow();
+    } finally {
+      Object.defineProperty(window, 'sessionStorage', { configurable: true, value: original });
+    }
   });
 });

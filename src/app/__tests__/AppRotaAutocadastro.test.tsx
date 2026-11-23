@@ -48,6 +48,7 @@ const CAMINHO_DO_QR = '/?cadastro=avaliador&evento=e-1';
 describe('App - rota do autocadastro pelo QR Code', () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     window.history.replaceState({}, '', CAMINHO_DO_QR);
     vi.mocked(auth.obterPerfilSessao).mockResolvedValue({
       autenticado: false,
@@ -106,5 +107,50 @@ describe('App - rota do autocadastro pelo QR Code', () => {
     // Assert
     expect(screen.getByText('Tela de Login')).toBeInTheDocument();
     expect(screen.queryByText('Autocadastro')).not.toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Depois que a tela tira a instrução da URL, quem decide a reentrada é a ABA.
+  // É a diferença entre perder o formulário no meio e ficar preso nele para sempre.
+  // ---------------------------------------------------------------------------
+
+  it('deve voltar ao formulário quando a página é atualizada no meio do cadastro', () => {
+    // Arrange: a tela já tirou a instrução da URL e marcou a aba
+    sessionStorage.setItem('rota_autocadastro_em_curso', '1');
+    window.history.replaceState({}, '', '/');
+
+    // Act
+    render(<App />);
+
+    // Assert
+    expect(screen.getByText('Autocadastro')).toBeInTheDocument();
+  });
+
+  it('não deve levar ao autocadastro quem atualiza a página com a URL limpa', () => {
+    // Arrange: avaliador com papel guardado, sem cadastro em curso — o caso do defeito
+    localStorage.setItem('sessao_papel', 'avaliador');
+    localStorage.setItem('usuario_perfil', 'avaliador');
+    window.history.replaceState({}, '', '/');
+
+    // Act
+    render(<App />);
+
+    // Assert
+    expect(screen.queryByText('Autocadastro')).not.toBeInTheDocument();
+    expect(screen.getByText('Tela de Login')).toBeInTheDocument();
+  });
+
+  it('deve apagar a marca da aba ao voltar ao login sem cadastrar', async () => {
+    // Arrange
+    sessionStorage.setItem('rota_autocadastro_em_curso', '1');
+    window.history.replaceState({}, '', '/');
+    render(<App />);
+
+    // Act
+    await userEvent.click(screen.getByRole('button', { name: /voltar ao login/i }));
+
+    // Assert: a próxima atualização não reentra
+    expect(sessionStorage.getItem('rota_autocadastro_em_curso')).toBeNull();
+    expect(screen.getByText('Tela de Login')).toBeInTheDocument();
   });
 });
