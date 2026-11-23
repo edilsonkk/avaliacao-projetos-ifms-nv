@@ -13,7 +13,9 @@
  *
  * Flags:
  *   --avaliadores=N --staff=N --telao=N --autocadastro=N --por-avaliador=N
- *   --mutacao-ms=N --telao-ms=N --checkin-ms=N
+ *   --mutacao-ms=N --telao-ms=N --checkin-ms=N --disputa-ms=N
+ *   --ritmo-ms=N                             tempo de pensar por ação do avaliador
+ *                                            (0 = sem pausa, o modo de medição)
  *   --questionarios=criados|copiados|misto   caminho de montagem dos questionários
  *   --ate-concluir                           drenagem: avalia até a feira concluir ou empacar
  *   --teto-ms=N --teto-varreduras=N          limites de parada do modo drenagem
@@ -33,6 +35,10 @@
  *   - staff: fn_parear_dispositivo e fn_check_in_projeto;
  *   - telão: polling de fn_telao_resumo (sem sessão, chave anônima);
  *   - admin: uma sessão só para tentar admin_salvar_questionario em questionário em uso;
+ *   - disputa de nota: DOIS admins ao mesmo tempo na MESMA avaliação — um chama
+ *     admin_corrigir_respostas_avaliacao e o outro admin_arbitrar_nota_final. pgTAP
+ *     roda numa sessão só e não alcança essa corrida; a invariante 10 cobra que a
+ *     nota sobrevivente combine com o ajuste_tipo sobrevivente;
  *   - autocadastro: rajada anônima em fn_autocadastro_avaliador.
  *
  * Guardas (AGENTS.md):
@@ -89,6 +95,11 @@ const PADROES = {
   mutacaoMs: 250,
   telaoMs: 1000,
   checkinMs: 200,
+  disputaMs: 150,
+  // Tempo de pensar entre as ações de cada avaliador. 0 por padrão: o simulador nasceu
+  // para medir, e pausa ia virar ruído na medição. Com ritmo, a feira simulada roda em
+  // tempo observável no telão — é só isso que a flag muda.
+  ritmoMs: 0,
   tetoMs: 900_000,
   tetoVarreduras: 400,
   questionarios: 'misto',
@@ -150,6 +161,8 @@ const ARGUMENTOS_NUMERICOS = {
   'mutacao-ms': 'mutacaoMs',
   'telao-ms': 'telaoMs',
   'checkin-ms': 'checkinMs',
+  'disputa-ms': 'disputaMs',
+  'ritmo-ms': 'ritmoMs',
   'teto-ms': 'tetoMs',
   'teto-varreduras': 'tetoVarreduras',
 }
@@ -186,6 +199,7 @@ function lerArgumentos(argv) {
   if (opcoes.staff < 1) throw new Error('--staff precisa ser maior que zero: sem staff ninguém pareia.')
   if (opcoes.porAvaliador < 1) throw new Error('--por-avaliador precisa ser maior que zero.')
   if (opcoes.mutacaoMs < 50) throw new Error('--mutacao-ms mínimo é 50.')
+  if (opcoes.disputaMs < 50) throw new Error('--disputa-ms mínimo é 50.')
   if (!MODOS_QUESTIONARIO.has(opcoes.questionarios)) {
     throw new Error(`--questionarios precisa ser ${[...MODOS_QUESTIONARIO].join(', ')}.`)
   }
@@ -279,6 +293,18 @@ function exigirCredenciais() {
 // --------------------------------------------------------------------- apoio
 
 const dormir = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Tempo de pensar do avaliador (--ritmo-ms). Com jitter de 0,5x a 1,5x: sem ele os
+ * 120 atores entrariam em lockstep e produziriam uma rajada sincronizada a cada
+ * intervalo, que é o oposto do que a flag existe para mostrar. Com --ritmo-ms=0
+ * (padrão) não há await nenhum, e a medição fica igual à de antes da flag.
+ */
+async function pensar(ctx) {
+  const ritmo = ctx.opcoes.ritmoMs
+  if (!ritmo) return
+  await dormir(Math.round(ritmo * (0.5 + Math.random())))
+}
 
 function criarSorteio(semente) {
   let estado = semente >>> 0
@@ -1108,6 +1134,9 @@ async function atorAvaliador(ctx, ator) {
       .single())
     if (projeto.error) { ator.exaurido = true; ator.motivoFim = 'não consegui ler o projeto sorteado'; break }
 
+    // Chegar no estande e ler a ficha: a primeira das duas pausas de --ritmo-ms.
+    await pensar(ctx)
+
     const idQuestionario = resolverQuestionario(ctx, ator, projeto.data)
     let questionario
     try {
@@ -1152,6 +1181,8 @@ async function atorAvaliador(ctx, ator) {
       ator.enviadas += 1
       ctx.enviadas += 1
       if (ator.ehVotante) ctx.votosEnviados += 1
+      // Caminhar até o próximo estande: a segunda pausa de --ritmo-ms.
+      await pensar(ctx)
       continue
     }
 
@@ -1273,6 +1304,77 @@ async function atorMutacaoQuestionario(ctx, cliente) {
 }
 
 /**
+ * DOIS admins na MESMA avaliação, ao mesmo tempo: um corrige as respostas por critério
+ * (admin_corrigir_respostas_avaliacao) e o outro arbitra a nota final
+ * (admin_arbitrar_nota_final). As duas gravam `nota_final` e `ajuste_tipo` da mesma
+ * linha, por caminhos diferentes — corrigir deriva a nota das respostas, arbitrar a
+ * impõe —, então um lost update deixaria a linha incoerente: `ajuste_tipo` de uma e
+ * `nota_final` da outra. É a corrida que pgTAP não alcança, porque roda numa sessão só.
+ *
+ * As duas funções fazem `FOR UPDATE OF a` na avaliação, então o esperado é
+ * serialização: uma espera a outra e a última a escrever define as DUAS colunas. A
+ * invariante 10 é quem cobra isso; aqui só se produz a disputa e se registra o alvo.
+ */
+async function atorDisputaDeNota(ctx, clienteA, clienteB) {
+  while (ctx.rodadaAtiva) {
+    const alvo = await escolherAvaliacaoParaDisputa(ctx)
+    if (!alvo) { await dormir(ctx.opcoes.disputaMs); continue }
+
+    let questionario
+    try {
+      questionario = await lerQuestionarioDoBanco(ctx, ctx.admin, alvo.id_questionario)
+    } catch { await dormir(ctx.opcoes.disputaMs); continue }
+
+    // criarSorteio espera número: a semente vem da ordem da disputa, para a rodada
+    // ser reproduzível sem depender do UUID sorteado pelo banco.
+    const sorteio = criarSorteio(ctx.disputas.tentativas * 7919 + 13)
+    const respostas = montarRespostas(questionario, sorteio)
+    // Dentro da escala, senão a recusa viria da validação e não haveria disputa.
+    const arbitrada = Number(
+      (questionario.escalaMinima + (questionario.escalaMaxima - questionario.escalaMinima) * 0.5).toFixed(2))
+
+    ctx.disputas.tentativas += 1
+    ctx.disputas.alvos.set(alvo.id_avaliacao, { respostas, arbitrada })
+
+    const [corrigir, arbitrar] = await Promise.all([
+      medir('admin_corrigir_respostas_avaliacao (disputa)', () => clienteA
+        .rpc('admin_corrigir_respostas_avaliacao', {
+          p_id_avaliacao: alvo.id_avaliacao,
+          p_respostas: respostas,
+          p_motivo: 'disputa de nota na simulação',
+        })),
+      medir('admin_arbitrar_nota_final (disputa)', () => clienteB
+        .rpc('admin_arbitrar_nota_final', {
+          p_id_avaliacao: alvo.id_avaliacao,
+          p_nota: arbitrada,
+          p_motivo: 'disputa de nota na simulação',
+        })),
+    ])
+    if (corrigir.error) somar(ctx.disputas.recusas, resumirMensagem(corrigir.error.message))
+    else ctx.disputas.corrigidas += 1
+    if (arbitrar.error) somar(ctx.disputas.recusas, resumirMensagem(arbitrar.error.message))
+    else ctx.disputas.arbitradas += 1
+
+    await dormir(ctx.opcoes.disputaMs)
+  }
+  await Promise.all([clienteA.auth.signOut(), clienteB.auth.signOut()])
+}
+
+/** Uma avaliação técnica já gravada nesta rodada, ainda não disputada. */
+async function escolherAvaliacaoParaDisputa(ctx) {
+  const { data, error } = await medir('select avaliacoes (disputa)', () => ctx.admin
+    .from('avaliacoes')
+    .select('id_avaliacao, id_questionario, projetos!inner(id_evento)')
+    .eq('projetos.id_evento', ctx.idEvento)
+    .eq('is_voto_popular', false)
+    .not('id_questionario', 'is', null)
+    .order('tempo_submissao', { ascending: false })
+    .limit(40))
+  if (error || !data) return null
+  return data.find((linha) => !ctx.disputas.alvos.has(linha.id_avaliacao)) ?? null
+}
+
+/**
  * Autocadastro: endpoint público, com pg_advisory_xact_lock global e throttle
  * próprio. Serialização e recusa ali são desenho, não gargalo.
  */
@@ -1341,6 +1443,97 @@ async function vigiaDrenagem(ctx) {
 }
 
 // ----------------------------------------------------------------- invariantes
+
+/**
+ * Invariante 10: a nota que sobreviveu à disputa combina com o ajuste que sobreviveu.
+ *
+ * Duas escritas concorrentes na mesma avaliação, por caminhos diferentes: corrigir
+ * DERIVA nota_final das respostas gravadas; arbitrar a IMPÕE sem tocar nas respostas.
+ * As duas também gravam ajuste_tipo. Serializadas, a última a escrever define as duas
+ * colunas e a linha fica coerente. Num lost update a linha mistura as duas: ajuste_tipo
+ * de uma com nota_final da outra — e aí a nota que decide a premiação não vem de lugar
+ * nenhum que alguém possa reconstituir.
+ *
+ * Coerência cobrada, por avaliação disputada:
+ *   ajuste_tipo = 'nota_arbitrada'       -> nota_final é a nota que a arbitragem mandou;
+ *   ajuste_tipo = 'respostas_corrigidas' -> nota_final é Σ(nota×peso) ÷ Σ(pesos) das
+ *                                           respostas que estão gravadas agora.
+ * E, de fora: fn_auditar_notas não acusa C1 grave em nenhuma delas — é a conferência do
+ * próprio sistema dizendo que a conta fecha.
+ */
+async function conferirDisputaDeNota(ctx, estado) {
+  const ids = [...ctx.disputas.alvos.keys()]
+  if (ids.length === 0) {
+    return { ok: true, detalhe: 'nenhuma disputa executada: rodada curta demais para haver nota gravada' }
+  }
+
+  const linhas = []
+  const respostas = []
+  for (const bloco of emBlocos(ids, 200)) {
+    linhas.push(...await lerTudo(() => ctx.admin
+      .from('avaliacoes')
+      .select('id_avaliacao, id_questionario, nota_final, ajuste_tipo')
+      .in('id_avaliacao', bloco)))
+    respostas.push(...await lerTudo(() => ctx.admin
+      .from('respostas_avaliacao')
+      .select('id_avaliacao, id_pergunta, nota_atribuida')
+      .in('id_avaliacao', bloco)))
+  }
+
+  const porAvaliacao = new Map()
+  for (const r of respostas) {
+    if (!porAvaliacao.has(r.id_avaliacao)) porAvaliacao.set(r.id_avaliacao, [])
+    porAvaliacao.get(r.id_avaliacao).push(r)
+  }
+
+  const incoerentes = []
+  for (const linha of linhas) {
+    const alvo = ctx.disputas.alvos.get(linha.id_avaliacao)
+    const nota = Number(linha.nota_final)
+
+    if (linha.ajuste_tipo === 'nota_arbitrada') {
+      if (Math.abs(nota - alvo.arbitrada) > 0.005) {
+        incoerentes.push(`${linha.id_avaliacao}: ajuste_tipo arbitrada, nota ${nota} ≠ ${alvo.arbitrada}`)
+      }
+      continue
+    }
+    if (linha.ajuste_tipo === 'respostas_corrigidas') {
+      const definicao = estado.atual.definicoes.get(linha.id_questionario)
+      const gravadas = porAvaliacao.get(linha.id_avaliacao) ?? []
+      let produtos = 0
+      let pesos = 0
+      for (const r of gravadas) {
+        const peso = definicao?.perguntas.get(r.id_pergunta)?.peso_calculo ?? 0
+        if (peso <= 0) continue
+        produtos += Number(r.nota_atribuida) * peso
+        pesos += peso
+      }
+      const esperada = pesos > 0 ? Math.round((produtos / pesos) * 100) / 100 : null
+      if (esperada === null || Math.abs(nota - esperada) > 0.005) {
+        incoerentes.push(`${linha.id_avaliacao}: ajuste_tipo corrigidas, nota ${nota} ≠ ${esperada} das respostas`)
+      }
+      continue
+    }
+    incoerentes.push(`${linha.id_avaliacao}: ajuste_tipo inesperado "${linha.ajuste_tipo}" depois da disputa`)
+  }
+
+  const achados = await medir('fn_auditar_notas (disputa)', () => ctx.admin
+    .rpc('fn_auditar_notas', { p_id_evento: ctx.idEvento }))
+  const graves = (achados.data ?? []).filter((a) => a.codigo === 'C1' && a.severidade === 'grave'
+    && ctx.disputas.alvos.has(a.id_avaliacao))
+
+  const recusas = [...ctx.disputas.recusas.entries()].map(([msg, n]) => `${n}× ${msg}`)
+  return {
+    ok: incoerentes.length === 0 && graves.length === 0 && !achados.error,
+    detalhe: incoerentes.length === 0 && graves.length === 0
+      ? `${ids.length} avaliação(ões) disputada(s) por dois admins ao mesmo tempo; ` +
+        `${ctx.disputas.corrigidas} correção(ões) e ${ctx.disputas.arbitradas} arbitragem(ns) aceitas; ` +
+        'nota e ajuste_tipo coerentes em todas, e nenhum C1 grave' +
+        (recusas.length > 0 ? ` (recusas: ${recusas.join('; ')})` : '')
+      : [...incoerentes.slice(0, 5),
+         ...graves.slice(0, 5).map((a) => `C1 grave em ${a.codigo_projeto}`)].join('; '),
+  }
+}
 
 async function coletarEstadoFinal(ctx) {
   const situacao = await medir('fn_projetos_situacao', () => ctx.admin
@@ -1785,6 +1978,7 @@ async function conferirInvariantes(ctx) {
       { numero: 7, nome: 'voto popular não consome cota', ...conferirVotoPopularForaDaCota(ctx, estado) },
       { numero: 8, nome: 'voto popular não fixa questionário', ...conferirFixacaoDoQuestionario(estado) },
       { numero: 9, nome: 'sem pareamento, sem sorteio nem nota', ...conferirPareamentoAntesDeTudo(ctx, estado, trilhaDispositivos) },
+      { numero: 10, nome: 'nota em disputa ficou coerente', ...await conferirDisputaDeNota(ctx, estado) },
     ],
     auxiliares: [
       { nome: 'check-in respeitado pelo sorteio', ...conferirCheckIn(ctx, estado, trilhaProjetos) },
@@ -1822,7 +2016,7 @@ const COLUNAS_RANKING =
 
 /**
  * Campos do Telão que saem de locks_ativos (trava não vencida). A finalização apaga
- * as travas de propósito, então estes DEVEM cair a zero — é a invariante 11, não
+ * as travas de propósito, então estes DEVEM cair a zero — é a invariante 12, não
  * perda de dado. Qualquer outro campo que mude é perda.
  */
 const CAMPOS_TELAO_DE_TRAVA = new Set(['avaliacoes_em_andamento', 'em_andamento_na_meta'])
@@ -1898,7 +2092,7 @@ function primeiraDiferenca(antes, depois, ignorar = new Set(), caminho = '') {
 
 /**
  * Plantio de códigos de acesso pendentes. Sem ele, a parte "códigos pendentes do
- * evento marcados como usados" da invariante 11 seria vácua: o evento de simulação
+ * evento marcados como usados" da invariante 12 seria vácua: o evento de simulação
  * usa metodos_vinculo = 'pareamento' e fn_gerar_codigo_acesso recusa nesse modo.
  * Os escolhidos são avaliadores do evento que NÃO foram atores — a rodada já acabou,
  * mas não custa deixar o que ela provou fora do caminho. metodos_vinculo é restaurado
@@ -1954,7 +2148,7 @@ async function plantarCodigosPendentes(ctx, relato) {
 /**
  * Leitura de premiação que não derruba a verificação. Uma leitura que já falhava
  * ANTES da finalização não é perda causada por ela — mas calar sobre isso também não
- * serve. O erro entra no retrato e a invariante 13 compara os dois lados: igual antes
+ * serve. O erro entra no retrato e a invariante 14 compara os dois lados: igual antes
  * e depois = nada mudou; só depois = a finalização quebrou.
  */
 async function leituraTolerante(nome, executar) {
@@ -2194,7 +2388,7 @@ async function sondarCodigoDeAcesso(ctx, plantio) {
   }
 }
 
-// ---------------------------------------------------- invariantes 10 a 13
+// ---------------------------------------------------- invariantes 11 a 14
 
 function conferirNadaPerdido(antes, depois) {
   const problemas = []
@@ -2389,10 +2583,10 @@ async function finalizarEventoInterno(ctx, relato) {
   relato.sonda = await sondarAvaliador(ctx)
 
   relato.invariantes = [
-    { numero: 10, nome: 'nenhuma avaliação perdida', ...conferirNadaPerdido(antes, depois) },
-    { numero: 11, nome: 'feira fechada de verdade', ...conferirEfeitosDaFinalizacao(antes, depois, relato.retorno, relato.plantio, relato.sonda) },
-    { numero: 12, nome: 'nada escapou do escopo do evento', ...conferirEscopoDoEvento(outrosAntes, outrosDepois) },
-    { numero: 13, nome: 'leituras da premiação íntegras', ...conferirLeiturasDaPremiacao(antes, depois) },
+    { numero: 11, nome: 'nenhuma avaliação perdida', ...conferirNadaPerdido(antes, depois) },
+    { numero: 12, nome: 'feira fechada de verdade', ...conferirEfeitosDaFinalizacao(antes, depois, relato.retorno, relato.plantio, relato.sonda) },
+    { numero: 13, nome: 'nada escapou do escopo do evento', ...conferirEscopoDoEvento(outrosAntes, outrosDepois) },
+    { numero: 14, nome: 'leituras da premiação íntegras', ...conferirLeiturasDaPremiacao(antes, depois) },
   ]
 
   // Depois das invariantes: estas duas sondas escrevem.
@@ -2631,6 +2825,13 @@ function imprimirResumo(ctx, resultado, duracaoSegundos) {
     `    ${'mutação de questionário em uso'.padEnd(42, '.')} ${ctx.mutacoes.tentativas} tentativas: ` +
     `${ctx.mutacoes.aceitasEmUso} aceita(s) com avaliação, ${ctx.mutacoes.aceitasSemUso} aceita(s) antes do primeiro uso`,
   )
+  console.log(
+    `    ${'disputa de nota entre dois admins'.padEnd(42, '.')} ${ctx.disputas.tentativas} avaliação(ões): ` +
+    `${ctx.disputas.corrigidas} correção(ões) e ${ctx.disputas.arbitradas} arbitragem(ns) aceitas` +
+    (ctx.disputas.recusas.size > 0
+      ? `, recusas: ${[...ctx.disputas.recusas.entries()].map(([msg, n]) => `${n}× ${msg}`).join('; ')}`
+      : ''),
+  )
   if (resultado.finalizacao) imprimirFinalizacao(ctx, resultado.finalizacao)
 
   if (String(ctx.pesosAlvoAntes) !== String(resultado.totais.pesosAlvo)) {
@@ -2663,6 +2864,7 @@ async function principal() {
     avisos: [], falhasDePreparo: [], impedimentos: 0, recusasPorCota: [],
     varreduras: 0, fimDaRodada: null,
     mutacoes: { tentativas: 0, aceitasEmUso: 0, aceitasSemUso: 0 },
+    disputas: { tentativas: 0, corrigidas: 0, arbitradas: 0, alvos: new Map(), recusas: new Map() },
   }
 
   ctx.admin = await entrarComoAdmin(ctx, 'auth.signInWithPassword (admin)')
@@ -2676,6 +2878,10 @@ async function principal() {
     clientesStaff.push(await entrarComoStaff(ctx, credenciais.staff[indice % credenciais.staff.length]))
   }
   const adminMutacao = await entrarComoAdmin(ctx, 'auth.signInWithPassword (admin mutação)')
+  // Duas sessões a mais: a disputa de nota precisa de dois clientes de verdade, não de
+  // duas chamadas na mesma conexão — é a concorrência que está sob teste.
+  const adminDisputaA = await entrarComoAdmin(ctx, 'auth.signInWithPassword (admin disputa A)')
+  const adminDisputaB = await entrarComoAdmin(ctx, 'auth.signInWithPassword (admin disputa B)')
 
   ctx.atores = escolherAtores(ctx)
   if (ctx.semCredenciamentoNoEvento > 0) {
@@ -2708,6 +2914,7 @@ async function principal() {
     ...clientesStaff.map((cliente) => atorStaff(ctx, cliente)),
     ...Array.from({ length: opcoes.telao }, () => atorTelao(ctx)),
     atorMutacaoQuestionario(ctx, adminMutacao),
+    atorDisputaDeNota(ctx, adminDisputaA, adminDisputaB),
   ]
   await Promise.all([
     Promise.all(ctx.atores.map((ator) => atorAvaliador(ctx, ator))),
@@ -2723,7 +2930,7 @@ async function principal() {
   const duracaoSegundos = (ctx.fimRodada - ctx.inicioRodada) / 1000
 
   const resultado = await conferirInvariantes(ctx)
-  // A finalização vem DEPOIS das invariantes 1-9: ela apaga travas e revoga aparelhos,
+  // A finalização vem DEPOIS das invariantes 1-10: ela apaga travas e revoga aparelhos,
   // que é justamente o estado que elas conferem.
   if (opcoes.finalizar) resultado.finalizacao = await finalizarEvento(ctx)
   imprimirResumo(ctx, resultado, duracaoSegundos)
