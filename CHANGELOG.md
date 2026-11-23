@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.2](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.14.1...v0.14.2) (2026-11-23)
+
+
+### Documentação
+
+* **questionarios:** o custo de vários técnicos está no vínculo, não na quantidade ([20f4359](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/20f4359783e210e96b341f2d1cdd470fbfef74fa))
+
 ## [0.14.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.14.0...v0.14.1) (2026-11-23)
 
 
