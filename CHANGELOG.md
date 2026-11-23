@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.13.0...v0.13.1) (2026-11-23)
+
+
+### Correções
+
+* **banco:** corrige relatórios quebrados e indexa o que a Classificação lê ([53aecd1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/53aecd137cf4e9a4db074c8e4e399fc1cbc6e1ae))
+
 ## [0.13.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.12.2...v0.13.0) (2026-11-17)
 
 
