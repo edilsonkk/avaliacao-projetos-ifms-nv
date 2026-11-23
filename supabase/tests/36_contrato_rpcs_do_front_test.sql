@@ -26,11 +26,14 @@ SELECT plan(7);
 
 CREATE TEMP TABLE rpcs_do_front (nome text PRIMARY KEY);
 INSERT INTO rpcs_do_front (nome) VALUES
+  ('admin_ajustar_media_projeto'),
+  ('admin_arbitrar_nota_final'),
   ('admin_atribuir_banca'),
   ('admin_atualizar_avaliador'),
   ('admin_atualizar_staff'),
   ('admin_bloquear_modalidade_avaliador'),
   ('admin_copiar_questionario'),
+  ('admin_corrigir_respostas_avaliacao'),
   ('admin_desbloquear_todos'),
   ('admin_desbloquear_trava'),
   ('admin_enfileirar_projetos'),
@@ -40,6 +43,7 @@ INSERT INTO rpcs_do_front (nome) VALUES
   ('admin_excluir_questionario'),
   ('admin_excluir_staff'),
   ('admin_finalizar_evento'),
+  ('admin_lancar_avaliacao'),
   ('admin_listar_questionarios_reaproveitaveis'),
   ('admin_marcar_questionario_voto_popular'),
   ('admin_reclassificar_questionario_voto_popular'),
@@ -327,6 +331,13 @@ INSERT INTO chamadas (ordem, nome, sub, sql) VALUES
 (620, 'admin_remover_quarentena_evento', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT public.admin_remover_quarentena_evento('e3600000-0000-0000-0000-000000000001', 'contrato 36') $q$),
 (621, 'admin_salvar_configuracoes_seguranca', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT public.admin_salvar_configuracoes_seguranca(false, 30) $q$),
 (622, 'admin_restaurar_modelos_originais', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT public.admin_restaurar_modelos_originais() $q$),
+-- os quatro da tela de Auditoria de Notas, chamados por variável em
+-- src/features/auditoria/api.ts (executarAcaoAdmin): invisíveis para a varredura
+-- estática do guard, por isso declarados lá e exercitados aqui
+(625, 'admin_corrigir_respostas_avaliacao', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT public.admin_corrigir_respostas_avaliacao('53600000-0000-0000-0000-000000000001', '[{"id_pergunta":"83600000-0000-0000-0000-000000000001","nota":7}]'::jsonb, 'contrato 36') $q$),
+(626, 'admin_arbitrar_nota_final', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT public.admin_arbitrar_nota_final('53600000-0000-0000-0000-000000000001', 7.5, 'contrato 36') $q$),
+(627, 'admin_ajustar_media_projeto', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT public.admin_ajustar_media_projeto('f3600000-0000-0000-0000-000000000001', 0.5, 'contrato 36') $q$),
+(628, 'admin_lancar_avaliacao', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT public.admin_lancar_avaliacao('f3600000-0000-0000-0000-000000000002', 'c3600000-0000-0000-0000-0000000000a2', '73600000-0000-0000-0000-000000000001', '[{"id_pergunta":"83600000-0000-0000-0000-000000000001","nota":6},{"id_pergunta":"83600000-0000-0000-0000-000000000002","nota":7}]'::jsonb, 'Lançamento do contrato 36', 'contrato 36', false) $q$),
 (630, 'excluir_avaliacao', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT public.excluir_avaliacao('53600000-0000-0000-0000-000000000002', 'contrato 36') $q$),
 (631, 'restaurar_avaliacao', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT public.restaurar_avaliacao('53600000-0000-0000-0000-000000000002', 'contrato 36') $q$),
 -- -------------------------------------------------- 800: remoções
