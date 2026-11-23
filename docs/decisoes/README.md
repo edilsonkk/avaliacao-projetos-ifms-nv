@@ -40,3 +40,4 @@ Correções de bug e ajustes visuais não precisam de ADR: o commit e a doc do d
 | [0016](0016-voto-popular-separado-e-media-bayesiana.md) | Voto popular em pista separada, ordenado por média bayesiana | Aceito |
 | [0017](0017-finalizar-evento-como-acao-propria.md) | Finalizar evento é ação própria, separada da pausa | Aceito |
 | [0018](0018-indice-em-respostas-avaliacao.md) | A Classificação continua sob RLS: o conserto é o índice da FK, não `SECURITY DEFINER` | Aceito |
+| [0019](0019-policies-com-initplan.md) | Toda chamada de função em policy de RLS vai dentro de um subselect escalar | Aceito |

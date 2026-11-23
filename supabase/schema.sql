@@ -7042,39 +7042,39 @@ ALTER TABLE "public"."registro_autocadastro" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."respostas_avaliacao" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "rls_amb_leitura" ON "public"."avaliador_modalidades_bloqueadas" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
+CREATE POLICY "rls_amb_leitura" ON "public"."avaliador_modalidades_bloqueadas" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ( SELECT "public"."is_staff"() AS "is_staff") OR ("id_usuario" = ( SELECT "public"."avaliador_atual"() AS "avaliador_atual"))));
 
 
 
-CREATE POLICY "rls_amb_staff_apaga" ON "public"."avaliador_modalidades_bloqueadas" FOR DELETE TO "authenticated" USING ("public"."is_staff"());
+CREATE POLICY "rls_amb_staff_apaga" ON "public"."avaliador_modalidades_bloqueadas" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_staff"() AS "is_staff"));
 
 
 
-CREATE POLICY "rls_amb_staff_atualiza" ON "public"."avaliador_modalidades_bloqueadas" FOR UPDATE TO "authenticated" USING ("public"."is_staff"()) WITH CHECK ("public"."is_staff"());
+CREATE POLICY "rls_amb_staff_atualiza" ON "public"."avaliador_modalidades_bloqueadas" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_staff"() AS "is_staff")) WITH CHECK (( SELECT "public"."is_staff"() AS "is_staff"));
 
 
 
-CREATE POLICY "rls_amb_staff_insere" ON "public"."avaliador_modalidades_bloqueadas" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_staff"());
+CREATE POLICY "rls_amb_staff_insere" ON "public"."avaliador_modalidades_bloqueadas" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_staff"() AS "is_staff"));
 
 
 
-CREATE POLICY "rls_areas_leitura" ON "public"."avaliador_areas" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
+CREATE POLICY "rls_areas_leitura" ON "public"."avaliador_areas" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ( SELECT "public"."is_staff"() AS "is_staff") OR ("id_usuario" = ( SELECT "public"."avaliador_atual"() AS "avaliador_atual"))));
 
 
 
-CREATE POLICY "rls_areas_staff_apaga" ON "public"."avaliador_areas" FOR DELETE TO "authenticated" USING ("public"."is_staff"());
+CREATE POLICY "rls_areas_staff_apaga" ON "public"."avaliador_areas" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_staff"() AS "is_staff"));
 
 
 
-CREATE POLICY "rls_areas_staff_atualiza" ON "public"."avaliador_areas" FOR UPDATE TO "authenticated" USING ("public"."is_staff"()) WITH CHECK ("public"."is_staff"());
+CREATE POLICY "rls_areas_staff_atualiza" ON "public"."avaliador_areas" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_staff"() AS "is_staff")) WITH CHECK (( SELECT "public"."is_staff"() AS "is_staff"));
 
 
 
-CREATE POLICY "rls_areas_staff_insere" ON "public"."avaliador_areas" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_staff"());
+CREATE POLICY "rls_areas_staff_insere" ON "public"."avaliador_areas" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_staff"() AS "is_staff"));
 
 
 
-CREATE POLICY "rls_areas_tematicas_admin" ON "public"."areas_tematicas" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_areas_tematicas_admin" ON "public"."areas_tematicas" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
@@ -7082,51 +7082,51 @@ CREATE POLICY "rls_areas_tematicas_leitura" ON "public"."areas_tematicas" FOR SE
 
 
 
-CREATE POLICY "rls_avaliacoes_admin" ON "public"."avaliacoes" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_avaliacoes_admin" ON "public"."avaliacoes" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_avaliacoes_leitura" ON "public"."avaliacoes" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR ("id_usuario" = "public"."avaliador_atual"())));
+CREATE POLICY "rls_avaliacoes_leitura" ON "public"."avaliacoes" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("id_usuario" = ( SELECT "public"."avaliador_atual"() AS "avaliador_atual"))));
 
 
 
-CREATE POLICY "rls_avaliacoes_staff_apaga_pendentes" ON "public"."avaliacoes" FOR DELETE TO "authenticated" USING (("public"."is_staff"() AND ("nota_final" IS NULL) AND (("status" IS NULL) OR (("status")::"text" <> 'CANCELADA'::"text")) AND (NOT (EXISTS ( SELECT 1
+CREATE POLICY "rls_avaliacoes_staff_apaga_pendentes" ON "public"."avaliacoes" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_staff"() AS "is_staff") AND ("nota_final" IS NULL) AND (("status" IS NULL) OR (("status")::"text" <> 'CANCELADA'::"text")) AND (NOT (EXISTS ( SELECT 1
    FROM "public"."respostas_avaliacao" "r"
   WHERE ("r"."id_avaliacao" = "avaliacoes"."id_avaliacao"))))));
 
 
 
-CREATE POLICY "rls_avaliador_areas_admin" ON "public"."avaliador_areas" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_avaliador_areas_admin" ON "public"."avaliador_areas" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_avaliador_modalidades_bloqueadas_admin" ON "public"."avaliador_modalidades_bloqueadas" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_avaliador_modalidades_bloqueadas_admin" ON "public"."avaliador_modalidades_bloqueadas" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_avaliadores_evento_admin" ON "public"."avaliadores_evento" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_avaliadores_evento_admin" ON "public"."avaliadores_evento" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_avaliadores_evento_leitura" ON "public"."avaliadores_evento" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
+CREATE POLICY "rls_avaliadores_evento_leitura" ON "public"."avaliadores_evento" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ( SELECT "public"."is_staff"() AS "is_staff") OR ("id_usuario" = ( SELECT "public"."avaliador_atual"() AS "avaliador_atual"))));
 
 
 
-CREATE POLICY "rls_avaliadores_evento_staff_atualiza" ON "public"."avaliadores_evento" FOR UPDATE TO "authenticated" USING (("public"."is_staff"() AND (EXISTS ( SELECT 1
+CREATE POLICY "rls_avaliadores_evento_staff_atualiza" ON "public"."avaliadores_evento" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_staff"() AS "is_staff") AND (EXISTS ( SELECT 1
    FROM "public"."usuarios" "u"
-  WHERE (("u"."id_usuario" = "avaliadores_evento"."id_usuario") AND ("upper"(("u"."papel")::"text") = 'AVALIADOR'::"text")))))) WITH CHECK (("public"."is_staff"() AND (EXISTS ( SELECT 1
-   FROM "public"."usuarios" "u"
-  WHERE (("u"."id_usuario" = "avaliadores_evento"."id_usuario") AND ("upper"(("u"."papel")::"text") = 'AVALIADOR'::"text"))))));
-
-
-
-CREATE POLICY "rls_avaliadores_evento_staff_insere" ON "public"."avaliadores_evento" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_staff"() AND (EXISTS ( SELECT 1
+  WHERE (("u"."id_usuario" = "avaliadores_evento"."id_usuario") AND ("upper"(("u"."papel")::"text") = 'AVALIADOR'::"text")))))) WITH CHECK ((( SELECT "public"."is_staff"() AS "is_staff") AND (EXISTS ( SELECT 1
    FROM "public"."usuarios" "u"
   WHERE (("u"."id_usuario" = "avaliadores_evento"."id_usuario") AND ("upper"(("u"."papel")::"text") = 'AVALIADOR'::"text"))))));
 
 
 
-CREATE POLICY "rls_eventos_admin" ON "public"."eventos" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_avaliadores_evento_staff_insere" ON "public"."avaliadores_evento" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_staff"() AS "is_staff") AND (EXISTS ( SELECT 1
+   FROM "public"."usuarios" "u"
+  WHERE (("u"."id_usuario" = "avaliadores_evento"."id_usuario") AND ("upper"(("u"."papel")::"text") = 'AVALIADOR'::"text"))))));
+
+
+
+CREATE POLICY "rls_eventos_admin" ON "public"."eventos" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
@@ -7134,35 +7134,35 @@ CREATE POLICY "rls_eventos_leitura" ON "public"."eventos" FOR SELECT TO "authent
 
 
 
-CREATE POLICY "rls_fila_atribuicoes_direcionadas_admin" ON "public"."fila_atribuicoes_direcionadas" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_fila_atribuicoes_direcionadas_admin" ON "public"."fila_atribuicoes_direcionadas" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_fila_leitura" ON "public"."fila_atribuicoes_direcionadas" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
+CREATE POLICY "rls_fila_leitura" ON "public"."fila_atribuicoes_direcionadas" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ( SELECT "public"."is_staff"() AS "is_staff") OR ("id_usuario" = ( SELECT "public"."avaliador_atual"() AS "avaliador_atual"))));
 
 
 
-CREATE POLICY "rls_fila_staff_apaga" ON "public"."fila_atribuicoes_direcionadas" FOR DELETE TO "authenticated" USING ("public"."is_staff"());
+CREATE POLICY "rls_fila_staff_apaga" ON "public"."fila_atribuicoes_direcionadas" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_staff"() AS "is_staff"));
 
 
 
-CREATE POLICY "rls_historico_impedimentos_admin" ON "public"."historico_impedimentos" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_historico_impedimentos_admin" ON "public"."historico_impedimentos" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_historico_impedimentos_leitura" ON "public"."historico_impedimentos" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR ("id_usuario" = "public"."avaliador_atual"())));
+CREATE POLICY "rls_historico_impedimentos_leitura" ON "public"."historico_impedimentos" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("id_usuario" = ( SELECT "public"."avaliador_atual"() AS "avaliador_atual"))));
 
 
 
-CREATE POLICY "rls_instituicao_aliases_admin" ON "public"."instituicao_aliases" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_instituicao_aliases_admin" ON "public"."instituicao_aliases" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_instituicao_aliases_leitura" ON "public"."instituicao_aliases" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"()));
+CREATE POLICY "rls_instituicao_aliases_leitura" ON "public"."instituicao_aliases" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ( SELECT "public"."is_staff"() AS "is_staff")));
 
 
 
-CREATE POLICY "rls_instituicoes_admin" ON "public"."instituicoes" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_instituicoes_admin" ON "public"."instituicoes" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
@@ -7170,31 +7170,31 @@ CREATE POLICY "rls_instituicoes_leitura" ON "public"."instituicoes" FOR SELECT T
 
 
 
-CREATE POLICY "rls_locks_ativos_admin" ON "public"."locks_ativos" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_locks_ativos_admin" ON "public"."locks_ativos" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_locks_ativos_apaga" ON "public"."locks_ativos" FOR DELETE TO "authenticated" USING (("public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
+CREATE POLICY "rls_locks_ativos_apaga" ON "public"."locks_ativos" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_staff"() AS "is_staff") OR ("id_usuario" = ( SELECT "public"."avaliador_atual"() AS "avaliador_atual"))));
 
 
 
-CREATE POLICY "rls_locks_ativos_leitura" ON "public"."locks_ativos" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("id_usuario" = "public"."avaliador_atual"())));
+CREATE POLICY "rls_locks_ativos_leitura" ON "public"."locks_ativos" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ( SELECT "public"."is_staff"() AS "is_staff") OR ("id_usuario" = ( SELECT "public"."avaliador_atual"() AS "avaliador_atual"))));
 
 
 
-CREATE POLICY "rls_log_auditoria_admin_le" ON "public"."log_auditoria" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "rls_log_auditoria_admin_le" ON "public"."log_auditoria" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_modalidade_aliases_admin" ON "public"."modalidade_aliases" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_modalidade_aliases_admin" ON "public"."modalidade_aliases" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_modalidade_aliases_leitura" ON "public"."modalidade_aliases" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"()));
+CREATE POLICY "rls_modalidade_aliases_leitura" ON "public"."modalidade_aliases" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ( SELECT "public"."is_staff"() AS "is_staff")));
 
 
 
-CREATE POLICY "rls_modalidades_admin" ON "public"."modalidades" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_modalidades_admin" ON "public"."modalidades" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
@@ -7202,51 +7202,51 @@ CREATE POLICY "rls_modalidades_leitura" ON "public"."modalidades" FOR SELECT TO 
 
 
 
-CREATE POLICY "rls_modelos_questionario_leitura" ON "public"."modelos_questionario" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "rls_modelos_questionario_leitura" ON "public"."modelos_questionario" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_perguntas_modelo_questionario_leitura" ON "public"."perguntas_modelo_questionario" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "rls_perguntas_modelo_questionario_leitura" ON "public"."perguntas_modelo_questionario" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_perguntas_questionario_admin" ON "public"."perguntas_questionario" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_perguntas_questionario_admin" ON "public"."perguntas_questionario" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_perguntas_questionario_leitura" ON "public"."perguntas_questionario" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("public"."avaliador_atual"() IS NOT NULL)));
+CREATE POLICY "rls_perguntas_questionario_leitura" ON "public"."perguntas_questionario" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ( SELECT "public"."is_staff"() AS "is_staff") OR (( SELECT "public"."avaliador_atual"() AS "avaliador_atual") IS NOT NULL)));
 
 
 
-CREATE POLICY "rls_projetos_admin" ON "public"."projetos" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_projetos_admin" ON "public"."projetos" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_projetos_leitura" ON "public"."projetos" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("public"."avaliador_atual"() IS NOT NULL)));
+CREATE POLICY "rls_projetos_leitura" ON "public"."projetos" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ( SELECT "public"."is_staff"() AS "is_staff") OR (( SELECT "public"."avaliador_atual"() AS "avaliador_atual") IS NOT NULL)));
 
 
 
-CREATE POLICY "rls_questionarios_admin" ON "public"."questionarios" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_questionarios_admin" ON "public"."questionarios" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_questionarios_leitura" ON "public"."questionarios" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_staff"() OR ("public"."avaliador_atual"() IS NOT NULL)));
+CREATE POLICY "rls_questionarios_leitura" ON "public"."questionarios" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ( SELECT "public"."is_staff"() AS "is_staff") OR (( SELECT "public"."avaliador_atual"() AS "avaliador_atual") IS NOT NULL)));
 
 
 
-CREATE POLICY "rls_respostas_avaliacao_admin" ON "public"."respostas_avaliacao" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_respostas_avaliacao_admin" ON "public"."respostas_avaliacao" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_usuarios_admin" ON "public"."usuarios" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "rls_usuarios_admin" ON "public"."usuarios" TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "rls_usuarios_leitura" ON "public"."usuarios" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR ("id_usuario" = "auth"."uid"()) OR ("id_usuario" = "public"."avaliador_atual"()) OR ("id_auth" = "auth"."uid"()) OR ("public"."is_staff"() AND ("upper"(("papel")::"text") = 'AVALIADOR'::"text"))));
+CREATE POLICY "rls_usuarios_leitura" ON "public"."usuarios" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("id_usuario" = ( SELECT "auth"."uid"() AS "uid")) OR ("id_usuario" = ( SELECT "public"."avaliador_atual"() AS "avaliador_atual")) OR ("id_auth" = ( SELECT "auth"."uid"() AS "uid")) OR (( SELECT "public"."is_staff"() AS "is_staff") AND ("upper"(("papel")::"text") = 'AVALIADOR'::"text"))));
 
 
 
-CREATE POLICY "rls_usuarios_staff_atualiza_avaliador" ON "public"."usuarios" FOR UPDATE TO "authenticated" USING (("public"."is_staff"() AND ("upper"(("papel")::"text") = 'AVALIADOR'::"text"))) WITH CHECK (("public"."is_staff"() AND ("upper"(("papel")::"text") = 'AVALIADOR'::"text")));
+CREATE POLICY "rls_usuarios_staff_atualiza_avaliador" ON "public"."usuarios" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_staff"() AS "is_staff") AND ("upper"(("papel")::"text") = 'AVALIADOR'::"text"))) WITH CHECK ((( SELECT "public"."is_staff"() AS "is_staff") AND ("upper"(("papel")::"text") = 'AVALIADOR'::"text")));
 
 
 
