@@ -16,7 +16,10 @@
  *   --mutacao-ms=N --telao-ms=N --checkin-ms=N --disputa-ms=N
  *   --ritmo-ms=N                             tempo de pensar por ação do avaliador
  *                                            (0 = sem pausa, o modo de medição)
- *   --questionarios=criados|copiados|misto   caminho de montagem dos questionários
+ *   --questionarios=criados|copiados|misto|existentes
+ *                                            caminho de montagem dos questionários;
+ *                                            `existentes` não cria nada e usa os que o
+ *                                            semeador já pôs no evento
  *   --ate-concluir                           drenagem: avalia até a feira concluir ou empacar
  *   --teto-ms=N --teto-varreduras=N          limites de parada do modo drenagem
  *   --finalizar                              encerra a feira ao fim da drenagem (exige --ate-concluir)
@@ -107,7 +110,7 @@ const PADROES = {
   finalizar: false,
 }
 
-const MODOS_QUESTIONARIO = new Set(['criados', 'copiados', 'misto'])
+const MODOS_QUESTIONARIO = new Set(['criados', 'copiados', 'misto', 'existentes'])
 
 /** Códigos dos modelos usados no modo `copiados` (sem UUID no código). */
 const CODIGOS_MODELO = { tecnico: 'feira-software-q2', votoPopular: 'feira-software-q5' }
@@ -172,7 +175,7 @@ const ARGUMENTOS_LIGADOS = { 'ate-concluir': 'ateConcluir', finalizar: 'finaliza
 function ajudaArgumentos() {
   return 'Use: ' +
     Object.keys(ARGUMENTOS_NUMERICOS).map((nome) => `--${nome}=N`).join(' ') +
-    ' --questionarios=criados|copiados|misto --ate-concluir --finalizar'
+    ' --questionarios=criados|copiados|misto|existentes --ate-concluir --finalizar'
 }
 
 function lerArgumentos(argv) {
@@ -793,6 +796,24 @@ async function comporQuestionarios(ctx) {
     idVotoPopular = await copiarModelo(ctx, CODIGOS_MODELO.votoPopular, notas)
     caminhos.tecnico = 'copiado'
     caminhos.votoPopular = 'copiado'
+  } else if (modo === 'existentes') {
+    // Nada é criado nem copiado: a rodada usa a configuração que o evento já tem. É o
+    // modo para medir a configuração REAL da feira — com `--questionarios=misto` a
+    // rodada acrescentaria um técnico próprio e a pergunta deixaria de ser sobre ela.
+    const tecnico = ctx.estadoQuestionarios.questionarios.find((quest) => quest.is_voto_popular === false)
+    const votoPopular = ctx.estadoQuestionarios.questionarios.find((quest) => quest.is_voto_popular === true)
+    if (!tecnico || !votoPopular) {
+      throw new Error(
+        '--questionarios=existentes exige que o evento já tenha um questionário técnico e um de voto ' +
+        'popular. Rode `npm run local:semear` antes (use --tecnicos=N para a configuração da feira).',
+      )
+    }
+    idTecnico = tecnico.id_questionario
+    idVotoPopular = votoPopular.id_questionario
+    caminhos.tecnico = 'existente'
+    caminhos.votoPopular = 'existente'
+    const tecnicos = ctx.estadoQuestionarios.questionarios.filter((q) => q.is_voto_popular === false).length
+    notas.push(`configuração do evento usada como está: ${tecnicos} questionário(s) técnico(s) e 1 de voto popular.`)
   } else {
     // misto: um de cada caminho — e escalas diferentes na MESMA rodada (1–5 e 0–10).
     idTecnico = await copiarModelo(ctx, CODIGOS_MODELO.tecnico, notas)
@@ -891,15 +912,23 @@ async function limparCheckIn(ctx) {
 }
 
 /**
- * Três grupos: votantes do voto popular, técnicos vinculados ao questionário
- * técnico e técnicos livres (resolvem pelo questionário fixado do projeto).
+ * Três grupos: votantes do voto popular, técnicos vinculados a um questionário técnico
+ * e técnicos livres (resolvem pelo questionário fixado do projeto).
+ *
+ * Os vinculados são distribuídos em rodízio por TODOS os técnicos do evento, não só
+ * pelo que esta rodada compôs. Com um técnico só isso não muda nada; com mais de um é
+ * o que faz a trava do questionário valer de verdade, porque um avaliador vinculado ao
+ * técnico A não consegue avaliar projeto já fixado no técnico B — e aí a pergunta
+ * "a cota de todos os projetos fecha?" deixa de ter resposta óbvia.
  */
 async function vincularQuestionarios(ctx) {
-  const resultado = { votantes: 0, vinculados: 0, livres: 0 }
-  const tarefas = ctx.atores.map((ator) => async () => {
+  const tecnicos = ctx.questionarios.filter((quest) => !quest.is_voto_popular)
+  const resultado = { votantes: 0, vinculados: 0, livres: 0, porTecnico: new Map() }
+  const tarefas = ctx.atores.map((ator, indice) => async () => {
+    const tecnico = tecnicos[indice % tecnicos.length] ?? ctx.questionarioTecnico
     const idQuestionario = ator.grupo === 'votante'
       ? ctx.questionarioVotoPopular.id_questionario
-      : (ator.grupo === 'tecnico-vinculado' ? ctx.questionarioTecnico.id_questionario : null)
+      : (ator.grupo === 'tecnico-vinculado' ? tecnico.id_questionario : null)
     const { error } = await medir('admin_vincular_questionario_avaliador', () => ctx.admin
       .rpc('admin_vincular_questionario_avaliador', {
         p_id_usuario: ator.idUsuario,
@@ -909,8 +938,10 @@ async function vincularQuestionarios(ctx) {
     if (error) throw new Error(`Não consegui vincular o questionário: ${error.message}`)
     ator.questionarioVinculado = idQuestionario
     if (ator.grupo === 'votante') resultado.votantes += 1
-    else if (ator.grupo === 'tecnico-vinculado') resultado.vinculados += 1
-    else resultado.livres += 1
+    else if (ator.grupo === 'tecnico-vinculado') {
+      resultado.vinculados += 1
+      somar(resultado.porTecnico, tecnico.titulo ?? tecnico.id_questionario)
+    } else resultado.livres += 1
   })
   for (const bloco of emBlocos(tarefas, 10)) await Promise.all(bloco.map((executar) => executar()))
   return resultado
@@ -2719,8 +2750,15 @@ function imprimirResumo(ctx, resultado, duracaoSegundos) {
     `  atores: ${ctx.opcoes.avaliadores} avaliadores (${ctx.vinculo.votantes} voto popular / ` +
     `${ctx.vinculo.vinculados} técnicos vinculados / ${ctx.vinculo.livres} técnicos livres; ` +
     `${ctx.atores.filter((ator) => !ator.credenciadoAntes).length} sem credenciamento na largada), ` +
-    `${ctx.opcoes.staff} staff, ${ctx.opcoes.telao} telão, 1 admin em mutação, ${ctx.opcoes.autocadastro} autocadastros`,
+    `${ctx.opcoes.staff} staff, ${ctx.opcoes.telao} telão, 1 admin em mutação, ` +
+    `2 admins em disputa de nota, ${ctx.opcoes.autocadastro} autocadastros`,
   )
+  if (ctx.vinculo.porTecnico.size > 1) {
+    console.log(
+      `  vínculos técnicos por questionário: ` +
+      [...ctx.vinculo.porTecnico.entries()].map(([titulo, n]) => `${titulo}: ${n}`).join(' / '),
+    )
+  }
   console.log(
     `  preparo: ${ctx.projetosLimpos.length} check-ins limpos de ${ctx.elegiveis} com check-in; ` +
     `${ctx.pendentesAntes.length} projetos já estavam pendentes; ${ctx.totalFilaCheckin} na fila do staff; ` +
