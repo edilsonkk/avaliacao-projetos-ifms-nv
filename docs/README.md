@@ -31,6 +31,7 @@ Comece pela [visão geral](arquitetura/visao-geral.md). Para contribuir, leia o
 | Deu um erro conhecido | [Troubleshooting](operacao/troubleshooting.md) |
 | Como publicar uma versão, rollback, backup, segredos | [CI/CD e deploy](operacao/ci-cd-e-deploy.md) |
 | Como rodar o banco localmente / criar Admin | [Configuração](arquitetura/configuracao.md#desenvolvimento-local) |
+| Subir o ambiente local do zero, ou depois de um `db reset` | [Ambiente local do zero](operacao/ambiente-local-do-zero.md) |
 | Roteiro da semana da feira | [Cronograma da feira](operacao/cronograma-da-feira.md) |
 | Achados da auditoria da documentação | [Relatório de docs](auditoria/relatorio-docs.md) |
 | Por que foi decidido assim? | [Decisões (ADRs)](decisoes/README.md) |

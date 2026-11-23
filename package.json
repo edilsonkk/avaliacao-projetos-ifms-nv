@@ -16,7 +16,10 @@
     "guardas:auditoria": "node scripts/guardas-auditoria.mjs",
     "contraste": "node scripts/contraste.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "local:reset": "npx supabase@2.122.0 db reset && node --env-file-if-exists=.env --env-file-if-exists=.env.simulacao.local scripts/criar-contas-locais.mjs",
+    "local:semear": "node --env-file-if-exists=.env --env-file-if-exists=.env.simulacao.local scripts/semear-simulacao.mjs",
+    "local:simular": "node --env-file-if-exists=.env --env-file-if-exists=.env.simulacao.local scripts/simular-feira.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",

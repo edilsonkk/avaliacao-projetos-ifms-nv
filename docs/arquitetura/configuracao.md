@@ -50,7 +50,9 @@ npm run dev                         # http://localhost:3000
 | `npx supabase@2.122.0 stop` | Desliga os containers |
 | Studio | http://127.0.0.1:54323 (tabelas, SQL, Auth) |
 
-O `supabase/seed.sql` cria só um evento de teste. Não coloque credenciais nem dados reais nele.
+O `supabase/seed.sql` cria só um evento de teste. Não coloque credenciais nem dados reais nele — e note que
+`db reset` apaga `auth.users`: use `npm run local:reset`, que recria o banco **e** as contas de Admin e Staff. A
+sequência de três comandos está em [ambiente local do zero](../operacao/ambiente-local-do-zero.md).
 
 **Como saber qual banco está em uso:** o cabeçalho do app mostra **local** (azul) ou **produção** (verde), a
 partir da URL do `.env` (`identificarAmbienteSupabase` em `src/lib/ambiente.ts`). O verde é intencional: produção
