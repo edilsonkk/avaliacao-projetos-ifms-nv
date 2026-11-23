@@ -441,7 +441,6 @@ async function semearCatalogos(sb, idEvento, tecnicos = 1) {
   // quantos existem, porque é a QUANTIDADE que ativa a trava do questionário. Escala
   // divergente é outra configuração, e a conferência acusa (C16).
   const idsTecnicos = Array.from({ length: Math.max(1, tecnicos) }, () => crypto.randomUUID())
-  const idTecnico = idsTecnicos[0]
   const idVotoPopular = crypto.randomUUID()
   const questionarios = [
     ...idsTecnicos.map((id, indice) => ({
