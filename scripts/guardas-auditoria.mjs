@@ -148,6 +148,75 @@ if (existsSync(join(RAIZ, INDEX_BUILD))) {
 // ---------------------------------------------------------------------------
 const CONTRATO_RPC = 'supabase/tests/36_contrato_rpcs_do_front_test.sql';
 const contrato = ler(CONTRATO_RPC);
+const noContrato = (nome) => contrato.includes(`('${nome}')`);
+
+/**
+ * Chamadas com nome de RPC em variável, que nenhuma varredura estática alcança. Cada
+ * entrada declara o arquivo, o identificador passado para `.rpc()` e os nomes que
+ * aquele call site de fato usa — lidos do código ao redor, não presumidos. A regra
+ * abaixo cobra esses nomes no contrato e, mais importante, RECUSA um call site
+ * dinâmico novo que não esteja declarado aqui: sem isso, bastaria alguém trocar
+ * `.rpc('x')` por `.rpc(nome)` para a RPC sair do alcance do guard em silêncio.
+ */
+const RPC_POR_VARIAVEL = [
+  {
+    arquivo: 'src/features/relatorios/components/RelatoriosAdmin.tsx',
+    identificador: 'funcao',
+    // o wrapper `rpc(funcao, args)` é chamado com estes cinco literais, nas abas do card
+    nomes: [
+      'fn_relatorio_projetos_completo',
+      'fn_relatorio_avaliadores_completo',
+      'fn_relatorio_ausencias_completo',
+      'fn_relatorio_devolucoes_completo',
+      'fn_relatorio_voto_popular_completo',
+    ],
+  },
+  {
+    arquivo: 'src/features/auditoria/api.ts',
+    identificador: 'nomeRpc',
+    // executarAcaoAdmin(nomeRpc, …): os quatro nomes que os chamadores passam, lidos
+    // das linhas 123, 131, 155 e 171 do próprio arquivo
+    nomes: [
+      'admin_corrigir_respostas_avaliacao',
+      'admin_arbitrar_nota_final',
+      'admin_lancar_avaliacao',
+      'admin_ajustar_media_projeto',
+    ],
+  },
+];
+
+for (const { arquivo, identificador, nomes } of RPC_POR_VARIAVEL) {
+  if (!existsSync(join(RAIZ, arquivo))) {
+    problemas.push(
+      `${arquivo}:1  rpc-no-contrato: arquivo declarado em RPC_POR_VARIAVEL não existe — ` +
+        'atualize a lista no guard',
+    );
+    continue;
+  }
+  const corpo = ler(arquivo);
+  if (!new RegExp(`\\brpc\\(\\s*${identificador}\\b`).test(corpo)) {
+    problemas.push(
+      `${arquivo}:1  rpc-no-contrato: não achei mais \`rpc(${identificador}\`) — ` +
+        'o call site dinâmico mudou; reveja RPC_POR_VARIAVEL no guard',
+    );
+  }
+  for (const nome of nomes) {
+    if (!corpo.includes(`'${nome}'`)) {
+      problemas.push(
+        `${arquivo}:1  rpc-no-contrato: ${nome}() está declarado em RPC_POR_VARIAVEL mas não ` +
+          'aparece mais no arquivo — remova da lista do guard',
+      );
+    }
+    if (!noContrato(nome)) {
+      problemas.push(
+        `${arquivo}:1  rpc-no-contrato: ${nome}() (chamada por variável) não está em ` +
+          `${CONTRATO_RPC} — acrescente à lista para o pgTAP cobrar que a função existe`,
+      );
+    }
+  }
+}
+
+const arquivosComRpcDinamica = new Set(RPC_POR_VARIAVEL.map((item) => item.arquivo));
 
 for (const caminho of arquivosDeProducao) {
   const relativo = relative(RAIZ, caminho);
@@ -156,12 +225,20 @@ for (const caminho of arquivosDeProducao) {
     .forEach((linha, i) => {
       if (/^\s*(\/\/|\/\*|\*)/.test(linha)) return;
       for (const [, nome] of linha.matchAll(/\brpc\(\s*'([a-z0-9_]+)'/g)) {
-        if (!contrato.includes(`('${nome}')`)) {
+        if (!noContrato(nome)) {
           problemas.push(
             `${relativo}:${i + 1}  rpc-no-contrato: ${nome}() não está em ${CONTRATO_RPC} — ` +
               'acrescente à lista para o pgTAP cobrar que a função existe',
           );
         }
+      }
+      // `.rpc(` com primeiro argumento que não é literal: só nos arquivos declarados
+      if (/\brpc\(\s*[A-Za-z_$]/.test(linha) && !arquivosComRpcDinamica.has(relativo)) {
+        problemas.push(
+          `${relativo}:${i + 1}  rpc-no-contrato: \`.rpc()\` com nome em variável fora dos call ` +
+            'sites declarados — a varredura estática não alcança o nome. Declare o arquivo e os ' +
+            'nomes em RPC_POR_VARIAVEL, no próprio guard',
+        );
       }
     });
 }

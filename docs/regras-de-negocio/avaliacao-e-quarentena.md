@@ -132,6 +132,38 @@ continua verificando a conta de cada voto (C1, C2, C3b, C10, C11) e ganha dois a
 - Importação de planilha: coluna `pergunta`/`critério` (e opcionais `lembrete`/`descrição` e `peso`). Se o formulário
   já tem perguntas, a tela pergunta se anexa ou começa um questionário novo. Nada é gravado até clicar em salvar.
 
+### Configuração de questionários recomendada para a feira
+
+Três mecanismos se combinam de um jeito que pode travar projetos, e a interação só aparece em volume:
+
+1. **escalas diferentes convivem no mesmo evento** — os 7 modelos prontos são de escala 1 a 5, e um questionário
+   criado à mão pode ter qualquer outra (as rodadas de carga usaram 0 a 10). São instrumentos diferentes, não
+   variações do mesmo;
+2. **a trava do primeiro avaliador** grava `projetos.id_questionario_fixado` na primeira avaliação;
+3. **o vínculo do avaliador** (`avaliadores_evento.id_questionario`) obriga aquele avaliador a um questionário só.
+
+Com os três ligados ao mesmo tempo, um avaliador **vinculado** ao questionário A que sorteia um projeto **fixado**
+no questionário B nunca consegue avaliá-lo: `fn_enviar_avaliacao` recusa ("Este projeto já é avaliado com outro
+questionário"), e a saída real é devolver o projeto por conflito (`fn_registrar_impedimento`). Nas rodadas de carga
+isso aparece no relatório de drenagem como **"questionário fixado incompatível"**, e foi observado justamente num
+evento acumulado, onde avaliações antigas já haviam fixado um questionário diferente do que os vinculados usavam.
+
+**Recomendado para a feira:**
+
+- **um questionário técnico por evento, de uma escala só**, mais o de voto popular. É a configuração em que as
+  rodadas fecharam a cota sem nenhum impedimento;
+- **vincule apenas os votantes do voto popular.** O vínculo existe para separar a pista do voto popular; usá-lo em
+  avaliador técnico cria o descasamento acima, porque o sorteio não sabe do vínculo ao escolher o projeto. Avaliador
+  técnico com `id_questionario` nulo sempre cai no questionário fixado do projeto e nunca é recusado por isso;
+- se instrumentos diferentes por modalidade forem inevitáveis, mantenha os técnicos **sem vínculo** e aceite que
+  cada projeto fica preso ao primeiro questionário usado nele;
+- **mantenha a trava do primeiro avaliador ligada**: é o que faz as três notas de um projeto serem comparáveis;
+- **decida o conjunto antes da primeira avaliação.** Depois dela o banco recusa alterar questionário em uso
+  ("já foi usado em N avaliação(ões)") e o fixado do projeto não é trocado;
+- antes da feira, rode uma drenagem com a configuração real (`scripts/simular-feira.mjs`, com `--ate-concluir`): o
+  relatório por projeto incompleto diz, projeto a projeto, se a cota fecha e por que não — ver
+  [ambiente local do zero](../operacao/ambiente-local-do-zero.md).
+
 ## Quarentena
 
 - Um projeto entra em quarentena quando a diferença entre a **maior e a menor nota ativa** passa de **2,5 pontos**

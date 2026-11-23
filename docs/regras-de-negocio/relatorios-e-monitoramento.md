@@ -40,12 +40,15 @@ Card **Relatórios** no Bloco 3, com sete abas:
    projetos que receberam voto. Ver [voto popular](avaliacao-e-quarentena.md#voto-popular) e
    [ADR 0016](../decisoes/0016-voto-popular-separado-e-media-bayesiana.md).
 6. **Instituições e Projetos Submetidos**: agrupado por escola com total de trabalhos. Ao expandir: código, nome,
-   área, modalidade e média (ou "Ausente"/"Não Credenciado").
+   área, modalidade e média (ou "Ausente"/"Não Credenciado"). O agrupamento é feito **no front**, a partir do
+   relatório de projetos já carregado; `fn_relatorio_instituicoes_completo` é a versão equivalente no banco e não é
+   chamada por esta tela (ver [funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#relatórios)).
 7. **Indicadores do evento: NOME DO EVENTO**: horário inicial e final, status, barra de conclusão global, KPIs de
    projetos (total, presentes, ausentes, não credenciados), de avaliadores (cadastrados, credenciados, ausentes) e de
    eficiência (avaliações, média geral, tempo médio por projeto). Inclui distribuição por cota (sem avaliação,
    abaixo da cota, cota concluída), quarentena, top 5 avaliadores mais produtivos e distribuição por modalidade e
-   grande área.
+   grande área. Como na aba de Instituições, os números são calculados **no front** com os dados já carregados;
+   `fn_relatorio_indicadores_gerenciais` é a versão equivalente no banco e não é chamada por esta tela.
 
 Regras comuns:
 - Na aba Projetos, a coluna **Código do Projeto** ordena pelo código em ordem natural (PROJ-2 antes de PROJ-10); os
@@ -99,6 +102,9 @@ não consulta nada). Os dados vêm de `view_ranking_top3`:
   pergunta **em texto** (antes elas ficavam só no `title`, e a comissão precisa ler, não passar o mouse). Se tudo empatar, a posição é dividida (1º, 1º, 3º), o card mostra "(empate)" e a comissão decide. Projetos
   com questionários diferentes na mesma modalidade/área são comparados posição a posição da prioridade.
 - O pódio de cada modalidade/área mostra todos com posição até 3 (um empate pode colocar mais de três).
+- A tela lê a view **direto**, como usuário logado, então a RLS vale na leitura. O desempate custa uma chamada de
+  `fn_chave_desempate` por projeto; o índice `idx_respostas_avaliacao_avaliacao` é o que mantém isso dentro do
+  `statement_timeout` (ver [ADR 0018](../decisoes/0018-indice-em-respostas-avaliacao.md)).
 - Projeto com notas divergentes ainda não resolvidas na Quarentena (`em_quarentena`) aparece marcado, e a tela avisa
   para resolver antes de homologar.
 - Se a [conferência de notas](auditoria-de-notas.md#conferência-o-que-é-verificado) achar algo **grave** no evento,

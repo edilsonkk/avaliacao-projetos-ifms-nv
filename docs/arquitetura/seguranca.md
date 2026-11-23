@@ -152,6 +152,38 @@ dela. Ver [auditoria](../operacao/auditoria.md).
 
 Lista completa em [funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#identidade-e-vínculo-do-celular).
 
+### Como escrever a chamada numa policy
+
+`is_admin()`, `is_staff()`, `avaliador_atual()` e `auth.uid()` são `STABLE` — o resultado depende da sessão —, então
+o planejador **não** as dobra em constante: numa cláusula `USING` a chamada entra como filtro de linha e é avaliada
+**uma vez por linha varrida**. Por isso toda chamada delas em policy vai dentro de um subselect escalar, que o
+planejador resolve como `InitPlan`, uma avaliação por comando:
+
+```sql
+-- não
+USING (is_admin() OR is_staff() OR (avaliador_atual() IS NOT NULL))
+-- sim
+USING ((SELECT public.is_admin()) OR (SELECT public.is_staff()) OR ((SELECT public.avaliador_atual()) IS NOT NULL))
+```
+
+Vale igual em `WITH CHECK`, onde o ganho é por linha escrita (lote de 2.000: −62%). As 46 policies que chamam função
+foram convertidas na migration `20261123001529`; medido em 601 projetos, a Classificação
+caiu de 371 ms para 111 ms e a leitura de `projetos` pelo avaliador de 28,6 ms para 0,36 ms.
+
+**O limite:** só envolva chamada cujos **argumentos** não referenciem a linha. `id_usuario = (SELECT avaliador_atual())`
+é correto porque a função não recebe a linha — a comparação continua por linha. Envolver uma chamada que **recebe
+coluna** faria a policy decidir por uma linha só e valer para todas: é defeito de segurança, não otimização. Por isso
+os `EXISTS` correlacionados e `upper((papel)::text)` ficaram como estavam.
+
+**O que o idioma não resolve:** função chamada **por linha numa lista de seleção** (foi a raiz do estouro da
+Classificação, resolvida por índice). Critério: subconsulta correlacionada o otimizador resolve (`SubPlan` hasheado,
+`loops=1`); invocação de função por linha, não. Ver
+[ADR 0019](../decisoes/0019-policies-com-initplan.md) e [ADR 0018](../decisoes/0018-indice-em-respostas-avaliacao.md).
+
+Cobrado por `supabase/tests/41_policies_com_initplan_test.sql`, que recusa chamada direta em qualquer policy de
+`public` e cobra que as quatro funções continuem `STABLE` — uma delas virando `VOLATILE` mudaria comportamento sem
+nenhum sinal.
+
 ## Segundo fator do Admin e expiração de sessão
 
 Configurados pelo Admin na engrenagem, seção **Segurança das contas** (`SecaoSegurancaContas`), e gravados em

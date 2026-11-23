@@ -90,6 +90,35 @@ resumo na [trilha](auditoria-de-notas.md#trilha-de-auditoria-log_auditoria) com 
 - **Não há encerramento automático**, nem por horário nem ao desmarcar a pausa: não existe agendador no projeto e o
   efeito é destrutivo demais para gatilho indireto ([ADR 0017](../decisoes/0017-finalizar-evento-como-acao-propria.md)).
 
+### O que finalizar NÃO tranca: o pareamento
+
+Finalizar **não** fecha a porta do pareamento. `fn_parear_dispositivo` não consulta `sistema_liberado`, e
+`parametros_acesso()` só exige que o evento exista — então, depois de `admin_finalizar_evento`, o Staff ainda pareia
+um aparelho normalmente, e o pareamento **regrava `is_credenciado = true`** no avaliador. Medido com uma sonda logo
+após finalizar um evento: `fn_solicitar_pareamento` devolveu código, `fn_parear_dispositivo` aceitou e
+`fn_meu_perfil` voltou a dizer `avaliador`; no banco sobrou um aparelho não revogado entre os que a finalização
+havia revogado.
+
+**A trava real depois de finalizar é a janela de horário, não a finalização.** O aparelho recém-pareado não sorteia
+nem envia nota, porque `admin_finalizar_evento` deixou `sistema_liberado = false` e
+`fn_janela_avaliacao_aberta` passa a devolver false — é isso que impede a avaliação, não o estado "finalizado"
+(que, a rigor, não existe: o evento continua ativo e nenhuma coluna o marca como encerrado).
+
+Consequências práticas para a coordenação:
+
+- depois de finalizar, **não conte com a finalização para impedir credenciamento**: um pareamento feito por engano
+  recoloca o avaliador como credenciado e deixa um aparelho vinculado, o que suja a contagem de
+  `avaliadores_credenciados` do Telão e dos relatórios;
+- se o estado precisa ficar limpo, confira os vínculos depois (`fn_situacao_vinculos`) e desvincule o que sobrou
+  (Admin → Avaliadores);
+- em contrapartida, é exatamente por isso que **recuperar de uma finalização acidental é simples**: religar
+  `sistema_liberado` e parear de novo, sem nenhum destravamento especial.
+
+Acrescentar a checagem de `sistema_liberado` a `fn_parear_dispositivo` é uma mudança em aberto, **não decidida** —
+com o custo de proibir pareamento durante qualquer **pausa**, que a [ADR 0017](../decisoes/0017-finalizar-evento-como-acao-propria.md)
+separou de propósito do encerramento. Credenciar a fila na portaria durante a pausa do almoço é uso legítimo e
+deixaria de funcionar.
+
 ## Identidade visual
 
 Cada evento pode ter um **ícone** e uma **imagem** próprios, enviados na engrenagem
