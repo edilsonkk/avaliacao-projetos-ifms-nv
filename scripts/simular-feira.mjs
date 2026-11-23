@@ -16,6 +16,10 @@
  *   --mutacao-ms=N --telao-ms=N --checkin-ms=N --disputa-ms=N
  *   --ritmo-ms=N                             tempo de pensar por ação do avaliador
  *                                            (0 = sem pausa, o modo de medição)
+ *   --tecnicos-vinculados=N                  quantos avaliadores técnicos ficam FIXADOS num
+ *                                            questionário; sem a flag, metade. Com 0, nenhum —
+ *                                            é a configuração recomendada quando o evento tem
+ *                                            mais de um técnico, e a que não gera impedimento
  *   --questionarios=criados|copiados|misto|existentes
  *                                            caminho de montagem dos questionários;
  *                                            `existentes` não cria nada e usa os que o
@@ -99,6 +103,9 @@ const PADROES = {
   telaoMs: 1000,
   checkinMs: 200,
   disputaMs: 150,
+  // null = metade dos técnicos vinculados (o comportamento de sempre). Um número fixa
+  // exatamente essa quantidade; 0 deixa todos livres.
+  tecnicosVinculados: null,
   // Tempo de pensar entre as ações de cada avaliador. 0 por padrão: o simulador nasceu
   // para medir, e pausa ia virar ruído na medição. Com ritmo, a feira simulada roda em
   // tempo observável no telão — é só isso que a flag muda.
@@ -166,6 +173,7 @@ const ARGUMENTOS_NUMERICOS = {
   'checkin-ms': 'checkinMs',
   'disputa-ms': 'disputaMs',
   'ritmo-ms': 'ritmoMs',
+  'tecnicos-vinculados': 'tecnicosVinculados',
   'teto-ms': 'tetoMs',
   'teto-varreduras': 'tetoVarreduras',
 }
@@ -962,6 +970,8 @@ function escolherAtores(ctx) {
   const escolhidos = []
   let usadosSemCredencial = 0
   let votantesEscolhidos = 0
+  let vinculadosEscolhidos = 0
+  const tetoVinculados = ctx.opcoes.tecnicosVinculados
   for (let indice = 0; indice < total; indice += 1) {
     const alvo = Math.round((indice + 1) * fracao)
     const pegarSemCredencial = (usadosSemCredencial < alvo && usadosSemCredencial < semCredencial.length)
@@ -972,9 +982,13 @@ function escolherAtores(ctx) {
 
     const viraVotante = votantes > 0 && votantesEscolhidos < votantes && indice % passoVotante === 0
     if (viraVotante) votantesEscolhidos += 1
-    const grupo = viraVotante
-      ? 'votante'
-      : ((indice - votantesEscolhidos) % 2 === 0 ? 'tecnico-vinculado' : 'tecnico-livre')
+    // Sem --tecnicos-vinculados, metade dos técnicos é vinculada, alternando (o
+    // comportamento de sempre). Com a flag, exatamente N são — e com 0, nenhum.
+    const viraVinculado = tetoVinculados === null
+      ? (indice - votantesEscolhidos) % 2 === 0
+      : vinculadosEscolhidos < tetoVinculados
+    if (!viraVotante && viraVinculado) vinculadosEscolhidos += 1
+    const grupo = viraVotante ? 'votante' : (viraVinculado ? 'tecnico-vinculado' : 'tecnico-livre')
 
     escolhidos.push({
       idUsuario: linha.id_usuario,

@@ -2,10 +2,11 @@
 -- C15 mais de um questionário técnico, C16 escalas diferentes entre os técnicos,
 -- C17 avaliador fixado num questionário técnico.
 --
--- A configuração combinada para a feira é um questionário técnico por evento, numa escala
--- só, com vínculo de questionário reservado aos votantes do voto popular. Nada no banco
--- cobrava isso: dois técnicos de escalas diferentes entravam na mesma média e no mesmo
--- ranking sem uma linha de reclamação.
+-- Vários questionários técnicos por evento são configuração PREVISTA (a feira usa três), e
+-- fecham a cota. O que nada no banco cobrava era a escala: dois técnicos de escalas
+-- diferentes entravam na mesma média e no mesmo ranking sem uma linha de reclamação — é o
+-- C16, o único grave daqui. O vínculo de questionário em avaliador técnico é legítimo, mas
+-- custa impedimento (255 contra 0 numa drenagem medida), e é o que o C17 informa.
 --
 -- Três eventos, um por configuração, porque é a configuração do EVENTO que está sob teste:
 --   EV1 um técnico + um voto popular, vínculos só de votante  -> nenhum achado
