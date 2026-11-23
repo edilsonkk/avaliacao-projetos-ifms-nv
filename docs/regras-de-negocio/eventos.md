@@ -72,6 +72,12 @@ Função pura `validarJanelaAvaliacao(info, dataHoraReferencia)` (`TelaAvaliador
 Exceção: quem tem avaliação em andamento (trava ativa) conclui normalmente após o fim. O servidor só recusa se
 `sistema_liberado = false`.
 
+**A janela é de um único dia.** Ela não é um intervalo livre: deriva de `data_evento` somada a `horario_inicio` e
+`horario_fim`, então virar a meia-noite fecha o sistema, e não existe `data_fim`. Feira de dois dias precisa de
+`data_evento` atualizada no segundo dia — a mesma razão pela qual o seeder local adianta a data com `--reutilizar`
+([ambiente local](../operacao/ambiente-local-do-zero.md#idempotência)). Sintoma típico: tudo funcionava e, sem
+ninguém mexer em nada, `fn_janela_avaliacao_aberta` passou a devolver `false`.
+
 Para **pausar** a feira (almoço, rede caindo, atraso na programação), o Admin desmarca
 `sistema_liberado`; marcar de novo retoma tudo, sem mexer em vínculo de celular.
 

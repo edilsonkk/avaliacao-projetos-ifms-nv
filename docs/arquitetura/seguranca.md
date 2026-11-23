@@ -261,6 +261,20 @@ A matriz completa papel × objeto (revisão da etapa 1, ver [modelo de ameaças]
 O CI roda os testes em todo PR, e o check é obrigatório para o merge. Toda falha de segurança corrigida ganha um teste
 que **precisa falhar** sem a correção. Antes da troca do modelo, 20 desses ataques passavam no banco.
 
+## A chave de serviço não escreve em produção
+
+A chave `service_role` anula `auth.uid()` e passa por cima da RLS. O autor de cada escrita na
+[trilha](../regras-de-negocio/auditoria-de-notas.md#trilha-de-auditoria-log_auditoria) é resolvido pela sessão
+autenticada, então **escrita feita com ela entra na trilha sem autor**: a alteração fica registrada e não atribuída
+a ninguém. Numa feira, isso é o oposto do que a trilha existe para garantir.
+
+Regra: **nenhum script de manutenção usa a chave de serviço contra produção.** O que precisa ser corrigido passa
+pelas RPCs `admin_*`, com uma sessão de Admin de verdade — é o caminho que marca a origem
+(`auditoria_marcar_origem`) e o autor. Os guardas já cobram as duas pontas do que é automatizável:
+`service-role-no-src` recusa a chave em código de navegador (`scripts/guardas-auditoria.mjs`), e
+`scripts/simular-feira.mjs` aborta se receber uma — ali ela invalidaria a simulação, porque anularia a RLS que
+está sob teste.
+
 ## Limites conhecidos
 
 - **Celular perdido ainda vinculado:** quem estiver com ele avalia como aquele avaliador até o Staff desvincular.
@@ -276,3 +290,9 @@ que **precisa falhar** sem a correção. Antes da troca do modelo, 20 desses ata
   qualquer avaliador; trocar o e-mail não dá a ele poder novo.
 - **Pareamento por QR:** hoje o Staff digita o código mostrado no celular. A leitura do código por câmera pode ser
   adicionada depois, sem mudar o banco.
+- **`fn_auditar_voto_popular` sem trava de Admin:** ela é `SECURITY DEFINER`, está concedida a `authenticated` e,
+  diferente de `fn_auditar_notas` e de `fn_auditar_configuracao_questionarios`, **não** chama `is_admin()`. Qualquer
+  sessão autenticada — inclusive um celular pareado — lê os achados C13/C14 do evento, contornando a RLS de
+  `avaliacoes` e `projetos`. Não expõe nota: devolve código do projeto, id da avaliação e a classificação
+  técnica/voto popular. É achado pré-existente; fechá-lo é mudança de postura, registrada em
+  [ADR 0020](../decisoes/0020-conferencia-de-configuracao-de-questionarios.md#consequências).
