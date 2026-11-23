@@ -14,6 +14,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
+import { encerrarAutocadastro, fixarAutocadastroNaAba } from '@/lib/rotaAutocadastro';
 import { ImagemEvento } from '@/components/layout/IdentidadeVisual';
 
 interface InstituicaoItem {
@@ -62,6 +63,12 @@ export const TelaAutocadastroAvaliador: React.FC<TelaAutocadastroAvaliadorProps>
         const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
         // Evento do link de cadastro; sem ele, o ativo do banco (nunca um id guardado neste navegador)
         let idEvento = params?.get('evento') || '';
+
+        // Lido o link, a instrução sai da URL e passa a viver na aba: senão toda atualização
+        // de página reentra aqui, inclusive a de quem já está logado. Depois daqui o `evento`
+        // não está mais na URL — e é por isso que a busca pelo evento ATIVO do banco, logo
+        // abaixo, é o caminho de quem atualiza no meio do formulário.
+        fixarAutocadastroNaAba();
 
         if (!conexaoConfigurada) {
           setIdEventoAtivo(idEvento || 'evento-contingencia');
@@ -161,6 +168,7 @@ export const TelaAutocadastroAvaliador: React.FC<TelaAutocadastroAvaliadorProps>
     if (!conexaoConfigurada) {
       setTimeout(() => {
         setSalvando(false);
+        encerrarAutocadastro();
         setCadastroSucesso(true);
       }, 600);
       return;
@@ -182,6 +190,9 @@ export const TelaAutocadastroAvaliador: React.FC<TelaAutocadastroAvaliadorProps>
         throw new Error(errCadastro.message);
       }
 
+      // Cadastrado: a intenção acaba AQUI, e não no clique do botão. Quem atualizar a
+      // página agora cai no login, em vez de voltar a um formulário já enviado.
+      encerrarAutocadastro();
       setCadastroSucesso(true);
     } catch (err: any) {
       console.error('Erro no autocadastro:', err);

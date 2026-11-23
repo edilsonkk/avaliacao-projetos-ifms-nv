@@ -115,6 +115,25 @@ O botão de navegação para o **Telão** fica oculto para o Staff (só o Admin 
   instituições novas por hora** digitadas no autocadastro. Acima disso, o cadastro segue **sem** a instituição (o Staff
   ajusta) ou, no caso do limite por minuto, pede para tentar de novo em instantes.
 
+### O link do QR é instrução de uma vez, não endereço
+
+O app não tem roteador: a tela do recarregamento é escolhida pela URL, e a checagem de `?cadastro=avaliador` vem
+**antes** de qualquer leitura de sessão. Enquanto a instrução morava só na barra de endereço, toda atualização de
+página reentrava no formulário — inclusive a de quem já estava logado, porque a URL vencia a sessão válida.
+
+Por isso `src/lib/rotaAutocadastro.ts` move a instrução da URL para a **aba** (`sessionStorage`):
+
+| Momento | O que acontece |
+|---|---|
+| A tela abre pelo link do QR | lê o `evento` do link, marca a aba e **limpa a URL** (`/`) |
+| F5 no meio do formulário | a marca da aba continua: volta ao formulário, sem perder o lugar |
+| Cadastro dá certo | a marca é apagada **no sucesso**, não no clique do botão: quem atualizar cai no login |
+| `Voltar ao login` / `Concluir cadastro` | apagam a marca e limpam a URL |
+| A aba fecha | a marca morre com ela — ao contrário da URL, que um favorito ou uma sessão restaurada carregam para sempre |
+
+O **id do evento não** é guardado no navegador: ele vem do link ou do evento ativo do banco. Quem atualiza no meio
+do formulário cai no segundo caminho, que é a regra que já valia.
+
 ## Contagens
 
 Contagens de credenciados usam conjuntos únicos de `id_usuario`, filtram por `id_evento` e separam por `papel`

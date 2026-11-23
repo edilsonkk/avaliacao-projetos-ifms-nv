@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { EVENTO_SESSAO_ADMIN_EXPIRADA, MENSAGEM_SESSAO_EXPIRADA } from '@/lib/sessaoAdmin';
 import { iniciarKeepAliveSessao } from '@/lib/keepAliveSessao';
 import { carregarTela } from '@/lib/carregarTela';
+import { autocadastroEmCurso, encerrarAutocadastro } from '@/lib/rotaAutocadastro';
 import { iniciarExpiracaoPorInatividade } from '@/lib/expiracaoSessao';
 import { Estado, LimiteDeErro, ProvedorAvisos, useAvisos } from '@/components/ui';
 import { aplicarPreferenciasVisuais, limparSessaoMantendoPreferencias } from '@/lib/preferenciasVisuais';
@@ -39,11 +40,13 @@ function ConteudoApp() {
   // Inicialização com suporte a autocadastro via QR Code e rota raiz apontando para TelaLogin
   const getInitialTela = (): TipoTelaNavegacao | 'login' | 'autocadastro' | 'redefinir-senha' => {
     const path = window.location.pathname;
-    const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
 
     if (path === CAMINHO_REDEFINIR_SENHA) return 'redefinir-senha';
 
-    if (searchParams?.get('cadastro') === 'avaliador' || path.includes('/autocadastro')) {
+    // A instrução pode vir da URL (link do QR Code) ou da aba, quando a pessoa está no meio
+    // do cadastro e atualizou a página. Em qualquer caso é a tela do autocadastro que tira a
+    // instrução da URL, para a atualização seguinte não depender mais dela.
+    if (autocadastroEmCurso()) {
       return 'autocadastro';
     }
 
@@ -83,6 +86,7 @@ function ConteudoApp() {
   // Sair do autocadastro: a query do QR Code (?cadastro=avaliador) precisa sair da URL, senão
   // qualquer atualização de página reentra no formulário de cadastro em vez de ficar no login.
   const irParaLogin = () => {
+    encerrarAutocadastro();
     window.history.replaceState({}, '', '/');
     set_tela_atual('login');
   };
