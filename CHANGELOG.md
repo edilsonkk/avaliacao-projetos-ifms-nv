@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.14.0...v0.14.1) (2026-11-23)
+
+
+### Correções
+
+* **auditoria:** vários técnicos por evento são previstos, e fecha a trava do voto popular ([#127](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/127)) ([d43b632](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/d43b6328d242e0f5e39cd7471d206dcffc85458b))
+
 ## [0.14.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.13.1...v0.14.0) (2026-11-23)
 
 
