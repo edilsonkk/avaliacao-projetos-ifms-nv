@@ -10,7 +10,6 @@
 
 
 
-
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -2679,6 +2678,80 @@ END $$;
 ALTER FUNCTION "public"."fn_auditar"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_auditar_configuracao_questionarios"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("severidade" "text", "codigo" "text", "titulo" "text", "id_projeto" "uuid", "codigo_projeto" "text", "id_avaliacao" "uuid", "esperado" "text", "encontrado" "text", "detalhe" "text")
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id_evento uuid := coalesce(p_id_evento, public.evento_ativo_id());
+BEGIN
+  -- Mesma postura de fn_auditar_notas: a conferência é do Admin. (Diferente de
+  -- fn_auditar_voto_popular, que hoje não tem essa trava — ver ADR 0020.)
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: a conferência de notas é restrita a administradores.'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN QUERY
+  WITH tec AS (
+    SELECT q.id_questionario, q.titulo AS titulo_quest, q.escala_minima, q.escala_maxima
+    FROM public.questionarios q
+    WHERE q.id_evento = v_id_evento
+      AND NOT coalesce(q.is_voto_popular, false)
+  ),
+  escalas AS (
+    SELECT DISTINCT t.escala_minima, t.escala_maxima FROM tec t
+  )
+
+  -- C15: a feira combinou um questionário técnico por evento
+  SELECT 'grave'::text, 'C15'::text, 'Mais de um questionário técnico no evento'::text,
+         NULL::uuid, NULL::text, NULL::uuid,
+         '1 questionário técnico'::text,
+         ((SELECT count(*) FROM tec) || ' questionários técnicos')::text,
+         ('Com mais de um questionário técnico, o projeto fica preso ao primeiro que o avaliar '
+          || '(trava do questionário) e avaliadores de banca diferente podem não conseguir avaliar '
+          || 'o mesmo projeto. Técnicos no evento: '
+          || (SELECT string_agg(t.titulo_quest, ', ' ORDER BY t.titulo_quest) FROM tec t))::text
+  WHERE (SELECT count(*) FROM tec) > 1
+
+  UNION ALL
+  -- C16: escala única entre os técnicos, senão a posição depende de quem avaliou
+  SELECT 'grave'::text, 'C16'::text, 'Questionários técnicos com escalas diferentes'::text,
+         NULL::uuid, NULL::text, NULL::uuid,
+         'uma escala só entre os questionários técnicos'::text,
+         -- trim_scale: as colunas são numeric(5,2), então 0 e 10 sairiam '0.00 a 10.00'
+         -- no Painel. A ordem é fixada para o texto não variar entre execuções.
+         (SELECT string_agg(trim_scale(e.escala_minima) || ' a ' || trim_scale(e.escala_maxima), '; '
+                            ORDER BY e.escala_minima, e.escala_maxima)
+            FROM escalas e)::text,
+         ('Notas de escalas diferentes entram na mesma média e no mesmo ranking: a posição do '
+          || 'projeto passa a depender da escala de quem o avaliou, não do projeto.')::text
+  WHERE (SELECT count(*) FROM escalas) > 1
+
+  UNION ALL
+  -- C17: vínculo técnico — legítimo, mas restringe o avaliador a um questionário só
+  SELECT 'atencao'::text, 'C17'::text, 'Avaliador vinculado a questionário técnico'::text,
+         NULL::uuid, NULL::text, NULL::uuid,
+         'vínculo de questionário reservado aos votantes do voto popular'::text,
+         ('vinculado a ' || t.titulo_quest)::text,
+         format('%s só consegue enviar nota pelo questionário %s: fn_enviar_avaliacao recusa '
+             || 'qualquer outro. O vínculo é legítimo quando a feira usa mais de um questionário '
+             || 'técnico; na configuração de um técnico só, deixe o vínculo vazio e o avaliador '
+             || 'usa o questionário do projeto.', u.nome, t.titulo_quest)::text
+  FROM public.avaliadores_evento ae
+  JOIN tec t ON t.id_questionario = ae.id_questionario
+  JOIN public.usuarios u ON u.id_usuario = ae.id_usuario
+  WHERE ae.id_evento = v_id_evento;
+END $$;
+
+
+ALTER FUNCTION "public"."fn_auditar_configuracao_questionarios"("p_id_evento" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_auditar_configuracao_questionarios"("p_id_evento" "uuid") IS 'Achados de configuração de questionários do evento (C15, C16 e C17): mais de um questionário técnico, escalas divergentes entre eles e avaliador fixado num questionário técnico. Só Admin.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("severidade" "text", "codigo" "text", "titulo" "text", "id_projeto" "uuid", "codigo_projeto" "text", "id_avaliacao" "uuid", "esperado" "text", "encontrado" "text", "detalhe" "text")
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -2970,14 +3043,20 @@ BEGIN
   -- Auditoria e o memorial do projeto leem só fn_auditar_notas.
   SELECT vp.severidade, vp.codigo, vp.titulo, vp.id_projeto, vp.codigo_projeto,
          vp.id_avaliacao, vp.esperado, vp.encontrado, vp.detalhe
-  FROM public.fn_auditar_voto_popular(v_id_evento) vp;
+  FROM public.fn_auditar_voto_popular(v_id_evento) vp
+  UNION ALL
+  -- C15, C16 e C17: configuração de questionários do evento. Ficam agregados aqui pelo
+  -- mesmo motivo de C13 e C14: o Painel de Auditoria lê só fn_auditar_notas.
+  SELECT cq.severidade, cq.codigo, cq.titulo, cq.id_projeto, cq.codigo_projeto,
+         cq.id_avaliacao, cq.esperado, cq.encontrado, cq.detalhe
+  FROM public.fn_auditar_configuracao_questionarios(v_id_evento) cq;
 END $$;
 
 
 ALTER FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") IS 'Conferência de notas do evento: recalcula a nota final a partir das respostas e lista o que não fecha. Só Admin.';
+COMMENT ON FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") IS 'Conferência de notas do evento: recalcula a nota final a partir das respostas e lista o que não fecha. Agrega os achados do voto popular (C13, C14) e os de configuração de questionários (C15, C16, C17). Só Admin.';
 
 
 
@@ -7565,6 +7644,13 @@ GRANT ALL ON FUNCTION "public"."fn_assumir_item_fila"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."fn_auditar"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_auditar"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_auditar_configuracao_questionarios"("p_id_evento" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_auditar_configuracao_questionarios"("p_id_evento" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."fn_auditar_configuracao_questionarios"("p_id_evento" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_auditar_configuracao_questionarios"("p_id_evento" "uuid") TO "service_role";
 
 
 

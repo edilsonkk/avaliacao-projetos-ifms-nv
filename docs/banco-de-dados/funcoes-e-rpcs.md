@@ -119,6 +119,7 @@ Desenho completo em [auditoria de notas](../regras-de-negocio/auditoria-de-notas
 |---|---|---|
 | `fn_auditar_notas(p_id_evento uuid default null)` | `TABLE` | Conferência do evento: recalcula cada nota a partir das respostas e lista os achados (`C1` em diante) com severidade |
 | `fn_auditar_voto_popular(p_id_evento uuid default null)` | `TABLE` | Achados próprios do voto popular (`C13` e `C14`): classificação gravada na avaliação divergente da marca do questionário, e votante com nota na média técnica. Entra no resultado de `fn_auditar_notas` |
+| `fn_auditar_configuracao_questionarios(p_id_evento uuid default null)` | `TABLE` | Achados da configuração do evento (`C15`, `C16` e `C17`): mais de um questionário técnico, escalas diferentes entre eles e avaliador fixado num questionário técnico. Entra no resultado de `fn_auditar_notas`. Só Admin |
 | `fn_memorial_avaliacao(p_id_avaliacao uuid)` | `jsonb` | A conta de uma nota: critério, peso, nota, produto, somas, divisão sem arredondar, valor gravado e marca de ajuste |
 | `fn_memorial_projeto(p_id_projeto uuid, p_incluir_achados boolean default true)` | `jsonb` | Memorial do projeto: avaliações ativas e canceladas, média aberta, desempate, quarentena, achados e trilha |
 | `fn_memorial_por_codigo(p_codigo_projeto text, p_id_evento uuid default null)` | `jsonb` | O mesmo, achando o projeto pelo código (a interface nunca pede UUID) |

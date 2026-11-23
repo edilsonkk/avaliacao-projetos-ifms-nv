@@ -59,9 +59,24 @@ conferência impressa.
 | C12 | ajustes manuais do Admin no evento | informativo |
 | C13 | `avaliacoes.is_voto_popular` divergente da marca do questionário (`fn_auditar_voto_popular`) | grave |
 | C14 | avaliador vinculado a questionário de voto popular com nota na média técnica (`fn_auditar_voto_popular`) | atenção |
+| C15 | evento com mais de um questionário técnico (`fn_auditar_configuracao_questionarios`) | grave |
+| C16 | questionários técnicos do evento com escalas diferentes (`fn_auditar_configuracao_questionarios`) | grave |
+| C17 | avaliador fixado num questionário técnico (`fn_auditar_configuracao_questionarios`) | atenção |
 
 C13 e C14 vivem em `fn_auditar_voto_popular`, que `fn_auditar_notas` agrega por `UNION ALL`: o Painel
 de Auditoria e o memorial do projeto leem só `fn_auditar_notas`.
+
+C15, C16 e C17 vivem em `fn_auditar_configuracao_questionarios`, agregada pelo mesmo `UNION ALL`, e
+são achados da **configuração do evento**, não de uma nota: vêm sem projeto e sem avaliação. A
+configuração combinada para a feira é um questionário técnico por evento, numa escala só. C16 é o que
+mais pesa na premiação — notas de escalas diferentes entram na mesma média e no mesmo ranking, então a
+posição passaria a depender da escala de quem avaliou.
+
+C17 é **atenção**, não grave, porque o vínculo técnico é configuração legítima: `fn_enviar_avaliacao`
+tem a regra "avaliador vinculado a um questionário só usa aquele" valendo para qualquer questionário, e
+é assim que uma feira com mais de um técnico diz qual banca usa qual. O achado informa que aquele
+avaliador é recusado em qualquer outro questionário — na configuração de um técnico só, o vínculo deve
+ficar vazio. Ver [ADR 0020](../decisoes/0020-conferencia-de-configuracao-de-questionarios.md).
 
 As contagens de cota (C6), de questionário fixado (C8) e de média (C9, C12) consideram **só nota
 técnica**: o [voto popular](avaliacao-e-quarentena.md#voto-popular) usa outro questionário e corre fora
