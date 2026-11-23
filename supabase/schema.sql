@@ -2714,14 +2714,16 @@ BEGIN
     GROUP BY t.titulo_quest
   )
 
-  -- C15: mais de um técnico liga a trava do questionário — funciona, mas é coisa de saber
-  SELECT 'atencao'::text, 'C15'::text, 'Mais de um questionário técnico no evento'::text,
+  -- C15: quantos técnicos o evento tem. Vários é configuração normal da feira; o que o
+  -- achado faz é mostrar que a trava do questionário está em jogo.
+  SELECT 'informativo'::text, 'C15'::text, 'Evento com mais de um questionário técnico'::text,
          NULL::uuid, NULL::text, NULL::uuid,
-         '1 questionário técnico'::text,
+         'configuração conferida antes da feira'::text,
          ((SELECT count(*) FROM tec) || ' questionários técnicos')::text,
-         ('Com mais de um questionário técnico, o projeto fica preso ao primeiro que o avaliar '
-          || '(trava do questionário): um avaliador vinculado a outro técnico não consegue avaliá-lo, '
-          || 'e a cota dele depende de sobrar quem possa. Confira o fechamento antes da feira com '
+         ('Mais de um questionário técnico por evento é configuração prevista. O efeito a conhecer '
+          || 'é a trava do questionário: o projeto fica preso ao primeiro técnico que o avaliar, então '
+          || 'um avaliador vinculado a outro técnico não consegue avaliá-lo, e a cota daquele projeto '
+          || 'depende de sobrar quem possa. Confira o fechamento antes da feira com '
           || '`npm run local:simular -- --questionarios=existentes --ate-concluir`. Técnicos no evento: '
           || (SELECT string_agg(t.titulo_quest, ', ' ORDER BY t.titulo_quest) FROM tec t))::text
   WHERE (SELECT count(*) FROM tec) > 1
@@ -2759,7 +2761,7 @@ END $$;
 ALTER FUNCTION "public"."fn_auditar_configuracao_questionarios"("p_id_evento" "uuid") OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."fn_auditar_configuracao_questionarios"("p_id_evento" "uuid") IS 'Achados de configuração de questionários do evento (C15, C16 e C17): mais de um questionário técnico, escalas divergentes entre eles e avaliador fixado num questionário técnico. Só Admin.';
+COMMENT ON FUNCTION "public"."fn_auditar_configuracao_questionarios"("p_id_evento" "uuid") IS 'Achados de configuração de questionários do evento: C15 informativo (quantos técnicos o evento tem, e a trava do questionário em jogo), C16 grave (escalas divergentes entre os técnicos) e C17 informativo (avaliadores fixados num técnico, agregado por questionário). Só Admin.';
 
 
 
@@ -3072,9 +3074,19 @@ COMMENT ON FUNCTION "public"."fn_auditar_notas"("p_id_evento" "uuid") IS 'Confer
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_auditar_voto_popular"("p_id_evento" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("severidade" "text", "codigo" "text", "titulo" "text", "id_projeto" "uuid", "codigo_projeto" "text", "id_avaliacao" "uuid", "esperado" "text", "encontrado" "text", "detalhe" "text")
-    LANGUAGE "sql" STABLE SECURITY DEFINER
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
+BEGIN
+  -- A trava que faltava. Igual à de fn_auditar_notas e fn_auditar_configuracao_questionarios:
+  -- a conferência é do Admin. Única mudança nesta função; o corpo da consulta é o mesmo.
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: a conferência de notas é restrita a administradores.'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN QUERY
+
   WITH ev AS (SELECT coalesce(p_id_evento, public.evento_ativo_id()) AS id_evento)
   SELECT 'grave'::text, 'C13'::text, 'Classificação de voto popular divergente do questionário'::text,
          p.id_projeto, p.codigo_projeto::text, a.id_avaliacao,
@@ -3098,13 +3110,13 @@ CREATE OR REPLACE FUNCTION "public"."fn_auditar_voto_popular"("p_id_evento" "uui
   WHERE (a.status IS NULL OR a.status <> 'CANCELADA')
     AND NOT coalesce(a.is_voto_popular, false)
     AND public.avaliador_e_voto_popular(a.id_usuario, p.id_evento);
-$$;
+END $$;
 
 
 ALTER FUNCTION "public"."fn_auditar_voto_popular"("p_id_evento" "uuid") OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."fn_auditar_voto_popular"("p_id_evento" "uuid") IS 'Achados próprios do voto popular (C13 e C14): a classificação gravada na avaliação divergir da marca do questionário, e votante com nota na média técnica.';
+COMMENT ON FUNCTION "public"."fn_auditar_voto_popular"("p_id_evento" "uuid") IS 'Achados próprios do voto popular (C13 e C14): a classificação gravada na avaliação divergir da marca do questionário, e votante com nota na média técnica. Só Admin.';
 
 
 

@@ -290,9 +290,11 @@ está sob teste.
   qualquer avaliador; trocar o e-mail não dá a ele poder novo.
 - **Pareamento por QR:** hoje o Staff digita o código mostrado no celular. A leitura do código por câmera pode ser
   adicionada depois, sem mudar o banco.
-- **`fn_auditar_voto_popular` sem trava de Admin:** ela é `SECURITY DEFINER`, está concedida a `authenticated` e,
-  diferente de `fn_auditar_notas` e de `fn_auditar_configuracao_questionarios`, **não** chama `is_admin()`. Qualquer
-  sessão autenticada — inclusive um celular pareado — lê os achados C13/C14 do evento, contornando a RLS de
-  `avaliacoes` e `projetos`. Não expõe nota: devolve código do projeto, id da avaliação e a classificação
-  técnica/voto popular. É achado pré-existente; fechá-lo é mudança de postura, registrada em
-  [ADR 0020](../decisoes/0020-conferencia-de-configuracao-de-questionarios.md#consequências).
+- ~~**`fn_auditar_voto_popular` sem trava de Admin**~~ — **corrigido** na migration `20261123191829`. Ela era
+  `SECURITY DEFINER`, concedida a `authenticated` e, diferente das outras duas funções de conferência, sem
+  `is_admin()`. Medido com sessão de avaliador pareado de verdade: `select count(*) from avaliacoes` devolvia **0**
+  (`rls_avaliacoes_leitura` só entrega as próprias) e a função devolvia **1 linha** com o `id_avaliacao` de outra
+  pessoa. Alcance estreito — só linhas que já são anomalia (C13/C14), sem nota, sem nome, sem média, e num evento
+  saudável ela devolve nada —, mas sem motivo para a exceção: o único chamador é `fn_auditar_notas`, que já exigia
+  Admin, e nada em `src/` a chamava. Hoje as três funções de conferência têm a mesma trava, com teste cobrando as
+  três ([ADR 0020](../decisoes/0020-conferencia-de-configuracao-de-questionarios.md#revisão-de-23112026)).

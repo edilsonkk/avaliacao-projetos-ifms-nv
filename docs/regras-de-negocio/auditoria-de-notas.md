@@ -59,12 +59,14 @@ conferência impressa.
 | C12 | ajustes manuais do Admin no evento | informativo |
 | C13 | `avaliacoes.is_voto_popular` divergente da marca do questionário (`fn_auditar_voto_popular`) | grave |
 | C14 | avaliador vinculado a questionário de voto popular com nota na média técnica (`fn_auditar_voto_popular`) | atenção |
-| C15 | evento com mais de um questionário técnico (`fn_auditar_configuracao_questionarios`) | atenção |
+| C15 | evento com mais de um questionário técnico (`fn_auditar_configuracao_questionarios`) | informativo |
 | C16 | questionários técnicos do evento com escalas diferentes (`fn_auditar_configuracao_questionarios`) | grave |
 | C17 | avaliadores fixados num questionário técnico, um achado por questionário (`fn_auditar_configuracao_questionarios`) | informativo |
 
 C13 e C14 vivem em `fn_auditar_voto_popular`, que `fn_auditar_notas` agrega por `UNION ALL`: o Painel
-de Auditoria e o memorial do projeto leem só `fn_auditar_notas`.
+de Auditoria e o memorial do projeto leem só `fn_auditar_notas`. As três funções de conferência
+(`fn_auditar_notas`, `fn_auditar_voto_popular` e `fn_auditar_configuracao_questionarios`) exigem Admin, e
+há teste cobrando as três.
 
 C15, C16 e C17 vivem em `fn_auditar_configuracao_questionarios`, agregada pelo mesmo `UNION ALL`, e
 são achados da **configuração do evento**, não de uma nota: vêm sem projeto e sem avaliação.
@@ -72,11 +74,12 @@ são achados da **configuração do evento**, não de uma nota: vêm sem projeto
 **Só C16 é grave**, e é o que pesa na premiação: notas de escalas diferentes entram na mesma média e no
 mesmo ranking, então a posição do projeto passaria a depender da escala de quem o avaliou.
 
-C15 é **atenção** porque mais de um questionário técnico é configuração que funciona — foi medido, não
-suposto: com três técnicos de mesma escala, 300 projetos e 120 avaliadores, a drenagem do simulador
-fechou a feira com zero projetos incompletos. O que mais de um técnico faz é ligar a trava do
-questionário: um avaliador vinculado ao técnico A não consegue avaliar projeto já fixado no técnico B, e
-a cota dele depende de sobrar quem possa. Para conferir antes da feira:
+C15 é **informativo**: vários questionários técnicos por evento são configuração **prevista** da feira,
+não desvio — e que funciona foi medido, não suposto: com três técnicos de mesma escala, 300 projetos e
+120 avaliadores, a drenagem do simulador fechou a feira com zero projetos incompletos. O que o achado faz
+é mostrar quantos técnicos o evento tem e qual o efeito a conhecer: a trava do questionário prende o
+projeto ao primeiro técnico que o avaliar, então um avaliador vinculado a outro técnico não consegue
+avaliá-lo, e a cota daquele projeto depende de sobrar quem possa. Para conferir antes da feira:
 `npm run local:simular -- --questionarios=existentes --ate-concluir`
 ([ambiente local](../operacao/ambiente-local-do-zero.md#assistir-a-feira-em-vez-de-medi-la)).
 

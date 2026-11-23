@@ -14,7 +14,7 @@
 -- Rodar: npx supabase@2.122.0 test db
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(26);
+SELECT plan(29);
 
 UPDATE public.eventos SET is_ativo = false WHERE is_ativo;
 
@@ -99,11 +99,21 @@ CREATE FUNCTION pg_temp.pelo_painel(p_evento uuid, p_codigo text) RETURNS bigint
 $$;
 
 -- ============================================================================
--- 1. A conferência da configuração é do Admin
+-- 1. A família de conferência tem UMA postura: as três são do Admin
+--
+-- `fn_auditar_voto_popular` era a exceção — SECURITY DEFINER, concedida a authenticated
+-- e sem is_admin() —, e devolvia a avaliador pareado a existência e o id de avaliação
+-- alheia, que `rls_avaliacoes_leitura` devolve zero (migration 20261123191829).
 -- ============================================================================
 SELECT pg_temp.como('d4400000-0000-0000-0000-000000000001');
 SELECT throws_ok($$ SELECT * FROM public.fn_auditar_configuracao_questionarios('e4400000-0000-0000-0000-000000000002') $$,
   '42501', NULL, 'avaliadora não lê a conferência de configuração');
+SELECT throws_ok($$ SELECT * FROM public.fn_auditar_voto_popular('e4400000-0000-0000-0000-000000000001') $$,
+  '42501', NULL, 'avaliadora não lê a conferência do voto popular');
+SELECT throws_ok($$ SELECT * FROM public.fn_auditar_notas('e4400000-0000-0000-0000-000000000001') $$,
+  '42501', NULL, 'avaliadora não lê a conferência de notas');
+SELECT is((SELECT count(*) FROM public.avaliacoes), 0::bigint,
+  'a RLS não deixa a avaliadora ler avaliação alheia: é essa a linha de base que as três respeitam');
 RESET role;
 
 SELECT pg_temp.como('d4400000-0000-0000-0000-0000000000ad');
@@ -125,8 +135,8 @@ SELECT is((SELECT count(*) FROM public.fn_auditar_configuracao_questionarios('e4
 -- ============================================================================
 SELECT is(pg_temp.conf('e4400000-0000-0000-0000-000000000002', 'C15'), 1::bigint,
   'dois questionários técnicos: C15 acusa uma vez, não uma por questionário');
-SELECT is(pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C15', 'severidade'), 'atencao',
-  'C15 é atenção, não grave: mais de um técnico é configuração que fecha a feira (medido na drenagem)');
+SELECT is(pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C15', 'severidade'), 'informativo',
+  'C15 é informativo: vários questionários técnicos por evento são configuração prevista, não desvio');
 SELECT is(pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C15', 'encontrado'), '2 questionários técnicos',
   'C15 diz quantos técnicos encontrou');
 SELECT ok(pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C15', 'detalhe')
