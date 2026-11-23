@@ -82,6 +82,12 @@ jobs:
           APP_URL: ${{ vars.APP_URL }}
         run: npm run build
 
+      # Depois do build, porque o guarda só confere o orçamento quando dist/ existe:
+      # no `npm run lint` acima, que roda antes, ele passa em silêncio. Sem este passo,
+      # publicar uma tag arbitrária contorna o teto que a CI cobra em todo PR.
+      - name: Orçamento de Bundle (Performance Gate)
+        run: npm run guardas:auditoria
+
       - name: Publicar no Firebase Hosting (canal live)
         uses: FirebaseExtended/action-hosting-deploy@500ac625ca2dd40cbd15f7659af953801858032a # v0.11.0
         with:

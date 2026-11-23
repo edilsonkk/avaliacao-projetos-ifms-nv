@@ -16,6 +16,33 @@ npm run local:simular -- --avaliadores=120 --staff=10 --telao=2 --ate-concluir
 npm run local:semear -- --projetos=176 --avaliadores=45 --reutilizar
 ```
 
+## Assistir a feira em vez de medi-la
+
+O simulador nasceu para medir: sem flags, uma rodada passa em segundos e não dá para acompanhar nada no telão.
+`--ritmo-ms=N` dá a cada avaliador um tempo de pensar entre as ações — chegar no estande e ler a ficha, depois
+caminhar até o próximo —, com variação de 0,5× a 1,5× para os atores não entrarem em lockstep e virarem rajada
+sincronizada.
+
+```bash
+npm run local:simular -- --avaliadores=12 --staff=2 --telao=1 --ritmo-ms=1500 --checkin-ms=600 --telao-ms=2000
+```
+
+O padrão é `0`, e aí não há `await` nenhum: a medição fica idêntica à de antes da flag. O efeito cresce com o
+número de ciclos por avaliador — com `--por-avaliador=6`, uma rodada de 15,4 s passou a 21,3 s. Para a feira
+inteira em tempo observável, combine com `--checkin-ms` (ritmo do staff) e `--telao-ms` (atualização do telão):
+sozinho, o ritmo dos avaliadores fica escondido atrás da fila de check-in, que tem o compasso próprio.
+
+## Dois admins na mesma avaliação
+
+A rodada inclui um ator que põe **duas sessões de Admin** disputando a mesma avaliação ao mesmo tempo: uma chama
+`admin_corrigir_respostas_avaliacao` e a outra `admin_arbitrar_nota_final`. As duas gravam `nota_final` e
+`ajuste_tipo` da mesma linha por caminhos diferentes — corrigir deriva a nota das respostas, arbitrar a impõe —, e
+é uma corrida que os testes pgTAP não alcançam, porque rodam numa sessão só.
+
+A **invariante 10** cobra o resultado: a nota que sobreviveu tem de combinar com o `ajuste_tipo` que sobreviveu, e
+`fn_auditar_notas` não pode acusar `C1` grave em nenhuma das avaliações disputadas. `--disputa-ms=N` (padrão 150)
+controla o intervalo entre disputas.
+
 ## Por que o reset exigia um passo que dava para esquecer
 
 `npx supabase@2.122.0 db reset` recria o banco pelas migrations e aplica `supabase/seed.sql`. O seed cria só um

@@ -5,7 +5,7 @@
  * "Evento Local de Teste" do seed.
  *
  * Uso:
- *   node scripts/semear-simulacao.mjs [--projetos=300] [--avaliadores=60]
+ *   node scripts/semear-simulacao.mjs [--projetos=300] [--avaliadores=60] [--tecnicos=1]
  *   node scripts/semear-simulacao.mjs --reutilizar   # completa o último evento de simulação
  *   node scripts/semear-simulacao.mjs --limpar       # apaga os eventos de simulação e reativa o seed
  *
@@ -48,11 +48,16 @@ function lerArgumentos(argv) {
   const opcoes = {
     projetos: PADRAO_PROJETOS,
     avaliadores: PADRAO_AVALIADORES,
+    // Quantos questionários TÉCNICOS o evento terá. 1 é a configuração mais simples;
+    // com mais de um, a trava do questionário no primeiro avaliador passa a importar,
+    // porque um avaliador vinculado ao técnico A não consegue avaliar projeto que já
+    // foi fixado no técnico B. É esse caminho que o modo drenagem mede.
+    tecnicos: 1,
     reutilizar: false,
     limpar: false,
   }
   for (const argumento of argv) {
-    const numerico = /^--(projetos|avaliadores)=(\d+)$/.exec(argumento)
+    const numerico = /^--(projetos|avaliadores|tecnicos)=(\d+)$/.exec(argumento)
     if (numerico) {
       opcoes[numerico[1]] = Number(numerico[2])
       continue
@@ -61,9 +66,10 @@ function lerArgumentos(argv) {
     if (argumento === '--limpar') { opcoes.limpar = true; continue }
     throw new Error(
       `Argumento desconhecido: ${argumento}\n` +
-      'Use: --projetos=N --avaliadores=N --reutilizar --limpar',
+      'Use: --projetos=N --avaliadores=N --tecnicos=N --reutilizar --limpar',
     )
   }
+  if (opcoes.tecnicos < 1) throw new Error('--tecnicos precisa ser pelo menos 1.')
   if (opcoes.limpar && opcoes.reutilizar) {
     throw new Error('--limpar e --reutilizar não podem ser usados juntos.')
   }
@@ -406,7 +412,7 @@ async function catalogosDoEvento(sb, idEvento) {
   }
 }
 
-async function semearCatalogos(sb, idEvento) {
+async function semearCatalogos(sb, idEvento, tecnicos = 1) {
   const instituicoes = CAMPI.map(([nome, sigla, cidade]) => ({
     id_instituicao: crypto.randomUUID(),
     id_evento: idEvento,
@@ -431,17 +437,22 @@ async function semearCatalogos(sb, idEvento) {
     nome_area: nome,
   }))
 
-  const idTecnico = crypto.randomUUID()
+  // N técnicos, todos na MESMA escala e com os mesmos critérios: o que varia é só
+  // quantos existem, porque é a QUANTIDADE que ativa a trava do questionário. Escala
+  // divergente é outra configuração, e a conferência acusa (C16).
+  const idsTecnicos = Array.from({ length: Math.max(1, tecnicos) }, () => crypto.randomUUID())
   const idVotoPopular = crypto.randomUUID()
   const questionarios = [
-    {
-      id_questionario: idTecnico,
+    ...idsTecnicos.map((id, indice) => ({
+      id_questionario: id,
       id_evento: idEvento,
-      titulo: 'Avaliação Técnica — Simulação',
+      titulo: idsTecnicos.length === 1
+        ? 'Avaliação Técnica — Simulação'
+        : `Avaliação Técnica ${indice + 1} — Simulação`,
       escala_minima: 0,
       escala_maxima: 10,
       is_voto_popular: false,
-    },
+    })),
     {
       id_questionario: idVotoPopular,
       id_evento: idEvento,
@@ -452,15 +463,15 @@ async function semearCatalogos(sb, idEvento) {
     },
   ]
   const perguntas = [
-    ...CRITERIOS_TECNICOS.map(([texto, peso, lembrete], indice) => ({
+    ...idsTecnicos.flatMap((id) => CRITERIOS_TECNICOS.map(([texto, peso, lembrete], indice) => ({
       id_pergunta: crypto.randomUUID(),
-      id_questionario: idTecnico,
+      id_questionario: id,
       ordem: indice + 1,
       texto_pergunta: texto,
       peso_calculo: peso,
       peso_desempate: peso,
       descricao_lembrete: lembrete,
-    })),
+    }))),
     {
       id_pergunta: crypto.randomUUID(),
       id_questionario: idVotoPopular,
@@ -748,7 +759,7 @@ async function principal() {
   const existentes = await catalogosDoEvento(sb, idEvento)
   const catalogos = existentes.instituicoes.length > 0 && existentes.questionarios.length > 0
     ? existentes
-    : await semearCatalogos(sb, idEvento)
+    : await semearCatalogos(sb, idEvento, opcoes.tecnicos)
 
   // --projetos e --avaliadores são totais desejados: cria só a diferença que falta.
   const faltamProjetos = Math.max(0, opcoes.projetos - antes.projetos)
