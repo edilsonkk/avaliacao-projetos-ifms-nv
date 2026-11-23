@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.13.1...v0.14.0) (2026-11-23)
+
+
+### Funcionalidades
+
+* **auditoria:** confere a configuração de questionários e fecha a cobertura das RPCs de nota ([40a34e3](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/40a34e3362677065ad1afd3afa675a08885a94a0))
+
 ## [0.13.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.13.0...v0.13.1) (2026-11-23)
 
 
