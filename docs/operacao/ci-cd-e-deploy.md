@@ -20,7 +20,7 @@ manual ───────────► deploy-frontend.yml (rollback para u
 | `security.yml` | PR, push em `main`, toda segunda 06:00 UTC, manual | CodeQL, Trivy (bloqueia HIGH/CRITICAL), `npm audit --audit-level=high`, Gitleaks no histórico |
 | `release.yml` | Push em `main` | release-please; ao publicar versão, chama migrations e deploy |
 | `supabase-migrations.yml` | PR com migrations (validação); chamado pelo release; manual | Validação, backup e `supabase db push` |
-| `deploy-frontend.yml` | Chamado pelo release; manual (rollback) | Lint, testes, build da tag e publicação no Firebase Hosting |
+| `deploy-frontend.yml` | Chamado pelo release; manual (rollback) | Lint, testes, build da tag, **orçamento de bundle** e publicação no Firebase Hosting |
 | `backup-banco.yml` | Manual | Backup criptografado de produção, sem alterar nada (não é bloqueado pelo congelamento) |
 | `dependabot-automerge.yml` | PR do Dependabot | Liga o auto-merge quando a atualização não é major ([abaixo](#dependências-dependabot)) |
 
