@@ -14,7 +14,7 @@
 -- Rodar: npx supabase@2.122.0 test db
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(25);
+SELECT plan(26);
 
 UPDATE public.eventos SET is_ativo = false WHERE is_ativo;
 
@@ -28,7 +28,8 @@ INSERT INTO public.usuarios (id_usuario, email, nome, papel, id_auth) VALUES
 INSERT INTO public.usuarios (id_usuario, email, nome, papel) VALUES
   ('c4400000-0000-0000-0000-000000000002', 'ava442@teste.local', 'Bruno Segundo',  'AVALIADOR'),
   ('c4400000-0000-0000-0000-000000000003', 'ava443@teste.local', 'Carla Terceira', 'AVALIADOR'),
-  ('c4400000-0000-0000-0000-000000000004', 'ava444@teste.local', 'Dalia Quarta',   'AVALIADOR');
+  ('c4400000-0000-0000-0000-000000000004', 'ava444@teste.local', 'Dalia Quarta',   'AVALIADOR'),
+  ('c4400000-0000-0000-0000-000000000005', 'ava445@teste.local', 'Elisa Quinta',   'AVALIADOR');
 
 INSERT INTO public.eventos (id_evento, nome_evento, is_ativo, cota_avaliacoes_padrao) VALUES
   ('e4400000-0000-0000-0000-000000000001', 'Evento 44 bem configurado', true,  2),
@@ -54,9 +55,11 @@ INSERT INTO public.perguntas_questionario (id_pergunta, id_questionario, ordem, 
 INSERT INTO public.avaliadores_evento (id_usuario, id_evento, is_credenciado, id_questionario) VALUES
   ('c4400000-0000-0000-0000-000000000001', 'e4400000-0000-0000-0000-000000000001', true, '74400000-0000-0000-0000-000000000002'),
   ('c4400000-0000-0000-0000-000000000002', 'e4400000-0000-0000-0000-000000000001', true, NULL);
--- EV2: uma avaliadora fixada num dos técnicos
+-- EV2: DUAS avaliadoras fixadas no mesmo técnico — duas, e não uma, porque é assim que
+-- o teste distingue um achado agregado por questionário de um achado por pessoa.
 INSERT INTO public.avaliadores_evento (id_usuario, id_evento, is_credenciado, id_questionario) VALUES
-  ('c4400000-0000-0000-0000-000000000003', 'e4400000-0000-0000-0000-000000000002', true, '74400000-0000-0000-0000-000000000004');
+  ('c4400000-0000-0000-0000-000000000003', 'e4400000-0000-0000-0000-000000000002', true, '74400000-0000-0000-0000-000000000004'),
+  ('c4400000-0000-0000-0000-000000000005', 'e4400000-0000-0000-0000-000000000002', true, '74400000-0000-0000-0000-000000000004');
 
 -- Vínculo CRUZADO: avaliadora do EV3 apontada para questionário do EV2. A RPC
 -- `admin_vincular_questionario_avaliador` recusa isso ("o questionário precisa ser do
@@ -122,8 +125,8 @@ SELECT is((SELECT count(*) FROM public.fn_auditar_configuracao_questionarios('e4
 -- ============================================================================
 SELECT is(pg_temp.conf('e4400000-0000-0000-0000-000000000002', 'C15'), 1::bigint,
   'dois questionários técnicos: C15 acusa uma vez, não uma por questionário');
-SELECT is(pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C15', 'severidade'), 'grave',
-  'C15 é grave: a trava do questionário pode impedir a cota de fechar');
+SELECT is(pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C15', 'severidade'), 'atencao',
+  'C15 é atenção, não grave: mais de um técnico é configuração que fecha a feira (medido na drenagem)');
 SELECT is(pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C15', 'encontrado'), '2 questionários técnicos',
   'C15 diz quantos técnicos encontrou');
 SELECT ok(pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C15', 'detalhe')
@@ -149,13 +152,17 @@ SELECT is(pg_temp.conf('e4400000-0000-0000-0000-000000000003', 'C17'), 0::bigint
 -- 5. Avaliador fixado num questionário técnico
 -- ============================================================================
 SELECT is(pg_temp.conf('e4400000-0000-0000-0000-000000000002', 'C17'), 1::bigint,
-  'avaliadora fixada num técnico: C17 acusa');
-SELECT is(pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C17', 'severidade'), 'atencao',
-  'C17 é atenção, não grave: o vínculo técnico é configuração legítima');
+  'avaliadores vinculados viram UM achado por questionário, não um por pessoa');
+SELECT is(pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C17', 'encontrado'),
+  '2 avaliador(es) vinculado(s)', 'C17 diz quantos avaliadores estão presos ao questionário');
+SELECT is(pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C17', 'severidade'), 'informativo',
+  'C17 é informativo: o vínculo técnico é configuração legítima, não desvio');
 SELECT ok(pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C17', 'detalhe') LIKE '%Carla Terceira%'
+      AND pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C17', 'detalhe') LIKE '%Elisa Quinta%'
       AND pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C17', 'detalhe') LIKE '%Técnico Superior%',
-  'C17 nomeia a pessoa e o questionário ao qual ela está presa');
-SELECT is(pg_temp.conf('e4400000-0000-0000-0000-000000000002', 'C17'), 1::bigint,
+  'C17 nomeia as pessoas e o questionário ao qual elas estão presas');
+SELECT is(pg_temp.campo('e4400000-0000-0000-0000-000000000002', 'C17', 'encontrado'),
+  '2 avaliador(es) vinculado(s)',
   'a conferência do EV2 não adota a avaliadora do EV3 presa a um questionário do EV2');
 SELECT is((SELECT count(*) FROM public.fn_auditar_configuracao_questionarios('e4400000-0000-0000-0000-000000000003')
             WHERE codigo = 'C17' AND detalhe LIKE '%Dalia%'), 0::bigint,

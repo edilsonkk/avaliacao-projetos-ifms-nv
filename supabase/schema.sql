@@ -2701,16 +2701,28 @@ BEGIN
   ),
   escalas AS (
     SELECT DISTINCT t.escala_minima, t.escala_maxima FROM tec t
+  ),
+  -- Agregado por questionário, e não uma linha por pessoa: na configuração real da
+  -- feira são 48 avaliadores vinculados, e 48 achados enterrariam o resto do Painel.
+  vinc AS (
+    SELECT t.titulo_quest, count(*) AS quantos,
+           (array_agg(u.nome ORDER BY u.nome))[1:3] AS primeiros
+    FROM public.avaliadores_evento ae
+    JOIN tec t ON t.id_questionario = ae.id_questionario
+    JOIN public.usuarios u ON u.id_usuario = ae.id_usuario
+    WHERE ae.id_evento = v_id_evento
+    GROUP BY t.titulo_quest
   )
 
-  -- C15: a feira combinou um questionário técnico por evento
-  SELECT 'grave'::text, 'C15'::text, 'Mais de um questionário técnico no evento'::text,
+  -- C15: mais de um técnico liga a trava do questionário — funciona, mas é coisa de saber
+  SELECT 'atencao'::text, 'C15'::text, 'Mais de um questionário técnico no evento'::text,
          NULL::uuid, NULL::text, NULL::uuid,
          '1 questionário técnico'::text,
          ((SELECT count(*) FROM tec) || ' questionários técnicos')::text,
          ('Com mais de um questionário técnico, o projeto fica preso ao primeiro que o avaliar '
-          || '(trava do questionário) e avaliadores de banca diferente podem não conseguir avaliar '
-          || 'o mesmo projeto. Técnicos no evento: '
+          || '(trava do questionário): um avaliador vinculado a outro técnico não consegue avaliá-lo, '
+          || 'e a cota dele depende de sobrar quem possa. Confira o fechamento antes da feira com '
+          || '`npm run local:simular -- --questionarios=existentes --ate-concluir`. Técnicos no evento: '
           || (SELECT string_agg(t.titulo_quest, ', ' ORDER BY t.titulo_quest) FROM tec t))::text
   WHERE (SELECT count(*) FROM tec) > 1
 
@@ -2729,19 +2741,18 @@ BEGIN
   WHERE (SELECT count(*) FROM escalas) > 1
 
   UNION ALL
-  -- C17: vínculo técnico — legítimo, mas restringe o avaliador a um questionário só
-  SELECT 'atencao'::text, 'C17'::text, 'Avaliador vinculado a questionário técnico'::text,
+  -- C17: vínculo técnico — legítimo, mas restringe quem o tem a um questionário só
+  SELECT 'informativo'::text, 'C17'::text, 'Avaliadores vinculados a questionário técnico'::text,
          NULL::uuid, NULL::text, NULL::uuid,
-         'vínculo de questionário reservado aos votantes do voto popular'::text,
-         ('vinculado a ' || t.titulo_quest)::text,
-         format('%s só consegue enviar nota pelo questionário %s: fn_enviar_avaliacao recusa '
-             || 'qualquer outro. O vínculo é legítimo quando a feira usa mais de um questionário '
-             || 'técnico; na configuração de um técnico só, deixe o vínculo vazio e o avaliador '
-             || 'usa o questionário do projeto.', u.nome, t.titulo_quest)::text
-  FROM public.avaliadores_evento ae
-  JOIN tec t ON t.id_questionario = ae.id_questionario
-  JOIN public.usuarios u ON u.id_usuario = ae.id_usuario
-  WHERE ae.id_evento = v_id_evento;
+         'vínculo vazio, para o avaliador usar o questionário do projeto'::text,
+         (v.quantos || ' avaliador(es) vinculado(s)')::text,
+         format('%s%s só consegue(m) enviar nota pelo questionário %s: fn_enviar_avaliacao recusa '
+             || 'qualquer outro. É assim que uma feira com mais de um técnico diz qual banca usa '
+             || 'qual; com um técnico só, o vínculo pode ficar vazio.',
+             array_to_string(v.primeiros, ', '),
+             CASE WHEN v.quantos > 3 THEN format(' e outros %s', v.quantos - 3) ELSE '' END,
+             v.titulo_quest)::text
+  FROM vinc v;
 END $$;
 
 

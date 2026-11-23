@@ -40,14 +40,26 @@ Auditoria, que lê só essa função. **Sem mudança de front-end**: o Painel re
 
 | Código | Achado | Severidade |
 |---|---|---|
-| C15 | evento com mais de um questionário técnico | grave |
+| C15 | evento com mais de um questionário técnico | atenção |
 | C16 | questionários técnicos com escalas diferentes | grave |
-| C17 | avaliador fixado num questionário técnico | atenção |
+| C17 | avaliadores fixados num questionário técnico, agregado por questionário | informativo |
 
-C17 é **atenção** porque descreve configuração legítima: informa que aquele avaliador só envia nota por aquele
-questionário e é recusado em qualquer outro — na configuração de um técnico só, o vínculo deve ficar vazio. Travar
-isso seria decisão de produto, e exigiria antes filtrar o seletor de `GestorAvaliadores` e reescrever o grupo
-`tecnico-vinculado` do simulador.
+**Só C16 é grave.** As outras duas severidades foram decididas por medição, depois de a configuração real da feira
+ser informada: 300 projetos, 120 avaliadores, 10 de staff, **três** questionários técnicos de mesma escala, um de
+voto popular e cota 3. Com ela, o modo drenagem de `scripts/simular-feira.mjs` fechou a feira — `fn_feira_concluida`
+confirmou em 6 varreduras, 289 projetos com a cota cheia, **zero incompletos**, os 48 avaliadores vinculados
+distribuídos 16/16/16 entre os três técnicos e as dez invariantes válidas. Uma configuração que fecha a feira não é
+achado grave; chamar de grave o que funciona treina a coordenação a ignorar a faixa vermelha.
+
+C15 é **atenção**: o que mais de um técnico faz é ligar a trava do questionário no primeiro avaliador — um avaliador
+vinculado ao técnico A não consegue avaliar projeto já fixado no técnico B, e a cota daquele projeto depende de
+sobrar quem possa. É coisa de saber antes da feira, e o achado diz como conferir
+(`npm run local:simular -- --questionarios=existentes --ate-concluir`).
+
+C17 é **informativo** e vem **agregado por questionário**, com a contagem e os três primeiros nomes: por pessoa
+seriam 48 achados na configuração real, que enterrariam o resto do Painel. Travar o vínculo seria decisão de
+produto, e exigiria antes filtrar o seletor de `GestorAvaliadores` e reescrever o grupo `tecnico-vinculado` do
+simulador.
 
 Migration `20261123174858_conferencia_configuracao_questionarios.sql`; teste
 `supabase/tests/44_configuracao_de_questionarios_test.sql`, validado por mutação em sete pontos.
