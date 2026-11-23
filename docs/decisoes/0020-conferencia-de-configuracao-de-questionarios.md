@@ -40,7 +40,7 @@ Auditoria, que lê só essa função. **Sem mudança de front-end**: o Painel re
 
 | Código | Achado | Severidade |
 |---|---|---|
-| C15 | evento com mais de um questionário técnico | atenção |
+| C15 | evento com mais de um questionário técnico | informativo |
 | C16 | questionários técnicos com escalas diferentes | grave |
 | C17 | avaliadores fixados num questionário técnico, agregado por questionário | informativo |
 
@@ -51,9 +51,10 @@ confirmou em 6 varreduras, 289 projetos com a cota cheia, **zero incompletos**, 
 distribuídos 16/16/16 entre os três técnicos e as dez invariantes válidas. Uma configuração que fecha a feira não é
 achado grave; chamar de grave o que funciona treina a coordenação a ignorar a faixa vermelha.
 
-C15 é **atenção**: o que mais de um técnico faz é ligar a trava do questionário no primeiro avaliador — um avaliador
-vinculado ao técnico A não consegue avaliar projeto já fixado no técnico B, e a cota daquele projeto depende de
-sobrar quem possa. É coisa de saber antes da feira, e o achado diz como conferir
+C15 é **informativo**: vários questionários técnicos por evento são configuração **prevista**. O que o achado faz é
+mostrar quantos o evento tem e qual o efeito a conhecer — a trava do questionário prende o projeto ao primeiro
+técnico que o avaliar, então um avaliador vinculado a outro técnico não consegue avaliá-lo, e a cota daquele projeto
+depende de sobrar quem possa —, com o comando que confere o fechamento antes da feira
 (`npm run local:simular -- --questionarios=existentes --ate-concluir`).
 
 C17 é **informativo** e vem **agregado por questionário**, com a contagem e os três primeiros nomes: por pessoa
@@ -71,11 +72,8 @@ Migration `20261123174858_conferencia_configuracao_questionarios.sql`; teste
 - Nada passa a ser recusado: configuração que funcionava continua funcionando.
 - C15 e C16 são por evento e vêm sem projeto e sem avaliação — `id_projeto` e `id_avaliacao` nulos, o que o Painel já
   tolera porque C12 de ajuste de média também não tem avaliação.
-- A função tem trava própria de `is_admin()`, e não só a de quem a chama. Isso a põe em desacordo com
-  `fn_auditar_voto_popular`, que é `SECURITY DEFINER`, está concedida a `authenticated` e **não** tem essa trava —
-  qualquer sessão autenticada lê os achados C13/C14 do evento, contornando a RLS de `avaliacoes` e `projetos`. É
-  achado pré-existente, não introduzido aqui, e fechá-lo é mudança de postura que pede decisão própria: está
-  registrado para isso.
+- A função tem trava própria de `is_admin()`, e não só a de quem a chama. Escrevê-la assim revelou que
+  `fn_auditar_voto_popular` era a exceção da família — ver a revisão abaixo, que a fechou.
 
 ## Ponto cego conhecido
 
@@ -84,3 +82,32 @@ reportado por nenhum dos dois lados: a conferência de B filtra pelo evento do a
 questionário. `admin_vincular_questionario_avaliador` recusa criar esse estado ("o questionário precisa ser do mesmo
 evento do avaliador"), então ele só nasce por SQL direto. O teste 44 planta a linha e **afirma o silêncio**, para que
 a mudança desse comportamento apareça em vez de passar batido.
+
+## Revisão de 23/11/2026
+
+Duas correções, as duas vindas de informação que chegou depois da decisão original. Migration
+`20261123191829_varios_tecnicos_e_trava_do_voto_popular.sql`.
+
+**1. C15 passou de atenção para informativo.** A decisão original partia da regra "um questionário técnico por
+evento"; medida a configuração real (três técnicos), C15 caiu de grave para atenção. A informação que faltava é mais
+simples: **vários questionários técnicos por evento são previstos**. Um achado de atenção sobre configuração
+escolhida de propósito continua sendo alarme falso — menor, mas falso. C16 segue o único grave, e com vários
+técnicos sendo o normal ele fica mais importante, não menos.
+
+**2. `fn_auditar_voto_popular` ganhou a trava de `is_admin()`.** O limite registrado nas consequências acima foi
+medido com uma sessão de avaliador pareado de verdade, antes de decidir:
+
+```
+select count(*) from avaliacoes             -> 0        (rls_avaliacoes_leitura: só as próprias)
+select * from fn_auditar_voto_popular(NULL) -> 1 linha: C14, projeto SIM-0001,
+                                               com o id_avaliacao DE OUTRA PESSOA
+```
+
+É furo de RLS: a função entregava a existência e o id de avaliação alheia, que a policy entrega zero. O alcance é
+estreito — só linhas que já são anomalia, sem nota, sem nome, sem média, e num evento saudável ela devolve nada —,
+mas não havia motivo para manter a exceção: o único chamador é `fn_auditar_notas`, que já exigia Admin, e nada em
+`src/` a chama, então **nenhum caminho do front-end muda**. A função passou de `sql` para `plpgsql` só para poder
+`RAISE`; o corpo da consulta é o mesmo.
+
+As duas mudanças foram validadas por mutação, e o teste 44 passou a cobrar a postura das **três** funções de
+conferência no mesmo lugar, junto da linha de base que elas respeitam (a RLS não entrega avaliação alheia).
