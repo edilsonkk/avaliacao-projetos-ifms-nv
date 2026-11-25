@@ -154,6 +154,7 @@ O navegador guarda sessão e dados de contingência nestas chaves:
 | `evento_ativo_data` | `string` | Data do evento ativo |
 | `avaliadores_credenciados_local` | JSON `{ [id_usuario]: boolean }` | Fallback de credenciamento de avaliadores |
 | `staff_credenciados_local` | JSON `{ [id_usuario]: boolean }` | Fallback de credenciamento do staff |
+| `simulacao_em_andamento` | `string` | Nome da simulação de evento em curso, para a aba reaberta reconhecer a rodada interrompida ([simulação de evento](../operacao/simulacao-de-evento.md)) |
 | `tema_fecin` | `string` | Tema escolhido: `claro`, `escuro` ou `sistema` |
 | `tamanho_texto_fecin` | `string` | Tamanho do texto escolhido: `padrao` (100%), `grande` (112,5%) ou `maior` (125%) |
 

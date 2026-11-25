@@ -78,6 +78,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { existsSync } from 'node:fs'
 import { garantirContasLocais, resumirContas } from './lib/contas-locais.mjs'
+// Fonte única, compartilhada com a interface (src/features/simulacao/). O Node importa o
+// .ts direto pelo type-stripping nativo; por isso esses módulos não usam o alias `@/`.
+import { criarSorteio } from '../src/lib/simulacao/aleatorio.ts'
 
 // ------------------------------------------------------------------ constantes
 
@@ -315,16 +318,6 @@ async function pensar(ctx) {
   const ritmo = ctx.opcoes.ritmoMs
   if (!ritmo) return
   await dormir(Math.round(ritmo * (0.5 + Math.random())))
-}
-
-function criarSorteio(semente) {
-  let estado = semente >>> 0
-  return () => {
-    estado = (estado + 0x6d2b79f5) | 0
-    let valor = Math.imul(estado ^ (estado >>> 15), 1 | estado)
-    valor = (valor + Math.imul(valor ^ (valor >>> 7), 61 | valor)) ^ valor
-    return ((valor ^ (valor >>> 14)) >>> 0) / 4294967296
-  }
 }
 
 async function comLimiteDeTempo(promessa, ms, descricao) {

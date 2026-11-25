@@ -8,7 +8,7 @@ import {
   type MetodoVinculo,
   type ParametrosAcesso,
 } from '../acessoAvaliadores';
-import { Settings, X, Save, Loader2, CheckCircle2, AlertTriangle, RotateCcw, History, PlusCircle, Building2, ShieldCheck, FlagOff } from 'lucide-react';
+import { Settings, X, Save, Loader2, CheckCircle2, AlertTriangle, RotateCcw, History, PlusCircle, Building2, ShieldCheck, FlagOff, FlaskConical } from 'lucide-react';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { Dica } from '@/components/ui/Dica';
 import { useAvisos } from '@/components/ui';
@@ -29,6 +29,7 @@ interface PropriedadesModalConfiguracoes {
   ao_abrir_novo_evento?: () => void;
   ao_abrir_instituicoes?: () => void;
   ao_abrir_administradores?: () => void;
+  ao_abrir_simulacao?: () => void;
 }
 
 export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> = ({
@@ -41,6 +42,7 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
   ao_abrir_novo_evento,
   ao_abrir_instituicoes,
   ao_abrir_administradores,
+  ao_abrir_simulacao,
 }) => {
   // Campos de estado do formulário de configurações do evento
   const [nome_evento, set_nome_evento] = useState<string>(nome_evento_atual || 'FETEC MS 2026');
@@ -626,6 +628,22 @@ export const ModalConfiguracoesEvento: React.FC<PropriedadesModalConfiguracoes> 
                       </span>
                       <ShieldCheck aria-hidden="true" className="w-5 h-5 text-slate-500 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors shrink-0" />
                     </button>
+                    {/* A Dica fica FORA do botão: ela própria é um <button>, e botão dentro de
+                        botão é HTML inválido (o React acusa erro de hidratação). */}
+                    <div className="flex items-center gap-1">
+                      <button type="button" onClick={() => { ao_fechar(); if (ao_abrir_simulacao) ao_abrir_simulacao(); }} className={botaoGestao}>
+                        <span className="min-w-0">
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors">Simulação de Evento</span>
+                          <span className="text-[11px] text-slate-500">Feira fictícia para ensaio e teste de carga</span>
+                        </span>
+                        <FlaskConical aria-hidden="true" className="w-5 h-5 text-slate-500 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors shrink-0" />
+                      </button>
+                      <Dica alinhar="fim">
+                        Cria um evento novo com projetos e avaliadores fictícios e o torna ativo, para a
+                        feira simulada aparecer no telão. Ao encerrar, o evento anterior volta a ser o
+                        ativo e a simulação pode ser apagada.
+                      </Dica>
+                    </div>
                   </div>
                 </section>
 

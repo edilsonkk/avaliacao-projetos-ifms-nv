@@ -42,3 +42,4 @@ Correções de bug e ajustes visuais não precisam de ADR: o commit e a doc do d
 | [0018](0018-indice-em-respostas-avaliacao.md) | A Classificação continua sob RLS: o conserto é o índice da FK, não `SECURITY DEFINER` | Aceito |
 | [0019](0019-policies-com-initplan.md) | Toda chamada de função em policy de RLS vai dentro de um subselect escalar | Aceito |
 | [0020](0020-conferencia-de-configuracao-de-questionarios.md) | A configuração de questionários é conferida, não travada | Aceito |
+| [0021](0021-motor-de-simulacao-no-navegador.md) | O motor da simulação roda no navegador, com a sessão do Admin | Aceito |

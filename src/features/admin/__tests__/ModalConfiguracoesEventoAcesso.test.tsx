@@ -185,9 +185,9 @@ describe('ModalConfiguracoesEvento - acesso dos avaliadores', () => {
     await screen.findByRole('checkbox', { name: /exigir segundo fator/i });
 
     // Assert: 9 campos do evento (inclui a trava do questionário e a edição) + 5 de acesso
-    // + 2 de segurança das contas + finalizar evento + zona de perigo
+    // + 2 de segurança das contas + finalizar evento + zona de perigo + simulação de evento
     const dicas = screen.getAllByRole('button', { name: /mais informações/i });
-    expect(dicas).toHaveLength(18);
+    expect(dicas).toHaveLength(19);
     dicas.forEach((d) => expect(d).toHaveAccessibleDescription(/.{30,}/));
   });
 

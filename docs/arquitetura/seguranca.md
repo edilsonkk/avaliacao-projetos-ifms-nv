@@ -244,6 +244,14 @@ ignorados pelo Auth. Fluxo em [configuração](configuracao.md#trocar-a-senha).
 - **Sem dados de avaliação no navegador**: sem internet, a nota não é guardada nem enviada depois (a antiga fila
   "offline" nunca era enviada); as notas ficam na tela para reenviar.
 - O token de sessão do Supabase fica no `localStorage` (padrão do `supabase-js`); a CSP reduz o risco de um XSS lê-lo.
+- **Simulação de evento**: `sortear_proximo_projeto` e `fn_enviar_avaliacao` isentam quem passa em `is_admin()`
+  da conferência de `avaliador_atual()` — a mesma porta do lançamento de nota em papel. A simulação de evento usa
+  essa isenção de propósito, para exercitar o caminho real de avaliação sem chave de serviço no navegador. O
+  modo "sessão por avaliador" dela cria um cliente Supabase por avaliador (`persistSession: false`, para não
+  encostar na sessão do Admin), o que é **exceção consciente** à regra de um só cliente, restrita a
+  `src/features/simulacao/apiSessaoPorAvaliador.ts` e permitida apenas no banco local — cada sessão anônima
+  deixa uma conta em `auth.users` que só a chave de serviço apaga. Ver
+  [ADR 0021](../decisoes/0021-motor-de-simulacao-no-navegador.md).
 
 ## Testes de segurança
 

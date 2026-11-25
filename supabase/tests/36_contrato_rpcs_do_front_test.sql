@@ -27,6 +27,7 @@ SELECT plan(7);
 CREATE TEMP TABLE rpcs_do_front (nome text PRIMARY KEY);
 INSERT INTO rpcs_do_front (nome) VALUES
   ('admin_ajustar_media_projeto'),
+  ('admin_apagar_simulacao'),
   ('admin_arbitrar_nota_final'),
   ('admin_atribuir_banca'),
   ('admin_atualizar_avaliador'),
@@ -72,6 +73,7 @@ INSERT INTO rpcs_do_front (nome) VALUES
   ('fn_feira_concluida'),
   ('fn_gerar_codigo_acesso'),
   ('fn_identidade_visual'),
+  ('fn_janela_avaliacao_aberta'),
   ('fn_memorial_evento'),
   ('fn_memorial_por_codigo'),
   ('fn_memorial_projeto'),
@@ -278,6 +280,12 @@ INSERT INTO chamadas (ordem, nome, sub, sql) VALUES
 (204, 'fn_relatorio_voto_popular_completo', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT * FROM public.fn_relatorio_voto_popular_completo('e3600000-0000-0000-0000-000000000001') $q$),
 (205, 'fn_relatorio_instituicoes_completo', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT * FROM public.fn_relatorio_instituicoes_completo('e3600000-0000-0000-0000-000000000001') $q$),
 (206, 'fn_relatorio_indicadores_gerenciais', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT public.fn_relatorio_indicadores_gerenciais('e3600000-0000-0000-0000-000000000001') $q$),
+-- O painel de simulação consulta a janela do evento ativo antes de trocá-lo: a conta é do
+-- banco, no fuso do evento, e não do relógio da máquina de quem abriu a tela.
+(208, 'fn_janela_avaliacao_aberta', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT public.fn_janela_avaliacao_aberta('e3600000-0000-0000-0000-000000000001') $q$),
+-- A limpeza da simulação recusa evento que não é de simulação: a recusa é o acerto, e o que
+-- este teste cobra é que o SQL da função roda (o caminho feliz tem teste próprio, o 45).
+(209, 'admin_apagar_simulacao', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT public.admin_apagar_simulacao('e3600000-0000-0000-0000-000000000001') $q$),
 -- com argumento nulo: o ramo "evento ativo" é outro caminho de código
 (207, 'fn_relatorio_indicadores_gerenciais', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT public.fn_relatorio_indicadores_gerenciais(NULL) $q$),
 (208, 'fn_relatorio_instituicoes_completo', 'd3600000-0000-0000-0000-0000000000ad', $q$ SELECT * FROM public.fn_relatorio_instituicoes_completo(NULL) $q$),
