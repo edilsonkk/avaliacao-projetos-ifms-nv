@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.14.3...v0.15.0) (2026-11-25)
+
+
+### Funcionalidades
+
+* **questionarios:** âncoras da escala num hint, fora do texto de ajuda ([#135](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/135)) ([fd16bad](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/fd16badb785dde7a7fb54c7e6ef72ec70970f706))
+* **simulacao:** ensaiar a feira pelo painel do Admin, sem terminal ([#133](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/133)) ([68f619e](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/68f619e1a046ee824c977fb4e4696d830753116f))
+
 ## [0.14.3](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.14.2...v0.14.3) (2026-11-23)
 
 
