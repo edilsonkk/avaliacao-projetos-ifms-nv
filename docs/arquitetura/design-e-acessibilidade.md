@@ -76,7 +76,7 @@ Importe sempre pelo índice: `import { Botao, Campo } from '@/components/ui'`.
 | `Tabela` | listagem simples | `<caption>` para leitor de tela, `scope="col"` e contêiner de rolagem focável (sem isso, quem usa teclado não rola a tabela) |
 | `TabelaResponsiva` | listagem com ações | o mesmo da `Tabela`, e **vira cartões no celular**: um só DOM, com os elementos passando a `display: block` abaixo de `sm:` e cada um declarando o `role` que o navegador descarta nessa troca. O rótulo do campo no cartão sai por pseudo-elemento (`data-rotulo` + `content: attr()`), fora do `textContent` |
 | `BarraDeAcoes` | barra de botões | `flex-wrap` com `gap`, e `empilhar` para largura cheia no celular (o rodapé do `Modal`) |
-| `Dica` | explicação curta | `role="tooltip"`, abre no toque e fecha com `Esc` |
+| `Dica` | explicação curta | `role="tooltip"`, abre no toque e fecha com `Esc`. `rotulo` troca o nome do botão (o padrão, "Mais informações", serve a uma dica solitária; repetida item a item, dá N botões de nome idêntico no leitor de tela). `largura="bloco"` dá ao balão a largura do ancestral `relative` do chamador, em vez de posicioná-lo pelo ícone: num celular, ícone no meio de uma linha não tem espaço para balão largo de nenhum dos dois lados |
 | `CabecalhoOrdenavel` | coluna de tabela | `aria-sort` e ordenação pelo teclado |
 
 ### Por que a `TabelaResponsiva` existe

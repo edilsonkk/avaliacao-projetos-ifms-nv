@@ -37,8 +37,8 @@ const mockarBanco = () => {
           ? questionariosDoEvento
           : tabela === 'perguntas_modelo_questionario'
             ? [
-                { ordem: 1, texto_pergunta: 'Problema e Público-Alvo', descricao_lembrete: 'Relevância do problema.', peso_calculo: 1, peso_desempate: 1 },
-                { ordem: 2, texto_pergunta: 'Coerência da Solução', descricao_lembrete: null, peso_calculo: 2, peso_desempate: 0 },
+                { ordem: 1, texto_pergunta: 'Problema e Público-Alvo', descricao_lembrete: 'Relevância do problema.', referencia_escala: '1: vago · 5: bem delimitado', peso_calculo: 1, peso_desempate: 1 },
+                { ordem: 2, texto_pergunta: 'Coerência da Solução', descricao_lembrete: null, referencia_escala: null, peso_calculo: 2, peso_desempate: 0 },
               ]
             : [];
     chain.then = (resolve: any, reject: any) => Promise.resolve({ data: dados, error: null }).then(resolve, reject);
@@ -170,6 +170,10 @@ describe('Questionários prontos e reaproveitamento', () => {
     expect(within(formulario).getByText(/Editando o modelo "Técnico · Nível 1 Ideia"/)).toBeInTheDocument();
     expect(within(formulario).getByLabelText('Descrição do modelo (opcional)')).toHaveValue('Núcleo comum e nível Ideia.');
     expect(within(formulario).getByLabelText('Texto da pergunta 2')).toHaveValue('Coerência da Solução');
+    // ajuda e âncoras vêm em colunas separadas do banco, e em campos separados no formulário
+    expect(within(formulario).getByLabelText('Texto de ajuda da pergunta 1 (opcional)')).toHaveValue('Relevância do problema.');
+    expect(within(formulario).getByLabelText('Referência de notas da pergunta 1 (opcional)')).toHaveValue('1: vago · 5: bem delimitado');
+    expect(within(formulario).getByLabelText('Referência de notas da pergunta 2 (opcional)')).toHaveValue('');
     await user.clear(within(formulario).getByLabelText('Título'));
     await user.type(within(formulario).getByLabelText('Título'), 'Ideia revisada');
     await user.click(within(formulario).getByRole('button', { name: 'Salvar Modelo' }));
@@ -182,8 +186,8 @@ describe('Questionários prontos e reaproveitamento', () => {
       p_escala_minima: 1,
       p_escala_maxima: 5,
       p_perguntas: [
-        { texto_pergunta: 'Problema e Público-Alvo', descricao_lembrete: 'Relevância do problema.', peso_calculo: 1, peso_desempate: 1 },
-        { texto_pergunta: 'Coerência da Solução', descricao_lembrete: '', peso_calculo: 2, peso_desempate: 0 },
+        { texto_pergunta: 'Problema e Público-Alvo', descricao_lembrete: 'Relevância do problema.', referencia_escala: '1: vago · 5: bem delimitado', peso_calculo: 1, peso_desempate: 1 },
+        { texto_pergunta: 'Coerência da Solução', descricao_lembrete: '', referencia_escala: '', peso_calculo: 2, peso_desempate: 0 },
       ],
     });
     expect(supabase.rpc).not.toHaveBeenCalledWith('admin_salvar_questionario', expect.anything());

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { Projeto } from '@/types/database';
 import { Botao, CampoArea, Dica, Modal, useAvisos } from '@/components/ui';
+import { itensDaReferencia } from '@/lib/parsers/textoAjudaPergunta';
 import { ImagemEvento } from '@/components/layout/IdentidadeVisual';
 import { supabase, verificar_conexao_configurada } from '@/lib/supabase';
 import { obterPerfilSessao } from '@/features/auth';
@@ -173,6 +174,8 @@ interface CriterioLikert {
   titulo_criterio: string;
   descricao_criterio: string;
   descricao_lembrete?: string;
+  /** Âncoras da escala (`1: … · 3: … · 5: …`), mostradas num hint ao lado do enunciado. */
+  referencia_escala?: string;
 }
 
 export interface QuestionarioItem {
@@ -416,6 +419,7 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
           titulo_criterio: `${p.ordem}. ${p.texto_pergunta}`,
           descricao_criterio: p.texto_pergunta,
           descricao_lembrete: p.descricao_lembrete || p.lembrete || p.texto_ajuda || undefined,
+          referencia_escala: p.referencia_escala || undefined,
         }));
 
         set_lista_criterios(formatadas);
@@ -1669,8 +1673,28 @@ export const TelaAvaliador: React.FC<PropriedadesTelaAvaliador> = ({
                         {/* `block w-full`: por padrão o legend é caixa especial, posicionada contra a
                             borda do fieldset (fora do p-4) e dimensionada por fit-content — enunciado
                             longo saía para fora do quadro no Chrome do celular. */}
-                        <legend className="block w-full break-words text-apoio font-extrabold text-texto">
+                        <legend className="relative block w-full break-words text-apoio font-extrabold text-texto">
                           {criterio.titulo_criterio}
+                          {/* As âncoras da escala ficam num hint, não no corpo do texto: são o que
+                              o avaliador consulta na hora de escolher a nota, não o que ele lê de
+                              novo em cada um dos dez critérios. */}
+                          {criterio.referencia_escala && (
+                            <>
+                              {' '}
+                              <Dica
+                                alinhar="inicio"
+                                lado="baixo"
+                                largura="bloco"
+                                rotulo={`Referência de notas de ${criterio.titulo_criterio}`}
+                              >
+                                <ul className="space-y-1">
+                                  {itensDaReferencia(criterio.referencia_escala).map((ancora) => (
+                                    <li key={ancora}>{ancora}</li>
+                                  ))}
+                                </ul>
+                              </Dica>
+                            </>
+                          )}
                         </legend>
                         {criterio.descricao_lembrete && (
                           <p className="mb-4 text-apoio text-texto-secundario">{criterio.descricao_lembrete}</p>

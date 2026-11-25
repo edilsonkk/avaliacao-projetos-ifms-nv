@@ -154,7 +154,12 @@ A tabela **não** tem colunas textuais `modalidade`, `area_conhecimento` ou `nom
   lê; carga pela migration `20261031050000`). Ativar um modelo copia para `questionarios`. `is_original` marca os 7
   do documento (restauráveis). Escrita só pelas funções `admin_*_modelo_*`.
 - `perguntas_questionario`: `id_pergunta`, `id_questionario`, `texto_pergunta`, `descricao_lembrete` (texto de ajuda
-  para o avaliador), `peso_calculo`, `peso_desempate`, `ordem`.
+  para o avaliador), `referencia_escala`, `peso_calculo`, `peso_desempate`, `ordem`.
+- `referencia_escala` (também em `perguntas_modelo_questionario`): as **âncoras da escala** (`1: … · 3: … · 5: …`),
+  que a tela do avaliador mostra num hint em vez de no corpo do texto de ajuda. Nos modelos técnicos as duas coisas
+  vinham na mesma string, separadas por `" Referência — "`; a migration `20261125120000` as pôs em colunas
+  diferentes. Nula quando a pergunta não tem âncoras. `fn_orientacao_da_pergunta`/`fn_referencia_da_escala` fazem
+  esse corte, e é a única definição do marcador no banco.
 - `respostas_avaliacao.id_pergunta` é `ON DELETE CASCADE`: apagar uma pergunta apaga as notas por critério já dadas.
   Por isso a escrita é só por `admin_salvar_questionario` / `admin_excluir_questionario`, que travam questionários
   já usados.
