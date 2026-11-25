@@ -32,11 +32,18 @@ import { createClient } from '@supabase/supabase-js'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { garantirContasLocais, resumirContas } from './lib/contas-locais.mjs'
+// Fonte única, compartilhada com a interface (src/features/simulacao/). O Node importa o
+// .ts direto pelo type-stripping nativo; por isso esses módulos não usam o alias `@/`.
+import { criarSorteio, umDe } from '../src/lib/simulacao/aleatorio.ts'
+import {
+  PREFIXO_EVENTO_SIMULACAO as PREFIXO_EVENTO,
+  DOMINIO_SIMULACAO,
+  CAMPI, MODALIDADES, AREAS, CRITERIOS_TECNICOS,
+  VERBOS, OBJETOS, CONTEXTOS, NOMES, SOBRENOMES,
+  normalizar, agoraNoFusoDoEvento,
+} from '../src/lib/simulacao/dados.ts'
 
-const PREFIXO_EVENTO = 'Simulação de Carga'
 const EVENTO_SEED = 'Evento Local de Teste'
-const DOMINIO_SIMULACAO = 'simulacao.invalid'
-const FUSO = 'America/Campo_Grande'
 const PADRAO_PROJETOS = 300
 const PADRAO_AVALIADORES = 60
 const HOSTS_LOCAIS = new Set(['127.0.0.1', 'localhost', '::1'])
@@ -128,29 +135,6 @@ function obterChaveDeServico() {
 }
 
 // -------------------------------------------------------------------- apoio
-
-function criarSorteio(semente) {
-  let estado = semente >>> 0
-  return () => {
-    estado |= 0
-    estado = (estado + 0x6d2b79f5) | 0
-    let valor = Math.imul(estado ^ (estado >>> 15), 1 | estado)
-    valor = (valor + Math.imul(valor ^ (valor >>> 7), 61 | valor)) ^ valor
-    return ((valor ^ (valor >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-function partesDeAgoraNoFuso() {
-  const formatador = new Intl.DateTimeFormat('sv-SE', {
-    timeZone: FUSO,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false,
-  })
-  // 'sv-SE' formata como "2026-11-21 14:03:09"
-  const [data, hora] = formatador.format(new Date()).split(' ')
-  return { data, hora }
-}
 
 async function emLotes(sb, tabela, linhas, conflito) {
   if (linhas.length === 0) return 0
@@ -343,56 +327,6 @@ async function moverDataDoEvento(url, idEvento, hoje) {
 }
 
 // ------------------------------------------------- etapa 2: dados do evento
-
-const CAMPI = [
-  ['Campo Grande', 'CG', 'Campo Grande'],
-  ['Três Lagoas', 'TL', 'Três Lagoas'],
-  ['Dourados', 'DR', 'Dourados'],
-  ['Corumbá', 'CB', 'Corumbá'],
-  ['Aquidauana', 'AQ', 'Aquidauana'],
-  ['Nova Andradina', 'NA', 'Nova Andradina'],
-  ['Ponta Porã', 'PP', 'Ponta Porã'],
-  ['Coxim', 'CX', 'Coxim'],
-]
-
-const MODALIDADES = [
-  ['Ensino Fundamental', 'EF', 'Fundamental'],
-  ['Ensino Médio', 'EM', 'Médio'],
-  ['Ensino Técnico Integrado', 'ETI', 'Médio'],
-  ['Ensino Técnico Subsequente', 'ETS', 'Técnico'],
-  ['Ensino Superior', 'ES', 'Superior'],
-  ['Pós-Graduação', 'PG', 'Pós-Graduação'],
-]
-
-const AREAS = [
-  'Ciências Agrárias', 'Ciências Biológicas', 'Ciências da Saúde',
-  'Ciências Exatas e da Terra', 'Ciências Humanas', 'Ciências Sociais Aplicadas',
-  'Engenharias', 'Linguística, Letras e Artes', 'Meio Ambiente',
-  'Tecnologia da Informação',
-]
-
-const CRITERIOS_TECNICOS = [
-  ['Relevância e originalidade do tema', 2.5, 'O problema é pertinente e a abordagem traz algo novo?'],
-  ['Metodologia científica', 2.5, 'Os métodos são adequados, descritos e reprodutíveis?'],
-  ['Resultados e conclusões', 2.0, 'Os resultados sustentam as conclusões apresentadas?'],
-  ['Apresentação oral e domínio do conteúdo', 1.5, 'A equipe explica com clareza e responde às perguntas?'],
-  ['Qualidade do material e do estande', 1.5, 'Banner, protótipo e organização do estande.'],
-]
-
-const VERBOS = ['Desenvolvimento de', 'Avaliação de', 'Análise de', 'Monitoramento de', 'Automação de', 'Estudo de', 'Prototipagem de', 'Mapeamento de']
-const OBJETOS = ['um sistema de irrigação', 'biossensores de baixo custo', 'resíduos sólidos urbanos', 'energia solar fotovoltaica', 'qualidade da água do Pantanal', 'um aplicativo de acessibilidade', 'compostagem escolar', 'drones para agricultura familiar', 'cerâmica de resíduo de construção', 'hortas hidropônicas', 'bioplástico de amido', 'rede de sensores IoT']
-const CONTEXTOS = ['no Pantanal sul-mato-grossense', 'em comunidades ribeirinhas', 'na agricultura familiar', 'em escolas públicas', 'no Cerrado', 'em assentamentos rurais', 'na indústria local', 'em áreas urbanas periféricas']
-
-const NOMES = ['Ana', 'Bruno', 'Carla', 'Diego', 'Eduarda', 'Felipe', 'Gabriela', 'Henrique', 'Isabela', 'João', 'Karina', 'Lucas', 'Mariana', 'Nelson', 'Olívia', 'Paulo', 'Queila', 'Rafael', 'Sabrina', 'Thiago', 'Úrsula', 'Vinícius', 'Wagner', 'Yara']
-const SOBRENOMES = ['Silva', 'Santos', 'Oliveira', 'Souza', 'Rodrigues', 'Ferreira', 'Almeida', 'Costa', 'Gomes', 'Martins', 'Araújo', 'Barbosa', 'Ribeiro', 'Carvalho', 'Lima', 'Nogueira', 'Pereira', 'Cavalcante']
-
-function normalizar(texto) {
-  return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim()
-}
-
-function umDe(sorteio, lista) {
-  return lista[Math.floor(sorteio() * lista.length)]
-}
 
 async function catalogosDoEvento(sb, idEvento) {
   const [instituicoes, modalidades, areas, questionarios] = await Promise.all([
@@ -725,7 +659,7 @@ async function principal() {
   // rodada abortaria no primeiro login. Idempotente e silencioso quando nada falta.
   console.log(resumirContas(await garantirContasLocais()))
 
-  const agora = partesDeAgoraNoFuso()
+  const agora = agoraNoFusoDoEvento()
   const carimbo = `${agora.data} ${agora.hora}`
   const sorteio = criarSorteio(Date.now() % 2147483647)
 

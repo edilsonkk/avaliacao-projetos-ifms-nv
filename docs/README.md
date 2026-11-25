@@ -33,6 +33,7 @@ Comece pela [visão geral](arquitetura/visao-geral.md). Para contribuir, leia o
 | Como rodar o banco localmente / criar Admin | [Configuração](arquitetura/configuracao.md#desenvolvimento-local) |
 | Subir o ambiente local do zero, ou depois de um `db reset` | [Ambiente local do zero](operacao/ambiente-local-do-zero.md) |
 | Roteiro da semana da feira | [Cronograma da feira](operacao/cronograma-da-feira.md) |
+| Simular uma feira inteira (ensaio e teste de carga) | [Simulação de evento](operacao/simulacao-de-evento.md) |
 | Achados da auditoria da documentação | [Relatório de docs](auditoria/relatorio-docs.md) |
 | Por que foi decidido assim? | [Decisões (ADRs)](decisoes/README.md) |
 | Como escrever testes? | [TESTES_TDD](../.agents/rules/TESTES_TDD.md) |

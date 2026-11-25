@@ -154,3 +154,20 @@ travas, projetos, questionários, avaliadores temporários, instituições, moda
 
 Testes: `src/features/admin/__tests__/` (`GestaoNovoEvento`, `ModalConfiguracoesEventoData`, `ResetGlobal`,
 `SincroniaContadores`).
+
+## Evento de simulação
+
+Um evento cujo nome começa com `Simulação de Carga` é uma **feira fictícia**, criada pelo painel do Admin
+(engrenagem → Simulação de Evento) ou pelos scripts locais. Ele é um evento como qualquer outro para o banco:
+tem os próprios projetos, avaliadores e questionários, e todo o escopo por `id_evento` vale igual.
+
+Duas particularidades importam para a operação:
+
+- **Enquanto a simulação roda, ela é o evento ativo.** É o que faz a feira fictícia aparecer no telão, que lê
+  sempre o evento ativo. Ao encerrar, o evento que estava ativo antes volta ao posto — o nome dele fica guardado
+  na `descricao` da simulação, para a restauração funcionar mesmo em outro navegador.
+- **A limpeza dele não usa `admin_reset_global`**, porque aquele caminho apaga avaliadores e staff sem nota de
+  toda a base. A simulação é apagada de forma dirigida, só com o que nasceu nela.
+
+Detalhes de uso e limites em [simulação de evento](../operacao/simulacao-de-evento.md); o porquê do desenho em
+[ADR 0021](../decisoes/0021-motor-de-simulacao-no-navegador.md).

@@ -32,6 +32,16 @@ número de ciclos por avaliador — com `--por-avaliador=6`, uma rodada de 15,4 
 inteira em tempo observável, combine com `--checkin-ms` (ritmo do staff) e `--telao-ms` (atualização do telão):
 sozinho, o ritmo dos avaliadores fica escondido atrás da fila de check-in, que tem o compasso próprio.
 
+A mesma simulação existe **pela interface**, no painel do Admin (engrenagem → Simulação de Evento), e lá roda
+também contra produção — ver [simulação de evento](simulacao-de-evento.md). Qual usar:
+
+- **o painel**, para ensaiar com a equipe, demonstrar a feira no telão e medir no ambiente real, sem terminal;
+- **estes scripts**, para medir vazão: eles rodam vários processos com uma sessão por ator, o que uma aba de
+  navegador não alcança.
+
+Os dois usam o mesmo prefixo de evento e o mesmo domínio de e-mail fictício, então `--limpar` reconhece também o
+que o painel criou.
+
 ## Dois admins na mesma avaliação
 
 A rodada inclui um ator que põe **duas sessões de Admin** disputando a mesma avaliação ao mesmo tempo: uma chama

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import {
   Settings,
   RotateCcw,
@@ -52,6 +52,9 @@ import { AtribuicaoForcada } from '@/features/atribuicoes';
 import { ModalExclusaoAvaliacao } from '@/features/atribuicoes';
 import { PainelAuditoria } from '@/features/auditoria';
 
+const ModalSimulacaoEvento = lazy(() =>
+  import('@/features/simulacao').then((modulo) => ({ default: modulo.ModalSimulacaoEvento })));
+
 // O Painel não exibe contadores (os números ficam no Telão, nos Relatórios e em cada gestor):
 // guarda só o evento ativo, que as telas abertas daqui recebem por props.
 interface MetricasAdminState {
@@ -83,6 +86,7 @@ export const TelaAdmin: React.FC = () => {
 
   // Controle dos Modais
   const [mostrar_modal_configuracoes, set_mostrar_modal_configuracoes] = useState<boolean>(false);
+  const [mostrar_simulacao, set_mostrar_simulacao] = useState<boolean>(false);
   const [mostrar_modal_reset_etapa1, set_mostrar_modal_reset_etapa1] = useState<boolean>(false);
   const [mostrar_modal_reset_etapa2, set_mostrar_modal_reset_etapa2] = useState<boolean>(false);
   const [mostrar_modal_mapa, set_mostrar_modal_mapa] = useState<boolean>(false);
@@ -969,7 +973,22 @@ export const TelaAdmin: React.FC = () => {
             set_mostrar_modal_configuracoes(false);
             set_modal_detalhe_ativo({ tipo: 'administradores', titulo: 'Gestão de Administradores' });
           }}
+          ao_abrir_simulacao={() => {
+            set_mostrar_modal_configuracoes(false);
+            set_mostrar_simulacao(true);
+          }}
         />
+      )}
+
+      {/* SIMULAÇÃO DE EVENTO (feira fictícia para ensaio e teste de carga) */}
+      {mostrar_simulacao && (
+        <Suspense fallback={null}>
+          <ModalSimulacaoEvento
+            aberto={mostrar_simulacao}
+            aoFechar={() => set_mostrar_simulacao(false)}
+            aoAtualizarMetricas={buscar_metricas_admin}
+          />
+        </Suspense>
       )}
 
       {/* DUPLO MODAL DE CONFIRMAÇÃO DO RESET GLOBAL */}
