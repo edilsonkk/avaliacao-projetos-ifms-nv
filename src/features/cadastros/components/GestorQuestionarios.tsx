@@ -24,6 +24,7 @@ import { lerPlanilhaParaJson, validarArquivoPlanilha } from '@/lib/excel/excelUt
 import { supabase } from '@/lib/supabase';
 import { garantirSessaoAdmin, tratarErroEscritaAdmin } from '@/lib/sessaoAdmin';
 import { normalizarChave } from '@/lib/parsers/planilhaAvaliadoresParser';
+import { separarTextoAjuda } from '@/lib/parsers/textoAjudaPergunta';
 import { useAvisos } from '@/components/ui';
 import { ModelosQuestionario, type ModeloQuestionario } from './ModelosQuestionario';
 import { ReaproveitarQuestionario } from './ReaproveitarQuestionario';
@@ -33,6 +34,7 @@ interface ItemPerguntaForm {
   id_pergunta?: string;
   texto_pergunta: string;
   descricao_lembrete: string;
+  referencia_escala: string;
   peso_calculo: number;
   peso_desempate: number;
 }
@@ -53,20 +55,31 @@ const novaPergunta = (parcial: Partial<ItemPerguntaForm> = {}): ItemPerguntaForm
   id_temp: `p-${Date.now()}-${contadorTemp++}`,
   texto_pergunta: '',
   descricao_lembrete: '',
+  referencia_escala: '',
   peso_calculo: 1,
   peso_desempate: 1,
   ...parcial,
 });
 
-/** Lê pergunta, lembrete e peso de uma linha da planilha, aceitando variações no nome das colunas. */
-export const extrairLinhaPergunta = (linha: Record<string, unknown>): { texto_pergunta: string; descricao_lembrete: string; peso_calculo: number } => {
+/**
+ * Lê pergunta, lembrete, referência e peso de uma linha da planilha, aceitando variações no nome
+ * das colunas.
+ *
+ * Planilha sem coluna de referência, mas com as âncoras coladas no texto de ajuda (`… Referência —
+ * 1: … · 3: …`), é separada aqui: é o formato dos modelos antigos, e quem tem uma planilha dessas
+ * não deveria precisar editá-la para a referência cair no lugar certo.
+ */
+export const extrairLinhaPergunta = (linha: Record<string, unknown>): { texto_pergunta: string; descricao_lembrete: string; referencia_escala: string; peso_calculo: number } => {
   let texto = '';
   let lembrete = '';
+  let referencia = '';
   let peso = 1;
   Object.keys(linha).forEach((coluna) => {
     const chave = normalizarChave(coluna);
     const valor = String(linha[coluna] ?? '').trim();
-    if (chave.includes('lembrete') || chave.includes('descricao') || chave.includes('orientacao') || chave.includes('ajuda')) {
+    if (chave.includes('referencia') || chave.includes('ancora')) {
+      referencia = valor;
+    } else if (chave.includes('lembrete') || chave.includes('descricao') || chave.includes('orientacao') || chave.includes('ajuda')) {
       lembrete = valor;
     } else if (chave.includes('peso')) {
       const p = parseFloat(valor.replace(',', '.'));
@@ -75,7 +88,12 @@ export const extrairLinhaPergunta = (linha: Record<string, unknown>): { texto_pe
       texto = valor;
     }
   });
-  return { texto_pergunta: texto, descricao_lembrete: lembrete, peso_calculo: peso };
+  if (!referencia) {
+    const separado = separarTextoAjuda(lembrete);
+    lembrete = separado.orientacao;
+    referencia = separado.referencia;
+  }
+  return { texto_pergunta: texto, descricao_lembrete: lembrete, referencia_escala: referencia, peso_calculo: peso };
 };
 
 export const GestorQuestionarios: React.FC<{
@@ -246,7 +264,7 @@ export const GestorQuestionarios: React.FC<{
     setErroQuest(null);
     const { data: pergs, error } = await supabase
       .from('perguntas_modelo_questionario')
-      .select('ordem, texto_pergunta, descricao_lembrete, peso_calculo, peso_desempate')
+      .select('ordem, texto_pergunta, descricao_lembrete, referencia_escala, peso_calculo, peso_desempate')
       .eq('id_modelo', modelo.id_modelo)
       .order('ordem', { ascending: true });
     if (error) {
@@ -265,6 +283,7 @@ export const GestorQuestionarios: React.FC<{
             novaPergunta({
               texto_pergunta: p.texto_pergunta || '',
               descricao_lembrete: p.descricao_lembrete || '',
+              referencia_escala: p.referencia_escala || '',
               peso_calculo: Number(p.peso_calculo ?? 1),
               peso_desempate: Number(p.peso_desempate ?? 1),
             })
@@ -300,6 +319,7 @@ export const GestorQuestionarios: React.FC<{
         p_perguntas: perguntas_lista.map((p) => ({
           texto_pergunta: p.texto_pergunta.trim(),
           descricao_lembrete: p.descricao_lembrete.trim(),
+          referencia_escala: p.referencia_escala.trim(),
           peso_calculo: Number(p.peso_calculo),
           peso_desempate: Number(p.peso_desempate),
         })),
@@ -335,7 +355,7 @@ export const GestorQuestionarios: React.FC<{
     const [{ data: pergs, error }, { data: usos }] = await Promise.all([
       supabase
         .from('perguntas_questionario')
-        .select('id_pergunta, ordem, texto_pergunta, descricao_lembrete, peso_calculo, peso_desempate')
+        .select('id_pergunta, ordem, texto_pergunta, descricao_lembrete, referencia_escala, peso_calculo, peso_desempate')
         .eq('id_questionario', quest.id_questionario)
         .order('ordem', { ascending: true }),
       supabase.rpc('fn_avaliacoes_do_questionario', { p_id_questionario: quest.id_questionario }),
@@ -358,6 +378,7 @@ export const GestorQuestionarios: React.FC<{
               id_pergunta: p.id_pergunta,
               texto_pergunta: p.texto_pergunta || '',
               descricao_lembrete: p.descricao_lembrete || '',
+              referencia_escala: p.referencia_escala || '',
               peso_calculo: Number(p.peso_calculo ?? 1),
               peso_desempate: Number(p.peso_desempate ?? 1),
             })
@@ -445,6 +466,7 @@ export const GestorQuestionarios: React.FC<{
           id_pergunta: p.id_pergunta ?? null,
           texto_pergunta: p.texto_pergunta.trim(),
           descricao_lembrete: p.descricao_lembrete.trim(),
+          referencia_escala: p.referencia_escala.trim(),
           peso_calculo: Number(p.peso_calculo),
           peso_desempate: Number(p.peso_desempate),
         })),
@@ -716,8 +738,8 @@ export const GestorQuestionarios: React.FC<{
           <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
             <Lock className="w-4 h-4 shrink-0 mt-0.5" />
             <span>
-              Este questionário já foi usado em {usos_em_edicao} avaliação(ões). Só o título pode ser alterado; para mudar
-              perguntas, pesos ou escala, crie um questionário novo.
+              Este questionário já foi usado em {usos_em_edicao} avaliação(ões). Só o título e a referência de notas
+              podem ser alterados; para mudar perguntas, textos de ajuda, pesos ou escala, crie um questionário novo.
             </span>
           </div>
         )}
@@ -931,6 +953,21 @@ export const GestorQuestionarios: React.FC<{
                       disabled={somenteTitulo}
                       onChange={(e) => atualizar_campo_pergunta(item.id_temp, 'descricao_lembrete', e.target.value)}
                       placeholder="Aparece para o avaliador abaixo da pergunta"
+                      className={classeCampo}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor={`${item.id_temp}-referencia`} className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">
+                      Referência de notas da pergunta {n} (opcional)
+                    </label>
+                    {/* Sem `somenteTitulo`: a referência é texto informativo, não entra em cálculo
+                        nenhum, e o banco a aceita mesmo em questionário já usado em avaliação. */}
+                    <input
+                      id={`${item.id_temp}-referencia`}
+                      type="text"
+                      value={item.referencia_escala}
+                      onChange={(e) => atualizar_campo_pergunta(item.id_temp, 'referencia_escala', e.target.value)}
+                      placeholder="1: nota mínima · 3: nota média · 5: nota máxima"
                       className={classeCampo}
                     />
                   </div>

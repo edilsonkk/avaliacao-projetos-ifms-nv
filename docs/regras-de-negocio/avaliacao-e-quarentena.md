@@ -16,7 +16,10 @@ Código: `src/features/avaliacao/components/TelaAvaliador.tsx`, `src/features/at
    "Nota 4 de 5" — dá para escolher pelo teclado, com as setas. **Nenhuma nota vem pré-marcada**, e o botão de
    enviar só habilita com nota em todos os critérios (a tela diz quantos faltam): nota cheia gravada sem
    avaliação seria indistinguível de uma decisão do avaliador
-   ([auditoria](auditoria-de-notas.md#histórico)).
+   ([auditoria](auditoria-de-notas.md#histórico)). Abaixo do enunciado fica o **texto de ajuda** (o que o critério
+   mede); as **âncoras da escala** (o que vale 1, 3 e 5), quando existem, ficam num ícone "ⓘ" ao lado do enunciado,
+   que abre no toque e fecha com `Esc`. Elas saíram do corpo do texto porque são consulta de momento — o avaliador
+   as procura ao escolher a nota, não relê em cada um dos dez critérios.
 6. Envia por `supabase.rpc('fn_enviar_avaliacao', ...)`. Regras do servidor em
    [funções e RPCs](../banco-de-dados/funcoes-e-rpcs.md#fn_enviar_avaliacao).
 7. Sem projetos elegíveis, mostra o status da fila e o botão `"Consultar Novamente"` (sem subtítulo explicativo).
@@ -105,13 +108,16 @@ continua verificando a conta de cada voto (C1, C2, C3b, C10, C11) e ganha dois a
 ## Gestor de Questionários (Admin)
 
 - Lista os questionários do **evento ativo** (título, escala e número de perguntas). Sem evento ativo, não cria.
-- Cada pergunta tem texto, texto de ajuda opcional (aparece para o avaliador), peso e prioridade de desempate. O
-  **peso** entra na nota final (média ponderada) e a **prioridade** define a ordem do desempate no ranking (1, 2, 3…;
-  0 = fora do desempate). Ver [relatórios](relatorios-e-monitoramento.md).
+- Cada pergunta tem texto, texto de ajuda opcional (aparece abaixo do enunciado, para o avaliador), **referência de
+  notas** opcional (as âncoras da escala, que aparecem no hint — itens separados por ` · `, no formato
+  `1: … · 3: … · 5: …`), peso e prioridade de desempate. O **peso** entra na nota final (média ponderada) e a
+  **prioridade** define a ordem do desempate no ranking (1, 2, 3…; 0 = fora do desempate). Ver
+  [relatórios](relatorios-e-monitoramento.md).
 - **Questionários prontos:** 7 modelos (Feira de Software: Tecnológico Ideia, Protótipo e Produção; Convalidação de TCC;
   Voto popular; Feira de Ciências: Científica e Tecnológica), escala 1 a 5, peso 1. Em cada item "Critério: texto de
-  ajuda" do documento de origem, o critério é o texto da pergunta e o resto é o texto de ajuda (com as âncoras 1/3/5,
-  quando houver). O interruptor **"Ativo neste evento"** copia o modelo para o evento (`admin_copiar_questionario`);
+  ajuda" do documento de origem, o critério é o texto da pergunta e o resto é o texto de ajuda; as **âncoras 1/3/5
+  ficam na referência de notas**, em coluna própria. Têm âncoras as 40 perguntas dos 4 modelos técnicos; as 23 de
+  voto popular e feira de ciências não têm, e nelas o hint não aparece. O interruptor **"Ativo neste evento"** copia o modelo para o evento (`admin_copiar_questionario`);
   desligar exclui a cópia, o que o banco recusa se ela já foi usada. A cópia é editável sem alterar o modelo. O voto
   popular não tem fluxo de visitante: se ativado, aparece aos avaliadores como mais um questionário.
 - **CRUD dos modelos:** o lápis carrega o modelo no mesmo formulário abaixo (aviso "Editando o modelo…", com
@@ -127,10 +133,14 @@ continua verificando a conta de cada voto (C1, C2, C3b, C10, C11) e ganha dois a
 - O avaliador só vê os questionários do evento do projeto.
 - Criar e editar passam por `admin_salvar_questionario`, numa transação. A edição atualiza as perguntas no lugar
   (mesmo `id_pergunta`), sem apagar e recriar.
-- **Questionário já usado em avaliação:** só o título pode mudar. Perguntas, pesos e escala ficam travados, e excluir
-  é recusado, porque apagar perguntas apagaria as notas por critério.
-- Importação de planilha: coluna `pergunta`/`critério` (e opcionais `lembrete`/`descrição` e `peso`). Se o formulário
-  já tem perguntas, a tela pergunta se anexa ou começa um questionário novo. Nada é gravado até clicar em salvar.
+- **Questionário já usado em avaliação:** só o título e a **referência de notas** podem mudar. Perguntas, textos de
+  ajuda, pesos e escala ficam travados, e excluir é recusado, porque apagar perguntas apagaria as notas por critério.
+  A referência é a exceção porque é texto informativo e não entra em nenhum cálculo: um erro de digitação descoberto
+  durante a feira pode ser corrigido sem recriar o questionário.
+- Importação de planilha: coluna `pergunta`/`critério` (e opcionais `lembrete`/`descrição`, `referência`/`âncora` e
+  `peso`). Sem coluna de referência, as âncoras coladas no texto de ajuda (`… Referência — 1: … · 3: …`) são separadas
+  na leitura, para planilha antiga não precisar ser editada. Se o formulário já tem perguntas, a tela pergunta se
+  anexa ou começa um questionário novo. Nada é gravado até clicar em salvar.
 
 ### Configuração de questionários recomendada para a feira
 

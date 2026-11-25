@@ -172,6 +172,8 @@ export interface PerguntaQuestionario {
   ordem: number;
   texto_pergunta: string;
   descricao_lembrete?: string | null;
+  /** Âncoras da escala (`1: … · 3: … · 5: …`), mostradas ao avaliador num hint. */
+  referencia_escala?: string | null;
   peso_calculo: number;
   peso_desempate: number;
 }

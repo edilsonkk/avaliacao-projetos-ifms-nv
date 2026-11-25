@@ -90,6 +90,7 @@ describe('GestorQuestionarios', () => {
     await user.type(screen.getByLabelText('Título'), 'Feira 2026');
     await user.type(screen.getByLabelText('Texto da pergunta 1'), 'Método científico');
     await user.type(screen.getByLabelText('Texto de ajuda da pergunta 1 (opcional)'), 'Considere hipóteses');
+    await user.type(screen.getByLabelText('Referência de notas da pergunta 1 (opcional)'), '1: sem método · 5: método reprodutível');
     await user.click(screen.getByRole('button', { name: /adicionar pergunta/i }));
     await user.type(screen.getByLabelText('Texto da pergunta 2'), 'Inovação');
     await user.click(screen.getByRole('button', { name: 'Salvar Questionário' }));
@@ -102,8 +103,8 @@ describe('GestorQuestionarios', () => {
       p_escala_minima: 0,
       p_escala_maxima: 10,
       p_perguntas: [
-        { id_pergunta: null, texto_pergunta: 'Método científico', descricao_lembrete: 'Considere hipóteses', peso_calculo: 1, peso_desempate: 1 },
-        { id_pergunta: null, texto_pergunta: 'Inovação', descricao_lembrete: '', peso_calculo: 1, peso_desempate: 2 },
+        { id_pergunta: null, texto_pergunta: 'Método científico', descricao_lembrete: 'Considere hipóteses', referencia_escala: '1: sem método · 5: método reprodutível', peso_calculo: 1, peso_desempate: 1 },
+        { id_pergunta: null, texto_pergunta: 'Inovação', descricao_lembrete: '', referencia_escala: '', peso_calculo: 1, peso_desempate: 2 },
       ],
     });
     expect(chamadasDe('questionarios', 'insert')).toHaveLength(0);
@@ -327,7 +328,23 @@ describe('GestorQuestionarios', () => {
       const item = extrairLinhaPergunta({ 'Critério': ' Método ', 'Descrição': 'Ajuda', Peso: '2,5' });
 
       // Assert
-      expect(item).toEqual({ texto_pergunta: 'Método', descricao_lembrete: 'Ajuda', peso_calculo: 2.5 });
+      expect(item).toEqual({ texto_pergunta: 'Método', descricao_lembrete: 'Ajuda', referencia_escala: '', peso_calculo: 2.5 });
+    });
+
+    it('deve ler a referência de notas de uma coluna própria', () => {
+      // Arrange / Act
+      const item = extrairLinhaPergunta({ pergunta: 'Método', ajuda: 'Considere hipóteses', 'Referência': '1: pouco · 5: muito' });
+
+      // Assert
+      expect(item).toEqual({ texto_pergunta: 'Método', descricao_lembrete: 'Considere hipóteses', referencia_escala: '1: pouco · 5: muito', peso_calculo: 1 });
+    });
+
+    it('deve separar a referência colada no texto de ajuda das planilhas antigas', () => {
+      // Arrange / Act
+      const item = extrairLinhaPergunta({ pergunta: 'Método', lembrete: 'Considere hipóteses. Referência — 1: pouco · 5: muito' });
+
+      // Assert
+      expect(item).toEqual({ texto_pergunta: 'Método', descricao_lembrete: 'Considere hipóteses.', referencia_escala: '1: pouco · 5: muito', peso_calculo: 1 });
     });
 
     it('deve perguntar se anexa ou começa novo quando o formulário já tem perguntas', async () => {

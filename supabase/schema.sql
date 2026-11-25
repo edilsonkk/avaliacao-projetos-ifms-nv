@@ -529,12 +529,12 @@ BEGIN
   RETURNING id_questionario INTO v_id;
 
   IF v_eh_modelo THEN
-    INSERT INTO public.perguntas_questionario (id_questionario, ordem, texto_pergunta, descricao_lembrete, peso_calculo, peso_desempate)
-    SELECT v_id, pm.ordem, pm.texto_pergunta, pm.descricao_lembrete, pm.peso_calculo, pm.peso_desempate
+    INSERT INTO public.perguntas_questionario (id_questionario, ordem, texto_pergunta, descricao_lembrete, referencia_escala, peso_calculo, peso_desempate)
+    SELECT v_id, pm.ordem, pm.texto_pergunta, pm.descricao_lembrete, pm.referencia_escala, pm.peso_calculo, pm.peso_desempate
     FROM public.perguntas_modelo_questionario pm WHERE pm.id_modelo = p_id_origem;
   ELSE
-    INSERT INTO public.perguntas_questionario (id_questionario, ordem, texto_pergunta, descricao_lembrete, peso_calculo, peso_desempate)
-    SELECT v_id, pq.ordem, pq.texto_pergunta, pq.descricao_lembrete, pq.peso_calculo, pq.peso_desempate
+    INSERT INTO public.perguntas_questionario (id_questionario, ordem, texto_pergunta, descricao_lembrete, referencia_escala, peso_calculo, peso_desempate)
+    SELECT v_id, pq.ordem, pq.texto_pergunta, pq.descricao_lembrete, pq.referencia_escala, pq.peso_calculo, pq.peso_desempate
     FROM public.perguntas_questionario pq WHERE pq.id_questionario = p_id_origem;
   END IF;
 
@@ -1661,6 +1661,15 @@ BEGIN
     descricao_lembrete = EXCLUDED.descricao_lembrete, peso_calculo = EXCLUDED.peso_calculo, peso_desempate = EXCLUDED.peso_desempate;
 
 
+  -- O seed acima guarda orientação e âncoras na mesma string, porque é o texto do documento de
+  -- origem. Aqui elas voltam a ficar em colunas separadas, com o mesmo corte do backfill — assim
+  -- "Restaurar originais" devolve as duas colunas, e não um texto de ajuda com a referência colada.
+  UPDATE public.perguntas_modelo_questionario
+  SET descricao_lembrete = public.fn_orientacao_da_pergunta(descricao_lembrete),
+      referencia_escala  = public.fn_referencia_da_escala(descricao_lembrete)
+  WHERE id_modelo IN (SELECT id_modelo FROM public.modelos_questionario WHERE codigo LIKE 'feira-software-q%')
+    AND descricao_lembrete LIKE '% Referência — %';
+
   -- Perguntas acrescentadas aos originais saem (os originais têm 10 perguntas; o voto popular, 3)
   DELETE FROM public.perguntas_modelo_questionario pm
   WHERE pm.id_modelo IN (SELECT id_modelo FROM public.modelos_questionario WHERE codigo LIKE 'feira-software-q%')
@@ -1994,9 +2003,10 @@ BEGIN
     DELETE FROM public.perguntas_modelo_questionario WHERE id_modelo = v_id;
   END IF;
 
-  INSERT INTO public.perguntas_modelo_questionario (id_modelo, ordem, texto_pergunta, descricao_lembrete, peso_calculo, peso_desempate)
+  INSERT INTO public.perguntas_modelo_questionario (id_modelo, ordem, texto_pergunta, descricao_lembrete, referencia_escala, peso_calculo, peso_desempate)
   SELECT v_id, e.n::integer, btrim(e.item->>'texto_pergunta'),
          nullif(btrim(coalesce(e.item->>'descricao_lembrete', '')), ''),
+         nullif(btrim(coalesce(e.item->>'referencia_escala', '')), ''),
          coalesce((e.item->>'peso_calculo')::numeric, 1), coalesce((e.item->>'peso_desempate')::numeric, 1)
   FROM jsonb_array_elements(p_perguntas) WITH ORDINALITY e(item, n);
 
@@ -2014,8 +2024,8 @@ BEGIN
         SET titulo = v_titulo, escala_minima = p_escala_minima, escala_maxima = p_escala_maxima
         WHERE id_questionario = v_copia;
         DELETE FROM public.perguntas_questionario WHERE id_questionario = v_copia;
-        INSERT INTO public.perguntas_questionario (id_questionario, ordem, texto_pergunta, descricao_lembrete, peso_calculo, peso_desempate)
-        SELECT v_copia, pm.ordem, pm.texto_pergunta, pm.descricao_lembrete, pm.peso_calculo, pm.peso_desempate
+        INSERT INTO public.perguntas_questionario (id_questionario, ordem, texto_pergunta, descricao_lembrete, referencia_escala, peso_calculo, peso_desempate)
+        SELECT v_copia, pm.ordem, pm.texto_pergunta, pm.descricao_lembrete, pm.referencia_escala, pm.peso_calculo, pm.peso_desempate
         FROM public.perguntas_modelo_questionario pm WHERE pm.id_modelo = v_id;
         v_situacao := 'atualizada';
       END IF;
@@ -2066,6 +2076,10 @@ BEGIN
              WHERE coalesce((e->>'peso_calculo')::numeric, 1) <= 0 OR coalesce((e->>'peso_desempate')::numeric, 1) < 0) THEN
     RAISE EXCEPTION 'Os pesos precisam ser positivos.';
   END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_perguntas) e
+             WHERE length(coalesce(e->>'referencia_escala', '')) > 2000) THEN
+    RAISE EXCEPTION 'Referência de notas muito longa (máximo de 2000 caracteres).' USING ERRCODE = '22001';
+  END IF;
 
   IF v_id IS NULL THEN
     IF NOT EXISTS (SELECT 1 FROM public.eventos WHERE id_evento = p_id_evento) THEN
@@ -2102,6 +2116,15 @@ BEGIN
         RAISE EXCEPTION 'Este questionário já foi usado em % avaliação(ões): só o título pode ser alterado. Para mudar perguntas, pesos ou escala, crie um questionário novo.', v_usos;
       END IF;
       UPDATE public.questionarios SET titulo = v_titulo WHERE id_questionario = v_id;
+      -- A referência de notas é texto informativo: não entra em nenhum cálculo, então pode ser
+      -- corrigida mesmo depois da primeira avaliação. Por isso ela fica de fora do v_mudou acima
+      -- (lá, qualquer diferença recusaria o salvamento) e é gravada aqui — sem este UPDATE, a
+      -- edição seria descartada em silêncio, que é pior do que recusar.
+      UPDATE public.perguntas_questionario pq
+      SET referencia_escala = nullif(btrim(coalesce(e.item->>'referencia_escala', '')), '')
+      FROM jsonb_array_elements(p_perguntas) e(item)
+      WHERE pq.id_questionario = v_id
+        AND pq.id_pergunta::text = e.item->>'id_pergunta';
       RETURN v_id;
     END IF;
     UPDATE public.questionarios
@@ -2118,15 +2141,17 @@ BEGIN
       SET ordem = v_ordem,
           texto_pergunta = btrim(v_item->>'texto_pergunta'),
           descricao_lembrete = nullif(btrim(coalesce(v_item->>'descricao_lembrete', '')), ''),
+          referencia_escala = nullif(btrim(coalesce(v_item->>'referencia_escala', '')), ''),
           peso_calculo = coalesce((v_item->>'peso_calculo')::numeric, 1),
           peso_desempate = coalesce((v_item->>'peso_desempate')::numeric, v_ordem)
       WHERE id_pergunta = (v_item->>'id_pergunta')::uuid AND id_questionario = v_id
       RETURNING id_pergunta INTO v_id_perg;
     END IF;
     IF v_id_perg IS NULL THEN
-      INSERT INTO public.perguntas_questionario (id_questionario, ordem, texto_pergunta, descricao_lembrete, peso_calculo, peso_desempate)
+      INSERT INTO public.perguntas_questionario (id_questionario, ordem, texto_pergunta, descricao_lembrete, referencia_escala, peso_calculo, peso_desempate)
       VALUES (v_id, v_ordem, btrim(v_item->>'texto_pergunta'),
               nullif(btrim(coalesce(v_item->>'descricao_lembrete', '')), ''),
+              nullif(btrim(coalesce(v_item->>'referencia_escala', '')), ''),
               coalesce((v_item->>'peso_calculo')::numeric, 1),
               coalesce((v_item->>'peso_desempate')::numeric, v_ordem))
       RETURNING id_pergunta INTO v_id_perg;
@@ -2175,8 +2200,9 @@ BEGIN
   INSERT INTO public.modelos_questionario (id_modelo, codigo, titulo, descricao, escala_minima, escala_maxima, ordem, is_original)
   VALUES (v_id, 'admin-' || v_id, v_titulo, NULL, v_q.escala_minima, v_q.escala_maxima,
           (SELECT coalesce(max(ordem), 0) + 1 FROM public.modelos_questionario), false);
-  INSERT INTO public.perguntas_modelo_questionario (id_modelo, ordem, texto_pergunta, descricao_lembrete, peso_calculo, peso_desempate)
+  INSERT INTO public.perguntas_modelo_questionario (id_modelo, ordem, texto_pergunta, descricao_lembrete, referencia_escala, peso_calculo, peso_desempate)
   SELECT v_id, row_number() OVER (ORDER BY pq.ordem, pq.created_at)::integer, pq.texto_pergunta, pq.descricao_lembrete,
+         pq.referencia_escala,
          coalesce(pq.peso_calculo, 1), coalesce(pq.peso_desempate, 1)
   FROM public.perguntas_questionario pq WHERE pq.id_questionario = p_id_questionario;
 
@@ -3901,6 +3927,7 @@ BEGIN
         'ordem',          x.ordem,
         'criterio',       x.texto_pergunta,
         'ajuda',          x.descricao_lembrete,
+        'referencia',     x.referencia_escala,
         'peso_calculo',   x.peso_calculo,
         'peso_desempate', x.peso_desempate,
         'nota',           x.nota_atribuida,
@@ -3913,7 +3940,7 @@ BEGIN
       round(sum(x.nota_atribuida * x.peso_calculo) FILTER (WHERE x.peso_calculo > 0)
         / nullif(sum(x.peso_calculo) FILTER (WHERE x.peso_calculo > 0), 0), 2)         AS nota_arredondada
     FROM (
-      SELECT pq.id_pergunta, pq.ordem, pq.texto_pergunta, pq.descricao_lembrete,
+      SELECT pq.id_pergunta, pq.ordem, pq.texto_pergunta, pq.descricao_lembrete, pq.referencia_escala,
              pq.peso_calculo, pq.peso_desempate, r.nota_atribuida
       FROM public.respostas_avaliacao r
       JOIN public.perguntas_questionario pq ON pq.id_pergunta = r.id_pergunta
@@ -4304,6 +4331,24 @@ COMMENT ON FUNCTION "public"."fn_normalizar_nome"("p_texto" "text") IS 'Chave de
 
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_orientacao_da_pergunta"("p_texto" "text") RETURNS "text"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT nullif(btrim(CASE
+    WHEN p_texto LIKE '% Referência — %' THEN left(p_texto, strpos(p_texto, ' Referência — ') - 1)
+    ELSE p_texto
+  END), '');
+$$;
+
+
+ALTER FUNCTION "public"."fn_orientacao_da_pergunta"("p_texto" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_orientacao_da_pergunta"("p_texto" "text") IS 'Texto de ajuda sem as âncoras da escala (o que vem antes de " Referência — ").';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -4471,6 +4516,25 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_referencia_da_escala"("p_texto" "text") RETURNS "text"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  SELECT nullif(btrim(CASE
+    WHEN p_texto LIKE '% Referência — %'
+      THEN substr(p_texto, strpos(p_texto, ' Referência — ') + length(' Referência — '))
+    ELSE NULL
+  END), '');
+$$;
+
+
+ALTER FUNCTION "public"."fn_referencia_da_escala"("p_texto" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_referencia_da_escala"("p_texto" "text") IS 'Âncoras da escala contidas num texto de ajuda (o que vem depois de " Referência — "), ou NULL.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_registrar_impedimento"("p_id_projeto" "uuid", "p_tipo" "text") RETURNS "void"
@@ -5144,6 +5208,10 @@ BEGIN
   IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_perguntas) e
              WHERE coalesce((e->>'peso_calculo')::numeric, 1) <= 0 OR coalesce((e->>'peso_desempate')::numeric, 1) < 0) THEN
     RAISE EXCEPTION 'Os pesos precisam ser positivos.' USING ERRCODE = '22023';
+  END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_perguntas) e
+             WHERE length(coalesce(e->>'referencia_escala', '')) > 2000) THEN
+    RAISE EXCEPTION 'Referência de notas muito longa (máximo de 2000 caracteres).' USING ERRCODE = '22001';
   END IF;
   RETURN v_titulo;
 END;
@@ -6156,11 +6224,16 @@ CREATE TABLE IF NOT EXISTS "public"."perguntas_modelo_questionario" (
     "texto_pergunta" "text" NOT NULL,
     "descricao_lembrete" "text",
     "peso_calculo" numeric(5,2) DEFAULT 1 NOT NULL,
-    "peso_desempate" numeric(5,2) DEFAULT 1 NOT NULL
+    "peso_desempate" numeric(5,2) DEFAULT 1 NOT NULL,
+    "referencia_escala" "text"
 );
 
 
 ALTER TABLE "public"."perguntas_modelo_questionario" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."perguntas_modelo_questionario"."referencia_escala" IS 'Âncoras da escala mostradas ao avaliador num hint, fora do corpo do texto de ajuda (opcional). Itens separados por " · ".';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."perguntas_questionario" (
@@ -6171,7 +6244,8 @@ CREATE TABLE IF NOT EXISTS "public"."perguntas_questionario" (
     "peso_calculo" numeric(5,2) DEFAULT 1.00,
     "peso_desempate" numeric(5,2) DEFAULT 1.00,
     "created_at" timestamp with time zone DEFAULT "now"(),
-    "descricao_lembrete" "text"
+    "descricao_lembrete" "text",
+    "referencia_escala" "text"
 );
 
 
@@ -6179,6 +6253,10 @@ ALTER TABLE "public"."perguntas_questionario" OWNER TO "postgres";
 
 
 COMMENT ON COLUMN "public"."perguntas_questionario"."descricao_lembrete" IS 'Texto de ajuda mostrado ao avaliador abaixo do critério (opcional).';
+
+
+
+COMMENT ON COLUMN "public"."perguntas_questionario"."referencia_escala" IS 'Âncoras da escala mostradas ao avaliador num hint, fora do corpo do texto de ajuda (opcional). Itens separados por " · ".';
 
 
 
@@ -7917,6 +7995,12 @@ GRANT ALL ON FUNCTION "public"."fn_normalizar_nome"("p_texto" "text") TO "servic
 
 
 
+REVOKE ALL ON FUNCTION "public"."fn_orientacao_da_pergunta"("p_texto" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_orientacao_da_pergunta"("p_texto" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_orientacao_da_pergunta"("p_texto" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_parear_dispositivo"("p_codigo" "text", "p_id_usuario" "uuid") TO "service_role";
@@ -7937,6 +8021,12 @@ GRANT ALL ON FUNCTION "public"."fn_projetos_situacao"("p_id_evento" "uuid") TO "
 
 REVOKE ALL ON FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_recalcular_quarentena"("p_id_projeto" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_referencia_da_escala"("p_texto" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_referencia_da_escala"("p_texto" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_referencia_da_escala"("p_texto" "text") TO "service_role";
 
 
 
