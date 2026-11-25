@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.15.0...v0.15.1) (2026-11-25)
+
+
+### Documentação
+
+* **banco-de-dados:** registra no histórico as três migrations que faltavam ([#136](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/issues/136)) ([942a3ba](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/commit/942a3ba1038a611f23e6338ac8c5af5f609d8e12))
+
 ## [0.15.0](https://github.com/edilsonkk/avaliacao-projetos-ifms-nv/compare/v0.14.3...v0.15.0) (2026-11-25)
 
 
